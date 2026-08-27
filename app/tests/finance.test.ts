@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { calculatePosition, toTaiwanShares } from "@/lib/finance";
-import { classifyUnsupportedInput, extractCashBalances } from "@/lib/parser";
+import {
+  classifyUnsupportedInput,
+  extractCashBalances,
+  mergeDeterministicUpdates,
+} from "@/lib/parser";
 
 describe("財務計算", () => {
   it("用 Decimal 計算持倉與匯率", () => {
@@ -34,6 +38,36 @@ describe("財務計算", () => {
         currency: "TWD",
         balance: "30652",
       },
+    ]);
+  });
+
+  it("可將同一銀行的不同幣別分次解析成獨立更新", () => {
+    expect(extractCashBalances("永豐銀行30652")).toMatchObject([
+      { accountName: "永豐銀行", currency: "TWD", balance: "30652" },
+    ]);
+    expect(extractCashBalances("永豐銀行日幣60000")).toMatchObject([
+      { accountName: "永豐銀行", currency: "JPY", balance: "60000" },
+    ]);
+  });
+
+  it("確定性解析會修正模型誤判的幣別", () => {
+    const patch = mergeDeterministicUpdates("永豐銀行日幣60000", {
+      unsupportedReason: null,
+      accountUpdates: [
+        {
+          accountName: "永豐銀行",
+          accountType: "bank",
+          currency: "TWD",
+          balance: "60000",
+        },
+      ],
+      positionUpdates: [],
+      sales: [],
+      warnings: [],
+    });
+
+    expect(patch.accountUpdates).toMatchObject([
+      { accountName: "永豐銀行", currency: "JPY", balance: "60000" },
     ]);
   });
 

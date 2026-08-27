@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDatabaseForTests } from '@/lib/db';
 import { createSnapshot, exportBackup, getLatestSnapshot, listSales, sellPosition } from '@/lib/repository';
+import { buildProposal } from '@/lib/parser';
 
 const temp = mkdtempSync(path.join(tmpdir(), 'finance-review-test-'));
 process.env.FINANCE_REVIEW_DB_PATH = path.join(temp, 'test.db');
@@ -47,6 +48,32 @@ describe('快照與全部賣出', () => {
     const next = createSnapshot({ rawInput: '重新持有', baseSnapshotId: previous.id, capturedAt: '2026-09-01T08:00:00.000Z', accounts: [{ ...baseAccount, accountId: previous.accounts[0].accountId, positions: [{ ...baseAccount.positions[0], quantity: '1000', averageCost: '145' }] }] });
     expect(next.accounts[0].positions[0].positionId).not.toBe(soldId);
     expect(listSales()).toHaveLength(1);
+  });
+
+  it('分次記錄同一帳戶時保留既有幣別', () => {
+    const first = createSnapshot({
+      rawInput: '永豐銀行30652',
+      capturedAt: '2026-09-02T08:00:00.000Z',
+      accounts: [{
+        name: '永豐銀行', institution: '永豐', accountType: 'bank',
+        defaultCurrency: 'TWD', cashBalances: [{ currency: 'TWD', amount: '30652' }], positions: [],
+      }],
+    });
+    const proposal = buildProposal('永豐銀行日幣60000', {
+      unsupportedReason: null,
+      accountUpdates: [{
+        accountName: '永豐銀行', institution: '永豐', accountType: 'bank',
+        currency: 'JPY', balance: '60000',
+      }],
+      positionUpdates: [], sales: [], warnings: [],
+    });
+
+    expect(proposal.baseSnapshotId).toBe(first.id);
+    expect(proposal.accounts).toHaveLength(1);
+    expect(proposal.accounts[0].cashBalances).toEqual([
+      { currency: 'TWD', amount: '30652' },
+      { currency: 'JPY', amount: '60000' },
+    ]);
   });
 
   it('JSON 備份包含賣出紀錄但不含行情快取', () => {

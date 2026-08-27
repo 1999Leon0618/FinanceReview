@@ -17,6 +17,8 @@ const systemPrompt = `你是 FinanceReview 的本機資料解析器。只輸出�
 1. 只有銀行或現金餘額：填 accountUpdates，positionUpdates 留空。
 2. 只有股票或 ETF 持倉：填 positionUpdates；沒有提供現金時，不得要求現金餘額。
 3. 同時包含銀行餘額與股票資訊：兩個陣列都填。
+使用者每次可以只更新一筆資料；不得要求他重填同一帳戶的其他幣別、餘額或持倉。
+常見幣別名稱必須正規化為 ISO 代碼：日幣／日圓為 JPY、美元／美金為 USD、人民幣為 CNY、港幣為 HKD、歐元為 EUR、英鎊為 GBP；未註明幣別的「元」視為 TWD。
 絕對不可因為使用者只提供餘額、沒有股票，或只提供股票、沒有餘額而回傳 unsupportedReason。
 只解析使用者明確提供的「目前」帳戶餘額、持倉數量與平均成本。不可推算買入、加碼或部分賣出後的數量；遇到這類句子，unsupportedReason 必須說明要使用者改填目前剩餘數量及平均成本。
 只有明確「全部賣出／清倉」才可放入 sales，必須含帳戶、市場、代碼、日期；成交價與備註可為 null。
@@ -125,10 +127,16 @@ export function extractCashBalances(
 ): ParserPatch["accountUpdates"] {
   const updates: ParserPatch["accountUpdates"] = [];
   const pattern =
-    /([\p{Script=Han}A-Za-z0-9·・_-]{2,30}?(?:銀行|證券|帳戶))\s*(?:目前\s*)?(?:的\s*)?(?:現金|餘額)(?:\s*(?:為|是|有))?\s*(?:NT\$|TWD|新臺幣|台幣)?\s*([\d,]+(?:\.\d+)?)\s*(?:元)?/gu;
+    /([\p{Script=Han}A-Za-z0-9·・_-]{2,30}?(?:銀行|證券|帳戶))\s*([^\d，,；;。\n]{0,24}?)\s*([\d][\d,]*(?:\.\d+)?)\s*(TWD|NT\$|新臺幣|新台幣|臺幣|台幣|JPY|日幣|日圓|日元|円|USD|美元|美金|CNY|RMB|人民幣|HKD|港幣|EUR|歐元|GBP|英鎊|元)?/giu;
   for (const match of rawInput.matchAll(pattern)) {
     const account = match[1].trim();
-    const balance = match[2].replaceAll(",", "");
+    const context = match[2].trim();
+    const hasBalanceKeyword = /(現金|餘額)/.test(context);
+    const hasCurrency = currencyFromText(`${context} ${match[4] ?? ""}`) !== null;
+    if (!account.endsWith("銀行") && !hasBalanceKeyword) continue;
+    if (account.endsWith("銀行") && context && !hasBalanceKeyword && !hasCurrency)
+      continue;
+    const balance = match[3].replaceAll(",", "");
     updates.push({
       accountName: account,
       institution: account.replace(/(銀行|證券|帳戶)$/, "") || null,
@@ -137,25 +145,49 @@ export function extractCashBalances(
         : account.includes("證券")
           ? "brokerage"
           : "cash",
-      currency: "TWD",
+      currency: currencyFromText(`${context} ${match[4] ?? ""}`) ?? "TWD",
       balance,
     });
   }
   return updates;
 }
 
-function mergeDeterministicUpdates(
+function currencyFromText(value: string): string | null {
+  if (/(JPY|日幣|日圓|日元|円)/i.test(value)) return "JPY";
+  if (/(USD|美元|美金)/i.test(value)) return "USD";
+  if (/(CNY|RMB|人民幣)/i.test(value)) return "CNY";
+  if (/(HKD|港幣)/i.test(value)) return "HKD";
+  if (/(EUR|歐元)/i.test(value)) return "EUR";
+  if (/(GBP|英鎊)/i.test(value)) return "GBP";
+  if (/(TWD|NT\$|新臺幣|新台幣|臺幣|台幣|元)/i.test(value)) return "TWD";
+  return null;
+}
+
+export function mergeDeterministicUpdates(
   rawInput: string,
   patch: ParserPatch,
 ): ParserPatch {
   const accountUpdates = [...patch.accountUpdates];
   for (const detected of extractCashBalances(rawInput)) {
-    const existing = accountUpdates.find(
+    const existingIndex = accountUpdates.findIndex(
       (item) =>
         item.accountName === detected.accountName &&
         item.currency === detected.currency,
     );
-    if (existing) existing.balance = detected.balance;
+    if (existingIndex >= 0) {
+      accountUpdates[existingIndex] = {
+        ...accountUpdates[existingIndex],
+        ...detected,
+      };
+      continue;
+    }
+    const wrongCurrencyIndex = accountUpdates.findIndex(
+      (item) =>
+        item.accountName === detected.accountName &&
+        item.balance === detected.balance,
+    );
+    if (wrongCurrencyIndex >= 0)
+      accountUpdates.splice(wrongCurrencyIndex, 1, detected);
     else accountUpdates.push(detected);
   }
   const hasValidUpdate =

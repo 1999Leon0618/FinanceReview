@@ -239,7 +239,7 @@ export default function FinanceDashboard() {
               onClick={() => setEditor(true)}
             >
               <Plus size={16} />
-              新增快照
+              新增紀錄
             </button>
           </div>
         </div>
@@ -446,14 +446,14 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
             從今天開始，看見資產如何改變。
           </h2>
           <p className="mt-4 max-w-lg text-sm leading-7 text-[#6d7b72]">
-            用一句話輸入銀行餘額或股票持倉，本機模型會整理成確認表。每次保存都會成為往後可比較的歷史節點。
+            每次只要輸入一筆銀行餘額或股票持倉，既有資料會自動保留；每次保存都會成為往後可比較的歷史節點。
           </p>
           <button
             className="primary mt-7 w-fit rounded-full! px-5!"
             onClick={onCreate}
           >
             <Sparkles size={16} />
-            建立第一份快照
+            新增第一筆紀錄
           </button>
         </div>
         <div className="relative overflow-hidden bg-[#173c2d] p-10 text-white">

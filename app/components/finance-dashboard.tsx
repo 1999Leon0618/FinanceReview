@@ -272,14 +272,14 @@ export function SnapshotEditor({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-semibold tracking-[-.02em]">
-                建立資產快照
+                新增資產紀錄
               </h2>
               <span className="rounded-full bg-[#e8f1e9] px-2 py-1 text-[10px] font-bold tracking-wide text-[#2b674c]">
                 本機處理
               </span>
             </div>
             <p className="mt-1 text-xs text-[#718078]">
-              先描述目前狀態，再確認解析結果
+              每次輸入一筆資料，再確認合併結果
             </p>
           </div>
         </div>
@@ -303,10 +303,10 @@ export function SnapshotEditor({
                   </span>
                 </div>
                 <h3 className="mt-4 text-2xl font-semibold leading-tight tracking-[-.03em]">
-                  說明你現在擁有什麼
+                  一次記一筆即可
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-white/58">
-                  銀行餘額、股票持倉可以分開輸入，也可以一次混合描述。
+                  只要輸入這次要更新的一筆餘額或持倉，其他既有資料會自動保留。
                 </p>
               </div>
               <div className="mt-6 flex items-center gap-2 rounded-xl bg-white/[.07] px-3 py-2.5 text-xs">
@@ -324,20 +324,20 @@ export function SnapshotEditor({
             </div>
             <div className="bg-[#f8faf7] p-6 text-[#17251d]">
               <label className="text-xs font-bold uppercase tracking-[.12em] text-[#637168]">
-                目前資產狀態
+                這次要更新的資料
               </label>
               <textarea
                 value={rawInput}
                 onChange={(e) => setRawInput(e.target.value)}
                 rows={5}
-                placeholder="例如：永豐銀行餘額 30,652 元；富邦證券有 0050 共 3,000 股，平均成本 126.4 元。"
+                placeholder="例如：永豐銀行日幣 60,000"
                 className="mt-3 w-full resize-y rounded-2xl border border-[#d5ded7] bg-white px-4 py-3.5 text-[15px] leading-7 outline-none transition focus:border-[#4d8067] focus:ring-4 focus:ring-[#397456]/10"
               />
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  "永豐銀行餘額為 30,652 元",
+                  "永豐銀行 30,652",
+                  "永豐銀行日幣 60,000",
                   "富邦證券 0050 有 3,000 股，平均成本 126.4",
-                  "國泰證券 AAPL 有 18 股，平均成本 178.5 美元",
                 ].map((example) => (
                   <button
                     key={example}
@@ -421,7 +421,7 @@ export function SnapshotEditor({
               帳戶、餘額與持倉
             </h3>
             <p className="mt-1 text-xs text-[#718078]">
-              所有欄位都可以修改；行情與匯率不會採用模型猜測值。
+              下方是與既有資料合併後的完整狀態；所有欄位都可以修改，行情與匯率不會採用模型猜測值。
             </p>
           </div>
           <button disabled={!!busy} onClick={quotes} className="secondary">
@@ -814,7 +814,7 @@ export function SnapshotEditor({
             ) : (
               <>
                 <CheckCircle2 size={15} />
-                保存這份快照
+                保存這筆紀錄
               </>
             )}
           </button>

@@ -102,7 +102,7 @@ function Modal({
   );
 }
 
-function SnapshotEditor({
+export function SnapshotEditor({
   latest,
   onClose,
   onSaved,
@@ -824,7 +824,7 @@ function SnapshotEditor({
   );
 }
 
-function SaleDialog({
+export function SaleDialog({
   position,
   onClose,
   onSaved,
@@ -918,7 +918,7 @@ function SaleDialog({
   );
 }
 
-function SoldHistoryDialog({
+export function SoldHistoryDialog({
   sale,
   trend,
   onClose,

@@ -1,20 +1,47 @@
-import { describe, expect, it } from 'vitest';
-import { calculatePosition, toTaiwanShares } from '@/lib/finance';
-import { classifyUnsupportedInput } from '@/lib/parser';
+import { describe, expect, it } from "vitest";
+import { calculatePosition, toTaiwanShares } from "@/lib/finance";
+import { classifyUnsupportedInput, extractCashBalances } from "@/lib/parser";
 
-describe('財務計算', () => {
-  it('用 Decimal 計算持倉與匯率', () => {
-    expect(calculatePosition('10', '100.1', '120.2', '32')).toEqual({
-      costValueQuote: '1001', marketValueQuote: '1202', costValueTwd: '32032',
-      marketValueTwd: '38464', unrealizedPnlTwd: '6432', unrealizedReturnPct: '20.07992',
+describe("財務計算", () => {
+  it("用 Decimal 計算持倉與匯率", () => {
+    expect(calculatePosition("10", "100.1", "120.2", "32")).toEqual({
+      costValueQuote: "1001",
+      marketValueQuote: "1202",
+      costValueTwd: "32032",
+      marketValueTwd: "38464",
+      unrealizedPnlTwd: "6432",
+      unrealizedReturnPct: "20.07992",
     });
   });
 
-  it('臺股一張換算成 1000 股', () => expect(toTaiwanShares('2.5', 'lot')).toBe('2500'));
+  it("臺股一張換算成 1000 股", () =>
+    expect(toTaiwanShares("2.5", "lot")).toBe("2500"));
 
-  it('拒絕部分賣出與買入推算', () => {
-    expect(classifyUnsupportedInput('0050 賣出 1000 股')).toContain('剩餘數量');
-    expect(classifyUnsupportedInput('今天加碼 AAPL 10 股')).toContain('持有數量');
-    expect(classifyUnsupportedInput('0050 已全部賣出')).toBeNull();
+  it("拒絕部分賣出與買入推算", () => {
+    expect(classifyUnsupportedInput("0050 賣出 1000 股")).toContain("剩餘數量");
+    expect(classifyUnsupportedInput("今天加碼 AAPL 10 股")).toContain(
+      "持有數量",
+    );
+    expect(classifyUnsupportedInput("0050 已全部賣出")).toBeNull();
+  });
+
+  it("可辨識純銀行餘額，且不要求持倉資料", () => {
+    expect(extractCashBalances("永豐銀行餘額為30652元")).toEqual([
+      {
+        accountName: "永豐銀行",
+        institution: "永豐",
+        accountType: "bank",
+        currency: "TWD",
+        balance: "30652",
+      },
+    ]);
+  });
+
+  it("可從混合敘述補出銀行餘額", () => {
+    expect(
+      extractCashBalances(
+        "永豐銀行目前餘額 30,652 元，富邦證券現金為 120000 元",
+      ),
+    ).toHaveLength(2);
   });
 });

@@ -12,11 +12,17 @@ import {
 } from "recharts";
 import {
   Archive,
+  Banknote,
+  Bot,
   Building2,
+  CheckCircle2,
   Download,
   Landmark,
+  LoaderCircle,
   Plus,
   RefreshCw,
+  Sparkles,
+  TrendingUp,
   Upload,
   WalletCards,
   X,
@@ -84,11 +90,11 @@ function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[#0c1f18]/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center bg-[#07140f]/70 p-4 backdrop-blur-md"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
-        className={`max-h-[92vh] w-full overflow-y-auto rounded-3xl bg-[#f8faf7] shadow-2xl ${wide ? "max-w-5xl" : "max-w-lg"}`}
+        className={`max-h-[94vh] w-full overflow-y-auto rounded-[28px] bg-[#f5f7f4] shadow-[0_28px_90px_rgba(4,20,13,.35)] ${wide ? "max-w-6xl" : "max-w-lg"}`}
       >
         {children}
       </div>
@@ -119,9 +125,39 @@ function SnapshotEditor({
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [modelStatus, setModelStatus] = useState<{
+    available: boolean;
+    modelLoaded: boolean;
+    modelInstalled: boolean;
+  } | null>(null);
   const needsManualPrice = accounts.some((account) =>
-    account.positions.some((position) => Boolean(position.quoteNote?.includes("行情"))),
+    account.positions.some((position) =>
+      Boolean(position.quoteNote?.includes("行情")),
+    ),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    request<{
+      available: boolean;
+      modelLoaded: boolean;
+      modelInstalled: boolean;
+    }>("/api/model-status")
+      .then((status) => {
+        if (!cancelled) setModelStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setModelStatus({
+            available: false,
+            modelLoaded: false,
+            modelInstalled: false,
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const updateAccount = (index: number, patch: Partial<AccountStateInput>) =>
     setAccounts((items) =>
@@ -145,6 +181,9 @@ function SnapshotEditor({
       setSales(proposal.sales);
       setWarnings(proposal.warnings);
       setUnsupported(proposal.unsupportedReason);
+      setModelStatus((status) =>
+        status ? { ...status, modelLoaded: true } : status,
+      );
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -225,39 +264,117 @@ function SnapshotEditor({
 
   return (
     <Modal onClose={onClose} wide>
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#e0e7e1] bg-[#f8faf7]/95 px-7 py-5 backdrop-blur">
-        <div>
-          <h2 className="text-xl font-semibold">新增資產快照</h2>
-          <p className="mt-1 text-xs text-[#6f7d74]">
-            解析結果必須在這裡確認或修改後才會保存
-          </p>
+      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#dce3dd] bg-white/95 px-8 py-5 backdrop-blur-xl max-sm:px-5">
+        <div className="flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#153f2f] text-[#d8f77f] shadow-sm">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-semibold tracking-[-.02em]">
+                建立資產快照
+              </h2>
+              <span className="rounded-full bg-[#e8f1e9] px-2 py-1 text-[10px] font-bold tracking-wide text-[#2b674c]">
+                本機處理
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[#718078]">
+              先描述目前狀態，再確認解析結果
+            </p>
+          </div>
         </div>
-        <button aria-label="關閉" onClick={onClose}>
-          <X />
+        <button
+          className="grid h-10 w-10 place-items-center rounded-full border border-[#dce3dd] bg-white text-[#657269]"
+          aria-label="關閉"
+          onClick={onClose}
+        >
+          <X size={18} />
         </button>
       </div>
-      <div className="space-y-6 p-7">
-        <section className="rounded-2xl border border-[#dce4dd] bg-white p-5">
-          <label className="text-sm font-semibold">自然語言輸入</label>
-          <textarea
-            value={rawInput}
-            onChange={(e) => setRawInput(e.target.value)}
-            rows={4}
-            placeholder="例如：富邦證券現金 120000，0050 目前 3000 股，平均成本 126.4"
-            className="field mt-3 w-full resize-y"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              disabled={!rawInput.trim() || !!busy}
-              onClick={parse}
-              className="primary"
-            >
-              {busy === "parse" ? "本機解析中…" : "用 gemma4:26b 解析"}
-            </button>
-            <button disabled={!!busy} onClick={quotes} className="secondary">
-              <RefreshCw size={14} />
-              {busy === "quotes" ? "更新中…" : "更新行情與匯率"}
-            </button>
+      <div className="space-y-6 p-7 max-sm:p-4">
+        <section className="overflow-hidden rounded-[24px] bg-[#10291f] text-white shadow-[0_18px_50px_rgba(16,41,31,.15)]">
+          <div className="grid grid-cols-[300px_minmax(0,1fr)] max-lg:grid-cols-1">
+            <div className="flex flex-col justify-between border-r border-white/10 p-6 max-lg:border-b max-lg:border-r-0">
+              <div>
+                <div className="flex items-center gap-2 text-[#d7f47f]">
+                  <Bot size={18} />
+                  <span className="text-xs font-bold tracking-[.12em]">
+                    自然語言整理
+                  </span>
+                </div>
+                <h3 className="mt-4 text-2xl font-semibold leading-tight tracking-[-.03em]">
+                  說明你現在擁有什麼
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-white/58">
+                  銀行餘額、股票持倉可以分開輸入，也可以一次混合描述。
+                </p>
+              </div>
+              <div className="mt-6 flex items-center gap-2 rounded-xl bg-white/[.07] px-3 py-2.5 text-xs">
+                <span
+                  className={`h-2 w-2 rounded-full ${modelStatus?.modelLoaded ? "bg-[#c8f16b]" : modelStatus?.available ? "bg-[#f1c66b]" : "bg-[#e77b70]"}`}
+                />
+                {!modelStatus
+                  ? "正在檢查本機模型…"
+                  : modelStatus.modelLoaded
+                    ? "gemma4:26b 已載入"
+                    : modelStatus.available
+                      ? "模型待命中，首次解析需要較久"
+                      : "模型不可用，可改用右側手動表單"}
+              </div>
+            </div>
+            <div className="bg-[#f8faf7] p-6 text-[#17251d]">
+              <label className="text-xs font-bold uppercase tracking-[.12em] text-[#637168]">
+                目前資產狀態
+              </label>
+              <textarea
+                value={rawInput}
+                onChange={(e) => setRawInput(e.target.value)}
+                rows={5}
+                placeholder="例如：永豐銀行餘額 30,652 元；富邦證券有 0050 共 3,000 股，平均成本 126.4 元。"
+                className="mt-3 w-full resize-y rounded-2xl border border-[#d5ded7] bg-white px-4 py-3.5 text-[15px] leading-7 outline-none transition focus:border-[#4d8067] focus:ring-4 focus:ring-[#397456]/10"
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  "永豐銀行餘額為 30,652 元",
+                  "富邦證券 0050 有 3,000 股，平均成本 126.4",
+                  "國泰證券 AAPL 有 18 股，平均成本 178.5 美元",
+                ].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => setRawInput(example)}
+                    className="rounded-full border border-[#d8e0da] bg-white px-3 py-1.5 text-[11px] text-[#536159] hover:border-[#85a18f]"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  disabled={
+                    !rawInput.trim() ||
+                    !!busy ||
+                    modelStatus?.available === false
+                  }
+                  onClick={parse}
+                  className="primary min-w-48"
+                >
+                  {busy === "parse" ? (
+                    <LoaderCircle className="animate-spin" size={16} />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                  {busy === "parse"
+                    ? modelStatus?.modelLoaded
+                      ? "正在理解資產資料…"
+                      : "正在載入模型並解析…"
+                    : "整理成確認表"}
+                </button>
+                <p className="text-[11px] leading-5 text-[#78857d]">
+                  只有按下最下方「保存快照」才會寫入資料庫
+                </p>
+              </div>
+            </div>
           </div>
         </section>
         {unsupported && (
@@ -295,230 +412,203 @@ function SnapshotEditor({
             ))}
           </section>
         )}
+        <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#3a7658]">
+              確認資料
+            </p>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-.02em]">
+              帳戶、餘額與持倉
+            </h3>
+            <p className="mt-1 text-xs text-[#718078]">
+              所有欄位都可以修改；行情與匯率不會採用模型猜測值。
+            </p>
+          </div>
+          <button disabled={!!busy} onClick={quotes} className="secondary">
+            <RefreshCw
+              className={busy === "quotes" ? "animate-spin" : ""}
+              size={14}
+            />
+            {busy === "quotes" ? "取得行情中…" : "更新行情與匯率"}
+          </button>
+        </div>
         <div className="space-y-4">
           {accounts.map((account, accountIndex) => (
             <section
               key={account.accountId ?? accountIndex}
-              className="rounded-2xl border border-[#dce4dd] bg-white p-5"
+              className="overflow-hidden rounded-[22px] border border-[#dce4dd] bg-white shadow-[0_8px_28px_rgba(31,60,45,.05)]"
             >
-              <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
-                <label>
-                  帳戶名稱
-                  <input
-                    className="field"
-                    value={account.name}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, { name: e.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  機構
-                  <input
-                    className="field"
-                    value={account.institution ?? ""}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, {
-                        institution: e.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  類型
-                  <select
-                    className="field"
-                    value={account.accountType}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, {
-                        accountType: e.target
-                          .value as AccountStateInput["accountType"],
-                      })
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e7ece8] bg-[#f8faf7] px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#e5f0e7] text-[#2c6a4d]">
+                    {account.accountType === "bank" ? (
+                      <Banknote size={18} />
+                    ) : (
+                      <TrendingUp size={18} />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-semibold">
+                      {account.name || `帳戶 ${accountIndex + 1}`}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[#7a877f]">
+                      {account.cashBalances.length} 筆餘額・
+                      {account.positions.length} 筆持倉
+                    </p>
+                  </div>
+                </div>
+                {accounts.length > 1 && (
+                  <button
+                    type="button"
+                    className="link danger-text"
+                    onClick={() =>
+                      setAccounts((items) =>
+                        items.filter((_, index) => index !== accountIndex),
+                      )
                     }
                   >
-                    <option value="bank">銀行</option>
-                    <option value="brokerage">券商</option>
-                    <option value="cash">現金</option>
-                  </select>
-                </label>
-                <label>
-                  預設幣別
-                  <input
-                    className="field"
-                    value={account.defaultCurrency}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, {
-                        defaultCurrency: e.target.value.toUpperCase(),
-                      })
-                    }
-                  />
-                </label>
+                    移除帳戶
+                  </button>
+                )}
               </div>
-              <h4 className="mt-5 text-xs font-semibold uppercase tracking-wider text-[#738078]">
-                現金餘額
-              </h4>
-              {account.cashBalances.map((balance, index) => (
-                <div
-                  key={index}
-                  className="mt-2 grid grid-cols-[120px_1fr_1fr_42px] gap-2 max-md:grid-cols-2"
-                >
-                  <input
-                    className="field"
-                    value={balance.currency}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, {
-                        cashBalances: account.cashBalances.map((item, i) =>
-                          i === index
-                            ? {
-                                ...item,
-                                currency: e.target.value.toUpperCase(),
-                              }
-                            : item,
-                        ),
-                      })
-                    }
-                  />
-                  <input
-                    className="field"
-                    inputMode="decimal"
-                    value={balance.amount}
-                    onChange={(e) =>
-                      updateAccount(accountIndex, {
-                        cashBalances: account.cashBalances.map((item, i) =>
-                          i === index
-                            ? { ...item, amount: e.target.value }
-                            : item,
-                        ),
-                      })
-                    }
-                  />
-                  {balance.currency !== "TWD" ? (
+              <div className="p-5">
+                <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
+                  <label>
+                    帳戶名稱
                     <input
-                      aria-label={`${balance.currency} 對 TWD 匯率`}
-                      placeholder={`${balance.currency}/TWD 匯率`}
                       className="field"
-                      inputMode="decimal"
-                      value={balance.fxRate?.rate ?? ""}
+                      value={account.name}
+                      onChange={(e) =>
+                        updateAccount(accountIndex, { name: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    機構
+                    <input
+                      className="field"
+                      value={account.institution ?? ""}
                       onChange={(e) =>
                         updateAccount(accountIndex, {
-                          cashBalances: account.cashBalances.map((item, i) =>
-                            i === index
-                              ? {
-                                  ...item,
-                                  fxRate: manualFx(
-                                    item.currency,
-                                    e.target.value,
-                                  ),
-                                }
-                              : item,
-                          ),
+                          institution: e.target.value || null,
                         })
                       }
                     />
-                  ) : (
-                    <span />
-                  )}
-                  <button
-                    aria-label="移除現金"
-                    onClick={() =>
-                      updateAccount(accountIndex, {
-                        cashBalances: account.cashBalances.filter(
-                          (_, i) => i !== index,
-                        ),
-                      })
-                    }
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-              ))}
-              <button
-                className="link mt-2"
-                onClick={() =>
-                  updateAccount(accountIndex, {
-                    cashBalances: [
-                      ...account.cashBalances,
-                      { currency: account.defaultCurrency, amount: "0" },
-                    ],
-                  })
-                }
-              >
-                ＋ 新增幣別
-              </button>
-              <h4 className="mt-5 text-xs font-semibold uppercase tracking-wider text-[#738078]">
-                持倉
-              </h4>
-              <div className="mt-2 space-y-2">
-                {account.positions.map((position, index) => (
-                  <div
-                    key={position.positionId ?? `${position.symbol}-${index}`}
-                    className="grid grid-cols-[95px_110px_minmax(130px,1fr)_110px_110px_110px_42px] gap-2 max-xl:grid-cols-2"
-                  >
+                  </label>
+                  <label>
+                    類型
                     <select
                       className="field"
-                      value={position.market}
+                      value={account.accountType}
                       onChange={(e) =>
                         updateAccount(accountIndex, {
-                          positions: account.positions.map((item, i) =>
-                            i === index
-                              ? {
-                                  ...item,
-                                  market: e.target
-                                    .value as PositionView["market"],
-                                  quoteCurrency:
-                                    e.target.value === "US" ? "USD" : "TWD",
-                                }
-                              : item,
-                          ),
+                          accountType: e.target
+                            .value as AccountStateInput["accountType"],
                         })
                       }
                     >
-                      <option>TWSE</option>
-                      <option>TPEX</option>
-                      <option>US</option>
+                      <option value="bank">銀行</option>
+                      <option value="brokerage">券商</option>
+                      <option value="cash">現金</option>
                     </select>
-                    {[
-                      ["代碼", "symbol"],
-                      ["名稱", "name"],
-                      ["數量", "quantity"],
-                      ["平均成本", "averageCost"],
-                      ["市價", "marketPrice"],
-                    ].map(([placeholder, key]) => (
+                  </label>
+                  <label>
+                    預設幣別
+                    <input
+                      className="field"
+                      value={account.defaultCurrency}
+                      onChange={(e) =>
+                        updateAccount(accountIndex, {
+                          defaultCurrency: e.target.value.toUpperCase(),
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="mt-6 flex items-center gap-2">
+                  <Banknote size={15} className="text-[#3c7659]" />
+                  <h4 className="text-xs font-bold uppercase tracking-[.12em] text-[#536158]">
+                    現金餘額
+                  </h4>
+                </div>
+                {account.cashBalances.map((balance, index) => (
+                  <div
+                    key={index}
+                    className="mt-3 grid grid-cols-[120px_1fr_1fr_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-md:grid-cols-2"
+                  >
+                    <label>
+                      幣別
                       <input
-                        key={key}
-                        aria-label={placeholder}
-                        placeholder={placeholder}
                         className="field"
-                        value={String(
-                          position[key as keyof typeof position] ?? "",
-                        )}
+                        value={balance.currency}
                         onChange={(e) =>
                           updateAccount(accountIndex, {
-                            positions: account.positions.map((item, i) =>
+                            cashBalances: account.cashBalances.map((item, i) =>
                               i === index
                                 ? {
                                     ...item,
-                                    [key]: e.target.value,
-                                    ...(key === "marketPrice"
-                                      ? {
-                                          quoteNote: null,
-                                          quoteStatus: "manual" as const,
-                                          quoteSource: "MANUAL" as const,
-                                          quoteAsOf: new Date().toISOString(),
-                                        }
-                                      : {}),
+                                    currency: e.target.value.toUpperCase(),
                                   }
                                 : item,
                             ),
                           })
                         }
                       />
-                    ))}
+                    </label>
+                    <label>
+                      餘額
+                      <input
+                        className="field"
+                        inputMode="decimal"
+                        value={balance.amount}
+                        onChange={(e) =>
+                          updateAccount(accountIndex, {
+                            cashBalances: account.cashBalances.map((item, i) =>
+                              i === index
+                                ? { ...item, amount: e.target.value }
+                                : item,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    {balance.currency !== "TWD" ? (
+                      <label>
+                        換算匯率
+                        <input
+                          aria-label={`${balance.currency} 對 TWD 匯率`}
+                          placeholder={`${balance.currency}/TWD`}
+                          className="field"
+                          inputMode="decimal"
+                          value={balance.fxRate?.rate ?? ""}
+                          onChange={(e) =>
+                            updateAccount(accountIndex, {
+                              cashBalances: account.cashBalances.map(
+                                (item, i) =>
+                                  i === index
+                                    ? {
+                                        ...item,
+                                        fxRate: manualFx(
+                                          item.currency,
+                                          e.target.value,
+                                        ),
+                                      }
+                                    : item,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    ) : (
+                      <div className="rounded-lg bg-[#edf3ee] px-3 py-2.5 text-xs text-[#66736b]">
+                        基準幣別，不需匯率
+                      </div>
+                    )}
                     <button
-                      aria-label="移除持倉"
+                      aria-label="移除現金"
                       onClick={() =>
                         updateAccount(accountIndex, {
-                          positions: account.positions.filter(
+                          cashBalances: account.cashBalances.filter(
                             (_, i) => i !== index,
                           ),
                         })
@@ -526,75 +616,181 @@ function SnapshotEditor({
                     >
                       <X size={17} />
                     </button>
-                    <p className="col-span-full text-[11px] text-[#7b887f]">
-                      行情：{position.quoteStatus}・
-                      {position.quoteAsOf.slice(0, 10)}
-                      {position.quoteNote ? `・${position.quoteNote}` : ""}
-                    </p>
-                    {position.quoteCurrency !== "TWD" && (
-                      <label className="col-span-full max-w-xs">
-                        {position.quoteCurrency}/TWD 匯率
-                        <input
+                  </div>
+                ))}
+                <button
+                  className="link mt-2"
+                  onClick={() =>
+                    updateAccount(accountIndex, {
+                      cashBalances: [
+                        ...account.cashBalances,
+                        { currency: account.defaultCurrency, amount: "0" },
+                      ],
+                    })
+                  }
+                >
+                  ＋ 新增幣別
+                </button>
+                <div className="mt-6 flex items-center gap-2">
+                  <TrendingUp size={15} className="text-[#3c7659]" />
+                  <h4 className="text-xs font-bold uppercase tracking-[.12em] text-[#536158]">
+                    股票與 ETF
+                  </h4>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {account.positions.map((position, index) => (
+                    <div
+                      key={position.positionId ?? `${position.symbol}-${index}`}
+                      className="grid grid-cols-[95px_110px_minmax(130px,1fr)_110px_110px_110px_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-xl:grid-cols-2"
+                    >
+                      <label>
+                        市場
+                        <select
                           className="field"
-                          inputMode="decimal"
-                          value={position.fxRate?.rate ?? ""}
+                          value={position.market}
                           onChange={(e) =>
                             updateAccount(accountIndex, {
                               positions: account.positions.map((item, i) =>
                                 i === index
                                   ? {
                                       ...item,
-                                      fxRate: manualFx(
-                                        item.quoteCurrency,
-                                        e.target.value,
-                                      ),
+                                      market: e.target
+                                        .value as PositionView["market"],
+                                      quoteCurrency:
+                                        e.target.value === "US" ? "USD" : "TWD",
                                     }
                                   : item,
                               ),
                             })
                           }
-                        />
+                        >
+                          <option>TWSE</option>
+                          <option>TPEX</option>
+                          <option>US</option>
+                        </select>
                       </label>
-                    )}
-                  </div>
-                ))}
+                      {[
+                        ["代碼", "symbol"],
+                        ["名稱", "name"],
+                        ["數量", "quantity"],
+                        ["平均成本", "averageCost"],
+                        ["市價", "marketPrice"],
+                      ].map(([placeholder, key]) => (
+                        <label key={key}>
+                          {placeholder}
+                          <input
+                            aria-label={placeholder}
+                            placeholder={placeholder}
+                            className="field"
+                            value={String(
+                              position[key as keyof typeof position] ?? "",
+                            )}
+                            onChange={(e) =>
+                              updateAccount(accountIndex, {
+                                positions: account.positions.map((item, i) =>
+                                  i === index
+                                    ? {
+                                        ...item,
+                                        [key]: e.target.value,
+                                        ...(key === "marketPrice"
+                                          ? {
+                                              quoteNote: null,
+                                              quoteStatus: "manual" as const,
+                                              quoteSource: "MANUAL" as const,
+                                              quoteAsOf:
+                                                new Date().toISOString(),
+                                            }
+                                          : {}),
+                                      }
+                                    : item,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                      <button
+                        aria-label="移除持倉"
+                        onClick={() =>
+                          updateAccount(accountIndex, {
+                            positions: account.positions.filter(
+                              (_, i) => i !== index,
+                            ),
+                          })
+                        }
+                      >
+                        <X size={17} />
+                      </button>
+                      <p className="col-span-full text-[11px] text-[#7b887f]">
+                        行情：{position.quoteStatus}・
+                        {position.quoteAsOf.slice(0, 10)}
+                        {position.quoteNote ? `・${position.quoteNote}` : ""}
+                      </p>
+                      {position.quoteCurrency !== "TWD" && (
+                        <label className="col-span-full max-w-xs">
+                          {position.quoteCurrency}/TWD 匯率
+                          <input
+                            className="field"
+                            inputMode="decimal"
+                            value={position.fxRate?.rate ?? ""}
+                            onChange={(e) =>
+                              updateAccount(accountIndex, {
+                                positions: account.positions.map((item, i) =>
+                                  i === index
+                                    ? {
+                                        ...item,
+                                        fxRate: manualFx(
+                                          item.quoteCurrency,
+                                          e.target.value,
+                                        ),
+                                      }
+                                    : item,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="link mt-2"
+                  onClick={() =>
+                    updateAccount(accountIndex, {
+                      positions: [
+                        ...account.positions,
+                        {
+                          market: "TWSE",
+                          symbol: "",
+                          name: "",
+                          securityType: "stock",
+                          quoteCurrency: "TWD",
+                          quantity: "1",
+                          averageCost: "0",
+                          marketPrice: "1",
+                          quoteAsOf: new Date().toISOString(),
+                          quoteSource: "MANUAL",
+                          quoteStatus: "manual",
+                        },
+                      ],
+                    })
+                  }
+                >
+                  ＋ 新增持倉
+                </button>
               </div>
-              <button
-                className="link mt-2"
-                onClick={() =>
-                  updateAccount(accountIndex, {
-                    positions: [
-                      ...account.positions,
-                      {
-                        market: "TWSE",
-                        symbol: "",
-                        name: "",
-                        securityType: "stock",
-                        quoteCurrency: "TWD",
-                        quantity: "1",
-                        averageCost: "0",
-                        marketPrice: "1",
-                        quoteAsOf: new Date().toISOString(),
-                        quoteSource: "MANUAL",
-                        quoteStatus: "manual",
-                      },
-                    ],
-                  })
-                }
-              >
-                ＋ 新增持倉
-              </button>
             </section>
           ))}
         </div>
         <button
-          className="secondary"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#b9c8bd] bg-white/60 px-4 py-4 text-sm font-semibold text-[#35684f]"
           onClick={() => setAccounts((items) => [...items, emptyAccount()])}
         >
           <Plus size={14} />
           新增帳戶
         </button>
-        <div className="flex justify-end gap-3 border-t border-[#dce4dd] pt-5">
+        <div className="sticky bottom-0 z-10 -mx-7 -mb-7 flex flex-wrap justify-end gap-3 border-t border-[#dce4dd] bg-white/95 px-7 py-5 shadow-[0_-12px_30px_rgba(22,45,32,.06)] backdrop-blur-xl max-sm:-mx-4 max-sm:-mb-4 max-sm:px-4">
           {needsManualPrice && (
             <p className="mr-auto self-center text-xs text-[#9a5148]">
               請先更新行情，或手動確認每筆待補市價。
@@ -604,13 +800,23 @@ function SnapshotEditor({
             取消
           </button>
           <button
-            className="primary"
+            className="primary min-w-40"
             disabled={
               !!busy || !!unsupported || sales.length > 0 || needsManualPrice
             }
             onClick={save}
           >
-            {busy === "save" ? "儲存中…" : "確認並保存快照"}
+            {busy === "save" ? (
+              <>
+                <LoaderCircle className="animate-spin" size={15} />
+                儲存中…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={15} />
+                保存這份快照
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -740,9 +946,7 @@ function SoldHistoryDialog({
       <div className="p-7">
         <div className="flex justify-between">
           <div>
-            <h2 className="text-xl font-semibold">
-              {sale.symbol} 持倉歷史
-            </h2>
+            <h2 className="text-xl font-semibold">{sale.symbol} 持倉歷史</h2>
             <p className="mt-1 text-sm text-[#68776e]">
               {sale.accountName}・已於
               {new Date(sale.soldAt).toLocaleDateString("zh-TW")}全部賣出

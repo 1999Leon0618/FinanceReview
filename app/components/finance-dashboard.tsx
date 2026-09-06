@@ -306,8 +306,17 @@ function loanBelongsToAccount(
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
-  const body = response.status === 204 ? null : await response.json();
-  if (!response.ok) throw new Error(body?.error ?? "操作失敗");
+  const body =
+    response.status === 204
+      ? null
+      : ((await response.json()) as { error?: string } | T);
+  if (!response.ok) {
+    const message =
+      body && typeof body === "object" && "error" in body
+        ? String(body.error)
+        : "操作失敗";
+    throw new Error(message);
+  }
   return body as T;
 }
 

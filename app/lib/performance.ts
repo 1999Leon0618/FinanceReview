@@ -41,14 +41,14 @@ function rangeStart(range: PerformanceReport["range"]) {
   return start.toISOString();
 }
 
-export function loadPerformanceInputs(
+export async function loadPerformanceInputs(
   range: PerformanceReport["range"],
-): PerformanceInput[] {
-  const db = getDatabase();
+): Promise<PerformanceInput[]> {
+  const db = await getDatabase();
   const since = rangeStart(range);
   const where = since ? "WHERE snapshot.captured_at >= ?" : "";
   const parameters = since ? [since] : [];
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT snapshot.captured_at, snapshot.total_asset_value_twd,
       snapshot.id,
@@ -59,7 +59,7 @@ export function loadPerformanceInputs(
       ORDER BY snapshot.captured_at`,
     )
     .all(...parameters) as Row[];
-  const flowRows = db
+  const flowRows = await db
     .prepare(
       `SELECT flow.snapshot_id, flow.flow_type, flow.amount_twd
       FROM snapshot_cash_flows flow
@@ -260,7 +260,7 @@ export async function getPerformanceReport(
   range: PerformanceReport["range"],
   benchmarkId: BenchmarkId,
 ): Promise<PerformanceReport> {
-  const inputs = loadPerformanceInputs(range);
+  const inputs = await loadPerformanceInputs(range);
   const portfolio = calculatePortfolioPerformance(inputs);
   const definition = benchmarkDefinitions[benchmarkId];
   let benchmarkError: string | null = null;

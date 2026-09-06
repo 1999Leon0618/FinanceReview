@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 export async function POST() {
   try {
-    const latest = getLatestSnapshot();
+    const latest = await getLatestSnapshot();
     if (!latest) throw new Error("找不到可更新的最新快照");
     return NextResponse.json(await prepareQuoteRefresh(latest));
   } catch (error) {
@@ -19,11 +19,11 @@ export async function POST() {
 export async function PUT(request: NextRequest) {
   try {
     const payload = snapshotCreateSchema.parse(await request.json());
-    const latest = getLatestSnapshot();
+    const latest = await getLatestSnapshot();
     if (!latest || payload.baseSnapshotId !== latest.id) {
       throw new Error("最新快照已變更，請重新取得行情");
     }
-    return NextResponse.json(createSnapshot(payload), { status: 201 });
+    return NextResponse.json(await createSnapshot(payload), { status: 201 });
   } catch (error) {
     return apiError(error);
   }

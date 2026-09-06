@@ -360,8 +360,9 @@ export function yahooProviderSymbol(symbol: string, providerSymbol?: string) {
   return normalizedSymbol.replaceAll(".", "-");
 }
 
-function saveQuote(market: Market, symbol: string, quote: Quote) {
-  getDatabase()
+async function saveQuote(market: Market, symbol: string, quote: Quote) {
+  const db = await getDatabase();
+  await db
     .prepare(
       `INSERT OR IGNORE INTO quote_cache(
     id, market, symbol, price, currency, quote_as_of, source, fetched_at
@@ -379,9 +380,9 @@ function saveQuote(market: Market, symbol: string, quote: Quote) {
     );
 }
 
-function lastQuote(market: Market, symbol: string): Quote | null {
-  const db = getDatabase();
-  const row = db
+async function lastQuote(market: Market, symbol: string): Promise<Quote | null> {
+  const db = await getDatabase();
+  const row = await db
     .prepare(
       `SELECT price, currency, quote_as_of, source FROM quote_cache
     WHERE market = ? AND symbol = ? ORDER BY quote_as_of DESC, fetched_at DESC LIMIT 1`,
@@ -394,7 +395,7 @@ function lastQuote(market: Market, symbol: string): Quote | null {
       quoteAsOf: String(row.quote_as_of),
       source: String(row.source) as QuoteSource,
     };
-  const snapshot = db
+  const snapshot = await db
     .prepare(
       `SELECT sp.market_price AS price, sp.quote_currency AS currency,
     sp.quote_as_of, sp.quote_source AS source FROM snapshot_positions sp
@@ -413,6 +414,42 @@ function lastQuote(market: Market, symbol: string): Quote | null {
     : null;
 }
 
+// 僅取得公開行情；快取與持倉備援仍由 resolveQuote 負責。
+// 將網路存取與資料庫分開，讓 Workers 相容性可獨立驗證。
+export async function fetchMarketQuote(
+  market: Market,
+  symbol: string,
+  options?: { name?: string; providerSymbol?: string },
+): Promise<Quote> {
+  const normalized = symbol.toUpperCase();
+  let quote: Quote;
+  if (market === "FUTURES") {
+    quote = await taifexFuturesQuote(normalized);
+  } else if (market === "FUND") {
+    try {
+      quote = await sitcaFundQuote(
+        symbol,
+        options?.name ?? symbol,
+        options?.providerSymbol,
+      );
+    } catch (sitcaError) {
+      if (sitcaError instanceof AmbiguousFundQuoteError) throw sitcaError;
+      const yahooSymbol = options?.providerSymbol?.trim();
+      if (!yahooSymbol || yahooSymbol === symbol) throw sitcaError;
+      quote = {
+        ...(await yahooQuote(yahooSymbol)),
+        note: `網路淨值・Yahoo Finance（${yahooSymbol}）`,
+      };
+    }
+  } else {
+    quote =
+      market === "US"
+        ? await yahooQuote(yahooProviderSymbol(symbol, options?.providerSymbol))
+        : await taiwanQuote(market, normalized);
+  }
+  return quote;
+}
+
 export async function resolveQuote(
   market: Market,
   symbol: string,
@@ -420,38 +457,12 @@ export async function resolveQuote(
 ): Promise<Quote & { status: "fresh" | "stale"; note: string | null }> {
   const normalized = symbol.toUpperCase();
   try {
-    let quote: Quote;
-    if (market === "FUTURES") {
-      quote = await taifexFuturesQuote(normalized);
-    } else if (market === "FUND") {
-      try {
-        quote = await sitcaFundQuote(
-          symbol,
-          options?.name ?? symbol,
-          options?.providerSymbol,
-        );
-      } catch (sitcaError) {
-        if (sitcaError instanceof AmbiguousFundQuoteError) throw sitcaError;
-        const yahooSymbol = options?.providerSymbol?.trim();
-        if (!yahooSymbol || yahooSymbol === symbol) throw sitcaError;
-        quote = {
-          ...(await yahooQuote(yahooSymbol)),
-          note: `網路淨值・Yahoo Finance（${yahooSymbol}）`,
-        };
-      }
-    } else {
-      quote =
-        market === "US"
-          ? await yahooQuote(
-              yahooProviderSymbol(symbol, options?.providerSymbol),
-            )
-          : await taiwanQuote(market, normalized);
-    }
-    saveQuote(market, normalized, quote);
+    const quote = await fetchMarketQuote(market, symbol, options);
+    await saveQuote(market, normalized, quote);
     return { ...quote, status: "fresh", note: quote.note ?? null };
   } catch (error) {
     if (error instanceof AmbiguousFundQuoteError) throw error;
-    const cached = lastQuote(market, normalized);
+    const cached = await lastQuote(market, normalized);
     if (!cached) throw error;
     return {
       ...cached,
@@ -468,7 +479,7 @@ export async function resolveFx(baseCurrency: string): Promise<FxRateInput> {
   const cacheSymbol = `${base}TWD=X`;
   try {
     const quote = await yahooQuote(cacheSymbol);
-    saveQuote(cacheMarket, cacheSymbol, quote);
+    await saveQuote(cacheMarket, cacheSymbol, quote);
     return {
       baseCurrency: base,
       quoteCurrency: "TWD",
@@ -479,7 +490,7 @@ export async function resolveFx(baseCurrency: string): Promise<FxRateInput> {
       overriddenByUser: false,
     };
   } catch (error) {
-    const cached = lastQuote(cacheMarket, cacheSymbol);
+    const cached = await lastQuote(cacheMarket, cacheSymbol);
     if (!cached) throw error;
     return {
       baseCurrency: base,

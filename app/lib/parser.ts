@@ -402,8 +402,8 @@ export function classifyUnsupportedInput(rawInput: string): string | null {
   return null;
 }
 
-function cloneLatest(): AccountStateInput[] {
-  const latest = getLatestSnapshot();
+async function cloneLatest(): Promise<AccountStateInput[]> {
+  const latest = await getLatestSnapshot();
   return (
     latest?.accounts.map((account) => ({
       accountId: account.accountId,
@@ -418,8 +418,8 @@ function cloneLatest(): AccountStateInput[] {
   );
 }
 
-function cloneLatestLoans(): LoanInput[] {
-  const latest = getLatestSnapshot();
+async function cloneLatestLoans(): Promise<LoanInput[]> {
+  const latest = await getLatestSnapshot();
   return (
     latest?.loans.map((loan) => ({
       loanId: loan.loanId,
@@ -456,13 +456,15 @@ function hasExplicitCashAmount(rawInput: string): boolean {
   return hasAmount && hasCashContext;
 }
 
-export function buildProposal(
+export async function buildProposal(
   rawInput: string,
   patch: ParserPatch,
-): SnapshotProposal {
-  const latest = getLatestSnapshot();
-  const accounts = cloneLatest();
-  const loans = cloneLatestLoans();
+): Promise<SnapshotProposal> {
+  const [latest, accounts, loans] = await Promise.all([
+    getLatestSnapshot(),
+    cloneLatest(),
+    cloneLatestLoans(),
+  ]);
   const relevantAccounts = new Set<AccountStateInput>();
   const relevantLoans = new Set<LoanInput>();
   const warnings = [...patch.warnings];

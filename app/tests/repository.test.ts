@@ -58,8 +58,8 @@ afterAll(() => {
 });
 
 describe("快照與全部賣出", () => {
-  it("伺服器重算總額", () => {
-    const snapshot = createSnapshot({
+  it("伺服器重算總額", async () => {
+    const snapshot = await createSnapshot({
       rawInput: "初始狀態",
       capturedAt: "2026-08-27T08:00:00.000Z",
       accounts: [baseAccount],
@@ -70,9 +70,9 @@ describe("快照與全部賣出", () => {
     expect(snapshot.unrealizedPnlTwd).toBe("150000");
   });
 
-  it("原子性結算賣出、調整現金、計算已實現損益並關閉持倉", () => {
-    const position = getLatestSnapshot()!.accounts[0].positions[0];
-    const result = sellPosition(position.positionId!, {
+  it("原子性結算賣出、調整現金、計算已實現損益並關閉持倉", async () => {
+    const position = (await getLatestSnapshot())!.accounts[0].positions[0];
+    const result = await sellPosition(position.positionId!, {
       soldAt: "2026-08-28T00:00:00.000Z",
       salePrice: "151",
       currency: "TWD",
@@ -85,7 +85,7 @@ describe("快照與全部賣出", () => {
     expect(result.totalSecuritiesTwd).toBe("0");
     expect(result.totalAssetValueTwd).toBe("552250");
     expect(result.accounts[0].positions).toHaveLength(0);
-    expect(listSales()).toMatchObject([
+    expect(await listSales()).toMatchObject([
       {
         positionId: position.positionId,
         quantity: "3000",
@@ -102,7 +102,7 @@ describe("快照與全部賣出", () => {
       netWorthChangeTwd: "2250",
       marketAndFxTwd: "3000",
     });
-    expect(() =>
+    await expect(
       sellPosition(position.positionId!, {
         soldAt: "2026-08-28T00:00:00.000Z",
         salePrice: "151",
@@ -111,13 +111,13 @@ describe("快照與全部賣出", () => {
         fee: "0",
         tax: "0",
       }),
-    ).toThrow("已售出");
+    ).rejects.toThrow("已售出");
   });
 
-  it("重新持有同一證券會建立新的持倉週期", () => {
-    const soldId = listSales()[0].positionId;
-    const previous = getLatestSnapshot()!;
-    const next = createSnapshot({
+  it("重新持有同一證券會建立新的持倉週期", async () => {
+    const soldId = (await listSales())[0].positionId;
+    const previous = (await getLatestSnapshot())!;
+    const next = await createSnapshot({
       rawInput: "重新持有",
       baseSnapshotId: previous.id,
       capturedAt: "2026-09-01T08:00:00.000Z",
@@ -136,11 +136,11 @@ describe("快照與全部賣出", () => {
       ],
     });
     expect(next.accounts[0].positions[0].positionId).not.toBe(soldId);
-    expect(listSales()).toHaveLength(1);
+    expect(await listSales()).toHaveLength(1);
   });
 
-  it("分次記錄同一帳戶時保留既有幣別", () => {
-    const first = createSnapshot({
+  it("分次記錄同一帳戶時保留既有幣別", async () => {
+    const first = await createSnapshot({
       rawInput: "永豐銀行30652",
       capturedAt: "2026-09-02T08:00:00.000Z",
       accounts: [
@@ -154,7 +154,7 @@ describe("快照與全部賣出", () => {
         },
       ],
     });
-    const proposal = buildProposal("永豐銀行日幣60000", {
+    const proposal = await buildProposal("永豐銀行日幣60000", {
       unsupportedReason: null,
       accountUpdates: [
         {
@@ -180,8 +180,8 @@ describe("快照與全部賣出", () => {
     expect(proposal.preservedAccounts).toHaveLength(0);
   });
 
-  it("確認表只回傳本次相關帳戶，完整快照仍保留其他帳戶", () => {
-    createSnapshot({
+  it("確認表只回傳本次相關帳戶，完整快照仍保留其他帳戶", async () => {
+    await createSnapshot({
       rawInput: "建立銀行與券商帳戶",
       capturedAt: "2026-09-03T08:00:00.000Z",
       accounts: [
@@ -197,7 +197,7 @@ describe("快照與全部賣出", () => {
       ],
     });
 
-    const proposal = buildProposal("永豐銀行 35000", {
+    const proposal = await buildProposal("永豐銀行 35000", {
       unsupportedReason: null,
       accountUpdates: [
         {
@@ -223,7 +223,7 @@ describe("快照與全部賣出", () => {
     ]);
   });
 
-  it("銀行與券商可包含投資品項，純現金帳戶不可包含", () => {
+  it("銀行與券商可包含投資品項，純現金帳戶不可包含", async () => {
     expect(() =>
       accountStateSchema.parse({ ...baseAccount, accountType: "bank" }),
     ).not.toThrow();
@@ -231,7 +231,7 @@ describe("快照與全部賣出", () => {
       accountStateSchema.parse({ ...baseAccount, accountType: "cash" }),
     ).toThrow(/現金帳戶只能記錄現金餘額/);
 
-    const fundSnapshot = createSnapshot({
+    const fundSnapshot = await createSnapshot({
       rawInput: "國泰世華銀行新增基金",
       capturedAt: "2026-09-04T08:00:00.000Z",
       accounts: [
@@ -266,7 +266,7 @@ describe("快照與全部賣出", () => {
       symbol: "FUND-001",
     });
 
-    const proposal = buildProposal("國泰世華銀行全球收益基金120單位", {
+    const proposal = await buildProposal("國泰世華銀行全球收益基金120單位", {
       unsupportedReason: null,
       accountUpdates: [],
       positionUpdates: [
@@ -292,8 +292,8 @@ describe("快照與全部賣出", () => {
     expect(proposal.warnings).toEqual([]);
   });
 
-  it("貸款未償本金會從資產總額扣除並保留快照明細", () => {
-    const snapshot = createSnapshot({
+  it("貸款未償本金會從資產總額扣除並保留快照明細", async () => {
+    const snapshot = await createSnapshot({
       rawInput: "國泰房貸剩餘30萬，利率2.1%，每月繳38000",
       capturedAt: "2026-09-04T12:00:00.000Z",
       accounts: [
@@ -344,7 +344,7 @@ describe("快照與全部賣出", () => {
       },
     ]);
 
-    const proposal = buildProposal("國泰房貸剩餘本金280000", {
+    const proposal = await buildProposal("國泰房貸剩餘本金280000", {
       unsupportedReason: null,
       accountUpdates: [],
       positionUpdates: [],
@@ -372,9 +372,9 @@ describe("快照與全部賣出", () => {
     ]);
   });
 
-  it("以資金流拆分外部投入與市場變動", () => {
-    const previous = getLatestSnapshot()!;
-    const snapshot = createSnapshot({
+  it("以資金流拆分外部投入與市場變動", async () => {
+    const previous = (await getLatestSnapshot())!;
+    const snapshot = await createSnapshot({
       rawInput: "投入資金",
       baseSnapshotId: previous.id,
       accounts: previous.accounts.map((account) => ({
@@ -405,8 +405,8 @@ describe("快照與全部賣出", () => {
     });
   });
 
-  it("JSON 備份包含賣出與資金流紀錄但不含行情快取", () => {
-    const backup = exportBackup();
+  it("JSON 備份包含賣出與資金流紀錄但不含行情快取", async () => {
+    const backup = await exportBackup();
     expect(backup.data.position_sales).toHaveLength(1);
     expect(backup.data.loans).toHaveLength(1);
     expect(backup.data.snapshot_loans.length).toBeGreaterThan(0);
@@ -414,13 +414,13 @@ describe("快照與全部賣出", () => {
     expect(backup.data).not.toHaveProperty("quote_cache");
   });
 
-  it("同一天的財務走勢只保留最後一筆快照", () => {
-    createSnapshot({
+  it("同一天的財務走勢只保留最後一筆快照", async () => {
+    await createSnapshot({
       rawInput: "上午更新",
       capturedAt: "2026-09-05T01:00:00.000Z",
       accounts: [baseAccount],
     });
-    createSnapshot({
+    await createSnapshot({
       rawInput: "下午更新",
       capturedAt: "2026-09-05T09:00:00.000Z",
       accounts: [
@@ -431,7 +431,7 @@ describe("快照與全部賣出", () => {
       ],
     });
 
-    const dashboard = getDashboard("all");
+    const dashboard = await getDashboard("all");
     const sameDay = dashboard.trend.filter(
       (item) => item.capturedAt.slice(0, 10) === "2026-09-05",
     );
@@ -444,8 +444,8 @@ describe("快照與全部賣出", () => {
     expect(dashboard.history[0].rawInput).toBe("下午更新");
   });
 
-  it("帳戶現金餘額固定將 TWD 排在第一筆", () => {
-    const snapshot = createSnapshot({
+  it("帳戶現金餘額固定將 TWD 排在第一筆", async () => {
+    const snapshot = await createSnapshot({
       rawInput: "測試多幣別排序",
       capturedAt: "2026-09-06T08:00:00.000Z",
       accounts: [
@@ -478,8 +478,8 @@ describe("快照與全部賣出", () => {
     ).toEqual(["TWD", "JPY"]);
   });
 
-  it("期貨只計算損益，不把契約名目價值加進總資產", () => {
-    const snapshot = createSnapshot({
+  it("期貨只計算損益，不把契約名目價值加進總資產", async () => {
+    const snapshot = await createSnapshot({
       rawInput: "元大期貨帳戶權益30萬，小型臺指期2026/09多單2口均價22150",
       capturedAt: "2026-09-07T08:00:00.000Z",
       accounts: [
@@ -526,8 +526,8 @@ describe("快照與全部賣出", () => {
     });
   });
 
-  it("Firstrade 名稱別名會沿用同一個帳戶識別", () => {
-    const first = createSnapshot({
+  it("Firstrade 名稱別名會沿用同一個帳戶識別", async () => {
+    const first = await createSnapshot({
       rawInput: "Firstrade 帳戶",
       capturedAt: "2026-09-08T08:00:00.000Z",
       accounts: [
@@ -541,7 +541,7 @@ describe("快照與全部賣出", () => {
         },
       ],
     });
-    const second = createSnapshot({
+    const second = await createSnapshot({
       rawInput: "FIRSTRADE證券 帳戶",
       baseSnapshotId: first.id,
       capturedAt: "2026-09-09T08:00:00.000Z",
@@ -564,8 +564,8 @@ describe("快照與全部賣出", () => {
     });
   });
 
-  it("同機構的新帳戶未提供識別碼時拒絕猜測", () => {
-    expect(() =>
+  it("同機構的新帳戶未提供識別碼時拒絕猜測", async () => {
+    await expect(
       createSnapshot({
         rawInput: "Firstrade IRA",
         capturedAt: "2026-09-10T08:00:00.000Z",
@@ -580,11 +580,11 @@ describe("快照與全部賣出", () => {
           },
         ],
       }),
-    ).toThrow("請使用既有帳戶名稱，或為不同帳戶填寫帳戶識別碼");
+    ).rejects.toThrow("請使用既有帳戶名稱，或為不同帳戶填寫帳戶識別碼");
   });
 
-  it("帳戶識別碼可區分同機構帳戶並辨識格式差異", () => {
-    const first = createSnapshot({
+  it("帳戶識別碼可區分同機構帳戶並辨識格式差異", async () => {
+    const first = await createSnapshot({
       rawInput: "Firstrade IRA",
       capturedAt: "2026-09-11T08:00:00.000Z",
       accounts: [
@@ -599,7 +599,7 @@ describe("快照與全部賣出", () => {
         },
       ],
     });
-    const second = createSnapshot({
+    const second = await createSnapshot({
       rawInput: "Firstrade retirement",
       baseSnapshotId: first.id,
       capturedAt: "2026-09-12T08:00:00.000Z",
@@ -619,7 +619,7 @@ describe("快照與全部賣出", () => {
     expect(second.accounts[0].accountId).toBe(first.accounts[0].accountId);
   });
 
-  it("同一快照出現重複帳戶時在計算前阻止儲存", () => {
+  it("同一快照出現重複帳戶時在計算前阻止儲存", async () => {
     const duplicate = {
       name: "Firstrade",
       institution: "Firstrade",
@@ -628,17 +628,17 @@ describe("快照與全部賣出", () => {
       cashBalances: [{ currency: "TWD", amount: "0" }],
       positions: [],
     };
-    expect(() =>
+    await expect(
       createSnapshot({
         rawInput: "重複帳戶",
         capturedAt: "2026-09-13T08:00:00.000Z",
         accounts: [duplicate, { ...duplicate, name: "FIRSTRADE證券" }],
       }),
-    ).toThrow("避免資產重複計算");
+    ).rejects.toThrow("避免資產重複計算");
   });
 
-  it("不同機構即使帳戶名稱相同也不會誤合併", () => {
-    const first = createSnapshot({
+  it("不同機構即使帳戶名稱相同也不會誤合併", async () => {
+    const first = await createSnapshot({
       rawInput: "甲券商投資帳戶",
       capturedAt: "2026-09-14T08:00:00.000Z",
       accounts: [
@@ -652,7 +652,7 @@ describe("快照與全部賣出", () => {
         },
       ],
     });
-    const second = createSnapshot({
+    const second = await createSnapshot({
       rawInput: "乙券商投資帳戶",
       capturedAt: "2026-09-15T08:00:00.000Z",
       accounts: [
@@ -670,7 +670,7 @@ describe("快照與全部賣出", () => {
     expect(second.accounts[0].accountId).not.toBe(first.accounts[0].accountId);
   });
 
-  it("提供單一帳戶淨值與跨帳戶標的走勢，並在不再持有後回到零", () => {
+  it("提供單一帳戶淨值與跨帳戶標的走勢，並在不再持有後回到零", async () => {
     const position = {
       market: "TWSE" as const,
       symbol: "006208",
@@ -683,7 +683,7 @@ describe("快照與全部賣出", () => {
       quoteSource: "TWSE" as const,
       quoteStatus: "fresh" as const,
     };
-    const first = createSnapshot({
+    const first = await createSnapshot({
       rawInput: "建立帳戶與標的走勢",
       capturedAt: "2026-09-16T08:00:00.000Z",
       accounts: [
@@ -717,7 +717,7 @@ describe("快照與全部賣出", () => {
     });
     const [accountA, accountB] = first.accounts;
     const securityId = accountA.positions[0].securityId!;
-    const second = createSnapshot({
+    const second = await createSnapshot({
       rawInput: "更新帳戶與標的走勢",
       baseSnapshotId: first.id,
       capturedAt: "2026-09-17T08:00:00.000Z",
@@ -751,7 +751,7 @@ describe("快照與全部賣出", () => {
         },
       ],
     });
-    createSnapshot({
+    await createSnapshot({
       rawInput: "標的不再持有",
       baseSnapshotId: second.id,
       capturedAt: "2026-09-18T08:00:00.000Z",
@@ -762,7 +762,7 @@ describe("快照與全部賣出", () => {
       loans: second.loans,
     });
 
-    expect(getAccountTrend(accountA.accountId, "all").slice(-3, -1)).toEqual([
+    expect((await getAccountTrend(accountA.accountId, "all")).slice(-3, -1)).toEqual([
       {
         capturedAt: "2026-09-16T08:00:00.000Z",
         cashValueTwd: "100",
@@ -780,7 +780,7 @@ describe("快照與全部賣出", () => {
         netValueTwd: "1210",
       },
     ]);
-    expect(getSecurityTrend(securityId, "all")).toEqual([
+    expect(await getSecurityTrend(securityId, "all")).toEqual([
       {
         capturedAt: "2026-09-16T08:00:00.000Z",
         quantity: "15",
@@ -802,8 +802,8 @@ describe("快照與全部賣出", () => {
     ]);
   });
 
-  it("信用卡以共用額度計算使用比例、分期負債與溢繳資產", () => {
-    const first = createSnapshot({
+  it("信用卡以共用額度計算使用比例、分期負債與溢繳資產", async () => {
+    const first = await createSnapshot({
       rawInput: "建立信用卡帳單快照",
       capturedAt: "2026-09-20T08:00:00.000Z",
       accounts: [
@@ -867,7 +867,7 @@ describe("快照與全部賣出", () => {
       cards: [{ lastFour: "1234" }, { lastFour: "5678" }],
     });
 
-    const preserved = createSnapshot({
+    const preserved = await createSnapshot({
       rawInput: "只更新現金，信用卡自動承接",
       baseSnapshotId: first.id,
       capturedAt: "2026-09-21T08:00:00.000Z",
@@ -883,7 +883,7 @@ describe("快照與全部賣出", () => {
       liabilityValueTwd: "20000",
     });
 
-    const overpaid = createSnapshot({
+    const overpaid = await createSnapshot({
       rawInput: "更新信用卡溢繳狀態",
       baseSnapshotId: preserved.id,
       capturedAt: "2026-09-22T08:00:00.000Z",
@@ -911,7 +911,7 @@ describe("快照與全部賣出", () => {
       netWorthTwd: "95000",
     });
     expect(overpaid.creditCardAccounts[0].paymentStatus).toBe("overpaid");
-    expect(getCreditCardTrend("all").slice(-2)).toEqual([
+    expect((await getCreditCardTrend("all")).slice(-2)).toEqual([
       {
         capturedAt: "2026-08-01T00:00:00.000Z",
         statementPeriod: "2026-08",
@@ -926,7 +926,7 @@ describe("快照與全部賣出", () => {
       },
     ]);
 
-    createSnapshot({
+    await createSnapshot({
       rawInput: "更新信用卡帳戶設定",
       baseSnapshotId: overpaid.id,
       capturedAt: "2026-09-23T08:00:00.000Z",
@@ -940,18 +940,18 @@ describe("快照與全部賣出", () => {
       ],
     });
     expect(
-      getCreditCardTrend("all").some(
+      (await getCreditCardTrend("all")).some(
         (item) => item.statementPeriod === "2026-10",
       ),
     ).toBe(false);
   });
 
-  it("備份可在新資料庫還原貸款與淨值", () => {
-    const backup = exportBackup();
+  it("備份可在新資料庫還原貸款與淨值", async () => {
+    const backup = await exportBackup();
     closeDatabaseForTests();
     process.env.FINANCE_REVIEW_DB_PATH = path.join(temp, "imported.db");
-    const result = importBackup(backup);
-    const restored = getSnapshotDetail(loanSnapshotId);
+    const result = await importBackup(backup);
+    const restored = await getSnapshotDetail(loanSnapshotId);
     expect(result.imported).toBeGreaterThan(0);
     expect(restored).toMatchObject({
       totalLiabilitiesTwd: "300000",

@@ -10,7 +10,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const { id } = await context.params;
     const payload = saleCreateSchema.parse(await request.json());
-    return NextResponse.json(sellPosition(id, payload), { status: 201 });
+    return NextResponse.json(await sellPosition(id, payload), { status: 201 });
   } catch (error) {
     return apiError(error);
   }

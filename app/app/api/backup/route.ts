@@ -4,8 +4,8 @@ import { exportBackup, importBackup } from "@/lib/repository";
 
 export const runtime = "nodejs";
 
-export function GET() {
-  return new NextResponse(`${JSON.stringify(exportBackup(), null, 2)}\n`, {
+export async function GET() {
+  return new NextResponse(`${JSON.stringify(await exportBackup(), null, 2)}\n`, {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": `attachment; filename="finance-review-${new Date().toISOString().slice(0, 10)}.json"`,
@@ -15,7 +15,7 @@ export function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    return NextResponse.json(importBackup(await request.json()));
+    return NextResponse.json(await importBackup(await request.json()));
   } catch (error) {
     return apiError(error);
   }

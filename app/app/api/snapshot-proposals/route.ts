@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       .object({ rawInput: z.string().trim().min(1).max(20_000) })
       .parse(await request.json());
     const patch = await parseNaturalLanguage(rawInput);
-    return NextResponse.json(buildProposal(rawInput, patch));
+    return NextResponse.json(await buildProposal(rawInput, patch));
   } catch (error) {
     return apiError(error, 503);
   }

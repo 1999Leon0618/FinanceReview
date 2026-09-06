@@ -8,7 +8,7 @@ import {
   institutionKey,
   loanNameKey,
 } from "./account-identity";
-import type { DatabaseSync } from "node:sqlite";
+import type { FinanceDatabase } from "./db";
 import {
   calculateFuturesPosition,
   calculatePosition,
@@ -84,14 +84,14 @@ function creditCardPaymentStatus(
   return "paid";
 }
 
-function fxRateById(
-  db: DatabaseSync,
+async function fxRateById(
+  db: FinanceDatabase,
   id: string | null,
-): FxRateInput | undefined {
+): Promise<FxRateInput | undefined> {
   if (!id) return undefined;
-  const row = db
+  const row = (await db
     .prepare("SELECT * FROM snapshot_fx_rates WHERE id = ?")
-    .get(id) as Row | undefined;
+    .get(id)) as Row | undefined;
   if (!row) return undefined;
   return {
     baseCurrency: text(row.base_currency),
@@ -104,84 +104,95 @@ function fxRateById(
   };
 }
 
-export function getSnapshotDetail(
+export async function getSnapshotDetail(
   id: string,
-  db = getDatabase(),
-): SnapshotDetail | null {
-  const snapshot = db
+  db?: FinanceDatabase,
+): Promise<SnapshotDetail | null> {
+  db ??= await getDatabase();
+  const snapshot = (await db
     .prepare("SELECT * FROM snapshots WHERE id = ?")
-    .get(id) as Row | undefined;
+    .get(id)) as Row | undefined;
   if (!snapshot) return null;
 
-  const accountRows = db
+  const accountRows = (await db
     .prepare(
       "SELECT * FROM snapshot_accounts WHERE snapshot_id = ? ORDER BY sort_order, name",
     )
-    .all(id) as Row[];
-  const accounts: AccountView[] = accountRows.map((account) => {
-    const snapshotAccountId = text(account.id);
-    const balances = db
-      .prepare(
-        `SELECT * FROM cash_balances WHERE snapshot_account_id = ?
+    .all(id)) as Row[];
+  const accounts: AccountView[] = await Promise.all(
+    accountRows.map(async (account) => {
+      const snapshotAccountId = text(account.id);
+      const balances = (await db
+        .prepare(
+          `SELECT * FROM cash_balances WHERE snapshot_account_id = ?
         ORDER BY CASE WHEN currency = 'TWD' THEN 0 ELSE 1 END, currency`,
-      )
-      .all(snapshotAccountId) as Row[];
-    const positions = db
-      .prepare(
-        `SELECT sp.*, s.provider_symbol FROM snapshot_positions sp
+        )
+        .all(snapshotAccountId)) as Row[];
+      const positions = (await db
+        .prepare(
+          `SELECT sp.*, s.provider_symbol FROM snapshot_positions sp
         JOIN securities s ON s.id = sp.security_id
         WHERE sp.snapshot_account_id = ? ORDER BY sp.security_name, sp.symbol`,
-      )
-      .all(snapshotAccountId) as Row[];
-    return {
-      accountId: text(account.account_id),
-      name: text(account.name),
-      institution: nullableText(account.institution),
-      accountType: text(account.account_type) as AccountView["accountType"],
-      accountReference: nullableText(account.account_reference),
-      defaultCurrency: text(account.default_currency),
-      cashBalances: balances.map((balance) => ({
-        currency: text(balance.currency),
-        amount: text(balance.amount),
-        fxRate: fxRateById(db, nullableText(balance.fx_rate_id)),
-      })),
-      positions: positions.map((position): PositionView => ({
-        id: text(position.id),
-        positionId: text(position.position_id),
-        securityId: text(position.security_id),
+        )
+        .all(snapshotAccountId)) as Row[];
+      return {
         accountId: text(account.account_id),
-        accountName: text(account.name),
-        market: text(position.market) as PositionView["market"],
-        exchange: null,
-        symbol: text(position.symbol),
-        providerSymbol: text(position.provider_symbol),
-        name: text(position.security_name),
-        securityType: text(
-          position.security_type,
-        ) as PositionView["securityType"],
-        positionSide:
-          (nullableText(position.position_side) as
-            PositionView["positionSide"] | null) ?? undefined,
-        contractMultiplier:
-          nullableText(position.contract_multiplier) ?? undefined,
-        contractExpiry: nullableText(position.contract_expiry) ?? undefined,
-        quoteCurrency: text(position.quote_currency),
-        quantity: text(position.quantity),
-        averageCost: text(position.average_cost),
-        marketPrice: text(position.market_price),
-        quoteAsOf: text(position.quote_as_of),
-        quoteSource: text(position.quote_source) as PositionView["quoteSource"],
-        quoteStatus: text(position.quote_status) as PositionView["quoteStatus"],
-        quoteNote: nullableText(position.quote_note),
-        fxRate: fxRateById(db, nullableText(position.fx_rate_id)),
-        costValueTwd: text(position.cost_value_twd),
-        marketValueTwd: text(position.market_value_twd),
-        unrealizedPnlTwd: text(position.unrealized_pnl_twd),
-        unrealizedReturnPct: nullableText(position.unrealized_return_pct),
-      })),
-    };
-  });
-  const loanRows = db
+        name: text(account.name),
+        institution: nullableText(account.institution),
+        accountType: text(account.account_type) as AccountView["accountType"],
+        accountReference: nullableText(account.account_reference),
+        defaultCurrency: text(account.default_currency),
+        cashBalances: await Promise.all(
+          balances.map(async (balance) => ({
+            currency: text(balance.currency),
+            amount: text(balance.amount),
+            fxRate: await fxRateById(db, nullableText(balance.fx_rate_id)),
+          })),
+        ),
+        positions: await Promise.all(
+          positions.map(async (position): Promise<PositionView> => ({
+            id: text(position.id),
+            positionId: text(position.position_id),
+            securityId: text(position.security_id),
+            accountId: text(account.account_id),
+            accountName: text(account.name),
+            market: text(position.market) as PositionView["market"],
+            exchange: null,
+            symbol: text(position.symbol),
+            providerSymbol: text(position.provider_symbol),
+            name: text(position.security_name),
+            securityType: text(
+              position.security_type,
+            ) as PositionView["securityType"],
+            positionSide:
+              (nullableText(position.position_side) as
+                PositionView["positionSide"] | null) ?? undefined,
+            contractMultiplier:
+              nullableText(position.contract_multiplier) ?? undefined,
+            contractExpiry: nullableText(position.contract_expiry) ?? undefined,
+            quoteCurrency: text(position.quote_currency),
+            quantity: text(position.quantity),
+            averageCost: text(position.average_cost),
+            marketPrice: text(position.market_price),
+            quoteAsOf: text(position.quote_as_of),
+            quoteSource: text(
+              position.quote_source,
+            ) as PositionView["quoteSource"],
+            quoteStatus: text(
+              position.quote_status,
+            ) as PositionView["quoteStatus"],
+            quoteNote: nullableText(position.quote_note),
+            fxRate: await fxRateById(db, nullableText(position.fx_rate_id)),
+            costValueTwd: text(position.cost_value_twd),
+            marketValueTwd: text(position.market_value_twd),
+            unrealizedPnlTwd: text(position.unrealized_pnl_twd),
+            unrealizedReturnPct: nullableText(position.unrealized_return_pct),
+          })),
+        ),
+      };
+    }),
+  );
+  const loanRows = (await db
     .prepare(
       `SELECT sl.*, sa.account_id AS linked_account_id,
       sa.name AS linked_account_name
@@ -189,50 +200,52 @@ export function getSnapshotDetail(
       LEFT JOIN snapshot_accounts sa ON sa.id = sl.snapshot_account_id
       WHERE sl.snapshot_id = ? ORDER BY sl.sort_order, sl.name`,
     )
-    .all(id) as Row[];
-  const loans: LoanView[] = loanRows.map((loan) => ({
-    id: text(loan.id),
-    loanId: text(loan.loan_id),
-    accountId: nullableText(loan.linked_account_id),
-    accountName: nullableText(loan.linked_account_name),
-    name: text(loan.name),
-    institution: nullableText(loan.institution),
-    loanType: text(loan.loan_type) as LoanView["loanType"],
-    currency: text(loan.currency),
-    originalPrincipal: nullableText(loan.original_principal),
-    outstandingPrincipal: text(loan.outstanding_principal),
-    annualInterestRate: nullableText(loan.annual_interest_rate),
-    rateType:
-      (nullableText(loan.rate_type) as LoanView["rateType"] | null) ?? null,
-    monthlyPayment: nullableText(loan.monthly_payment),
-    paymentDayOfMonth:
-      loan.payment_day_of_month === null ||
-      loan.payment_day_of_month === undefined
-        ? null
-        : Number(loan.payment_day_of_month),
-    nextPaymentDate: nullableText(loan.next_payment_date),
-    startDate: nullableText(loan.start_date),
-    endDate: nullableText(loan.end_date),
-    note: nullableText(loan.note),
-    fxRate: fxRateById(db, nullableText(loan.fx_rate_id)),
-    valueTwd: text(loan.value_twd),
-  }));
-  const creditCardRows = db
+    .all(id)) as Row[];
+  const loans: LoanView[] = await Promise.all(
+    loanRows.map(async (loan) => ({
+      id: text(loan.id),
+      loanId: text(loan.loan_id),
+      accountId: nullableText(loan.linked_account_id),
+      accountName: nullableText(loan.linked_account_name),
+      name: text(loan.name),
+      institution: nullableText(loan.institution),
+      loanType: text(loan.loan_type) as LoanView["loanType"],
+      currency: text(loan.currency),
+      originalPrincipal: nullableText(loan.original_principal),
+      outstandingPrincipal: text(loan.outstanding_principal),
+      annualInterestRate: nullableText(loan.annual_interest_rate),
+      rateType:
+        (nullableText(loan.rate_type) as LoanView["rateType"] | null) ?? null,
+      monthlyPayment: nullableText(loan.monthly_payment),
+      paymentDayOfMonth:
+        loan.payment_day_of_month === null ||
+        loan.payment_day_of_month === undefined
+          ? null
+          : Number(loan.payment_day_of_month),
+      nextPaymentDate: nullableText(loan.next_payment_date),
+      startDate: nullableText(loan.start_date),
+      endDate: nullableText(loan.end_date),
+      note: nullableText(loan.note),
+      fxRate: await fxRateById(db, nullableText(loan.fx_rate_id)),
+      valueTwd: text(loan.value_twd),
+    })),
+  );
+  const creditCardRows = (await db
     .prepare(
       `SELECT * FROM snapshot_credit_card_accounts
       WHERE snapshot_id = ? ORDER BY sort_order, name`,
     )
-    .all(id) as Row[];
-  const creditCardAccounts: CreditCardAccountView[] = creditCardRows.map(
-    (account) => {
+    .all(id)) as Row[];
+  const creditCardAccounts: CreditCardAccountView[] = await Promise.all(
+    creditCardRows.map(async (account) => {
       const accountId = text(account.credit_card_account_id);
       const cards = (
-        db
+        (await db
           .prepare(
             `SELECT * FROM credit_cards WHERE credit_card_account_id = ?
             ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END, name`,
           )
-          .all(accountId) as Row[]
+          .all(accountId)) as Row[]
       ).map((card) => ({
         cardId: text(card.id),
         name: text(card.name),
@@ -282,7 +295,7 @@ export function getSnapshotDetail(
           account.remaining_installment_principal,
         ),
         overpaymentBalance,
-        fxRate: fxRateById(db, nullableText(account.fx_rate_id)),
+        fxRate: await fxRateById(db, nullableText(account.fx_rate_id)),
         statementOutstanding: text(account.statement_outstanding),
         utilizationPct: nullableText(account.utilization_pct),
         paymentStatus: creditCardPaymentStatus(
@@ -299,7 +312,7 @@ export function getSnapshotDetail(
         liabilityValueTwd: text(account.liability_value_twd),
         creditAssetValueTwd: text(account.credit_asset_value_twd),
       };
-    },
+    }),
   );
 
   const accountsWithLoans = accounts.map((account) => ({
@@ -307,11 +320,11 @@ export function getSnapshotDetail(
     loans: loans.filter((loan) => loan.accountId === account.accountId),
   }));
   const cashFlows = (
-    db
+    (await db
       .prepare(
         "SELECT * FROM snapshot_cash_flows WHERE snapshot_id = ? ORDER BY sort_order, created_at",
       )
-      .all(id) as Row[]
+      .all(id)) as Row[]
   ).map((flow): SnapshotCashFlowView => ({
     id: text(flow.id),
     flowType: text(flow.flow_type) as SnapshotCashFlowView["flowType"],
@@ -328,11 +341,11 @@ export function getSnapshotDetail(
   const feeTax = flowTotal("fee_tax");
   const otherNet = flowTotal("other_inflow").minus(flowTotal("other_outflow"));
   const previous = snapshot.base_snapshot_id
-    ? (db
+    ? ((await db
         .prepare(
           "SELECT total_asset_value_twd, total_liabilities_twd, net_worth_twd FROM snapshots WHERE id = ?",
         )
-        .get(text(snapshot.base_snapshot_id)) as Row | undefined)
+        .get(text(snapshot.base_snapshot_id))) as Row | undefined)
     : undefined;
   const assetChange = previous
     ? decimal(text(snapshot.total_asset_value_twd)).minus(
@@ -385,96 +398,103 @@ export function getSnapshotDetail(
   };
 }
 
-export function getLatestSnapshot(db = getDatabase()): SnapshotDetail | null {
-  const row = db
+export async function getLatestSnapshot(
+  db?: FinanceDatabase,
+): Promise<SnapshotDetail | null> {
+  db ??= await getDatabase();
+  const row = (await db
     .prepare(
       "SELECT id FROM snapshots ORDER BY captured_at DESC, created_at DESC LIMIT 1",
     )
-    .get() as Row | undefined;
-  return row ? getSnapshotDetail(text(row.id), db) : null;
+    .get()) as Row | undefined;
+  return row ? await getSnapshotDetail(text(row.id), db) : null;
 }
 
-export function listSnapshotSummaries(
+export async function listSnapshotSummaries(
   limit = 100,
-  db = getDatabase(),
-): SnapshotSummary[] {
+  db?: FinanceDatabase,
+): Promise<SnapshotSummary[]> {
+  db ??= await getDatabase();
   return (
-    db
+    (await db
       .prepare(
         "SELECT * FROM snapshots ORDER BY captured_at DESC, created_at DESC LIMIT ?",
       )
-      .all(limit) as Row[]
+      .all(limit)) as Row[]
   ).map(snapshotSummary);
 }
 
-function ensureFxRate(
-  db: DatabaseSync,
+async function ensureFxRate(
+  db: FinanceDatabase,
   snapshotId: string,
   fx: FxRateInput | undefined,
   currency: string,
-  cache: Map<string, string>,
-): { id: string | null; rate: string } {
+  cache: Map<string, { id: string; rate: string }>,
+): Promise<{ id: string | null; rate: string }> {
   if (currency === "TWD") return { id: null, rate: "1" };
-  const cachedId = cache.get(currency);
-  if (cachedId) {
-    const row = db
-      .prepare("SELECT rate FROM snapshot_fx_rates WHERE id = ?")
-      .get(cachedId) as Row;
-    return { id: cachedId, rate: text(row.rate) };
-  }
+  const cached = cache.get(currency);
+  if (cached) return cached;
   if (!fx) throw new Error(`${currency} 缺少 TWD 匯率`);
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO snapshot_fx_rates(
+  await db
+    .prepare(
+      `INSERT INTO snapshot_fx_rates(
     id, snapshot_id, base_currency, quote_currency, rate, rate_as_of,
     source, status, overridden_by_user, fetched_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    snapshotId,
-    fx.baseCurrency,
-    fx.quoteCurrency,
-    fx.rate,
-    new Date(fx.rateAsOf).toISOString(),
-    fx.source,
-    fx.status,
-    fx.overriddenByUser ? 1 : 0,
-    new Date().toISOString(),
-  );
-  cache.set(currency, id);
+    )
+    .run(
+      id,
+      snapshotId,
+      fx.baseCurrency,
+      fx.quoteCurrency,
+      fx.rate,
+      new Date(fx.rateAsOf).toISOString(),
+      fx.source,
+      fx.status,
+      fx.overriddenByUser ? 1 : 0,
+      new Date().toISOString(),
+    );
+  cache.set(currency, { id, rate: fx.rate });
   return { id, rate: fx.rate };
 }
 
-function findOrCreateAccount(
-  db: DatabaseSync,
+async function findOrCreateAccount(
+  db: FinanceDatabase,
   input: AccountStateInput,
   now: string,
-): string {
+  active: Row[],
+): Promise<string> {
   if (input.accountId) {
-    const found = db
+    const found = await db
       .prepare("SELECT id FROM accounts WHERE id = ?")
       .get(input.accountId);
     if (!found) throw new Error(`找不到帳戶：${input.name}`);
-    db.prepare(
-      `UPDATE accounts SET name = ?, institution = ?, account_type = ?,
+    await db
+      .prepare(
+        `UPDATE accounts SET name = ?, institution = ?, account_type = ?,
       account_reference = ?, default_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
-    ).run(
-      input.name,
-      input.institution ?? null,
-      input.accountType,
-      input.accountReference ?? null,
-      input.defaultCurrency,
-      now,
-      input.accountId,
-    );
+      )
+      .run(
+        input.name,
+        input.institution ?? null,
+        input.accountType,
+        input.accountReference ?? null,
+        input.defaultCurrency,
+        now,
+        input.accountId,
+      );
+    const cached = active.find((row) => text(row.id) === input.accountId);
+    const updated = {
+      id: input.accountId,
+      name: input.name,
+      institution: input.institution ?? null,
+      account_reference: input.accountReference ?? null,
+    };
+    if (cached) Object.assign(cached, updated);
+    else active.push(updated);
     return input.accountId;
   }
-  const active = db
-    .prepare(
-      `SELECT id, name, institution, account_reference FROM accounts
-      WHERE archived_at IS NULL`,
-    )
-    .all() as Row[];
   const reference = accountReferenceKey(input.accountReference);
   const institution = institutionKey(input.institution);
   const chooseOne = (candidates: Row[], reason: string) => {
@@ -520,76 +540,110 @@ function findOrCreateAccount(
     }
   }
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO accounts(id, name, institution, account_type, account_reference,
+  await db
+    .prepare(
+      `INSERT INTO accounts(id, name, institution, account_type, account_reference,
     default_currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
+    )
+    .run(
+      id,
+      input.name,
+      input.institution ?? null,
+      input.accountType,
+      input.accountReference ?? null,
+      input.defaultCurrency,
+      now,
+      now,
+    );
+  active.push({
     id,
-    input.name,
-    input.institution ?? null,
-    input.accountType,
-    input.accountReference ?? null,
-    input.defaultCurrency,
-    now,
-    now,
-  );
+    name: input.name,
+    institution: input.institution ?? null,
+    account_reference: input.accountReference ?? null,
+  });
   return id;
 }
 
-function findOrCreateSecurity(
-  db: DatabaseSync,
+async function findOrCreateSecurity(
+  db: FinanceDatabase,
   input: PositionInput,
   now: string,
-): string {
+  cache: Map<string, string>,
+): Promise<string> {
   const symbol = input.symbol.toUpperCase();
-  const found = db
+  const cacheKey = `${input.market}:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    await db
+      .prepare(
+        `UPDATE securities SET exchange = ?, provider_symbol = ?, name = ?, security_type = ?,
+      quote_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
+      )
+      .run(
+        input.exchange ?? null,
+        input.providerSymbol ?? symbol,
+        input.name,
+        input.securityType,
+        input.quoteCurrency,
+        now,
+        cached,
+      );
+    return cached;
+  }
+  const found = (await db
     .prepare("SELECT id FROM securities WHERE market = ? AND symbol = ?")
-    .get(input.market, symbol) as Row | undefined;
+    .get(input.market, symbol)) as Row | undefined;
   if (found) {
     const id = text(found.id);
-    db.prepare(
-      `UPDATE securities SET exchange = ?, provider_symbol = ?, name = ?, security_type = ?,
+    await db
+      .prepare(
+        `UPDATE securities SET exchange = ?, provider_symbol = ?, name = ?, security_type = ?,
       quote_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
-    ).run(
+      )
+      .run(
+        input.exchange ?? null,
+        input.providerSymbol ?? symbol,
+        input.name,
+        input.securityType,
+        input.quoteCurrency,
+        now,
+        id,
+      );
+    cache.set(cacheKey, id);
+    return id;
+  }
+  const id = randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO securities(id, market, exchange, symbol, provider_symbol, name,
+    security_type, quote_currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.market,
       input.exchange ?? null,
+      symbol,
       input.providerSymbol ?? symbol,
       input.name,
       input.securityType,
       input.quoteCurrency,
       now,
-      id,
+      now,
     );
-    return id;
-  }
-  const id = randomUUID();
-  db.prepare(
-    `INSERT INTO securities(id, market, exchange, symbol, provider_symbol, name,
-    security_type, quote_currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    input.market,
-    input.exchange ?? null,
-    symbol,
-    input.providerSymbol ?? symbol,
-    input.name,
-    input.securityType,
-    input.quoteCurrency,
-    now,
-    now,
-  );
+  cache.set(cacheKey, id);
   return id;
 }
 
-function findOrCreatePosition(
-  db: DatabaseSync,
+async function findOrCreatePosition(
+  db: FinanceDatabase,
   input: PositionInput,
   accountId: string,
   securityId: string,
   capturedAt: string,
   now: string,
-): string {
+): Promise<string> {
   if (input.positionId) {
-    const found = db
+    const found = await db
       .prepare(
         "SELECT id FROM account_positions WHERE id = ? AND status = 'active'",
       )
@@ -597,53 +651,57 @@ function findOrCreatePosition(
     if (!found) throw new Error(`持倉已售出或不存在：${input.symbol}`);
     return input.positionId;
   }
-  const active = db
+  const active = (await db
     .prepare(
       "SELECT id FROM account_positions WHERE account_id = ? AND security_id = ? AND status = 'active'",
     )
-    .get(accountId, securityId) as Row | undefined;
+    .get(accountId, securityId)) as Row | undefined;
   if (active) return text(active.id);
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO account_positions(id, account_id, security_id, status,
+  await db
+    .prepare(
+      `INSERT INTO account_positions(id, account_id, security_id, status,
     first_seen_at, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?, ?)`,
-  ).run(id, accountId, securityId, capturedAt, now, now);
+    )
+    .run(id, accountId, securityId, capturedAt, now, now);
   return id;
 }
 
-function findOrCreateLoan(
-  db: DatabaseSync,
+async function findOrCreateLoan(
+  db: FinanceDatabase,
   input: LoanInput,
   now: string,
-): string {
+): Promise<string> {
   if (input.loanId) {
-    const found = db
+    const found = await db
       .prepare("SELECT id FROM loans WHERE id = ?")
       .get(input.loanId);
     if (!found) throw new Error(`找不到貸款：${input.name}`);
-    db.prepare(
-      `UPDATE loans SET account_id = ?, name = ?, institution = ?, loan_type = ?, currency = ?,
+    await db
+      .prepare(
+        `UPDATE loans SET account_id = ?, name = ?, institution = ?, loan_type = ?, currency = ?,
       archived_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(
-      input.accountId ?? null,
-      input.name,
-      input.institution ?? null,
-      input.loanType,
-      input.currency,
-      decimal(input.outstandingPrincipal).isZero() ? now : null,
-      now,
-      input.loanId,
-    );
+      )
+      .run(
+        input.accountId ?? null,
+        input.name,
+        input.institution ?? null,
+        input.loanType,
+        input.currency,
+        decimal(input.outstandingPrincipal).isZero() ? now : null,
+        now,
+        input.loanId,
+      );
     return input.loanId;
   }
   const institution = institutionKey(input.institution);
   const matching = (
-    db
+    (await db
       .prepare(
         `SELECT id, account_id, name, institution, currency FROM loans
         WHERE archived_at IS NULL`,
       )
-      .all() as Row[]
+      .all()) as Row[]
   ).filter(
     (row) =>
       (!input.accountId ||
@@ -660,38 +718,74 @@ function findOrCreateLoan(
     );
   if (matching[0]) return text(matching[0].id);
   const id = randomUUID();
-  db.prepare(
-    `INSERT INTO loans(id, account_id, name, institution, loan_type, currency, archived_at,
+  await db
+    .prepare(
+      `INSERT INTO loans(id, account_id, name, institution, loan_type, currency, archived_at,
     created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    input.accountId ?? null,
-    input.name,
-    input.institution ?? null,
-    input.loanType,
-    input.currency,
-    decimal(input.outstandingPrincipal).isZero() ? now : null,
-    now,
-    now,
-  );
+    )
+    .run(
+      id,
+      input.accountId ?? null,
+      input.name,
+      input.institution ?? null,
+      input.loanType,
+      input.currency,
+      decimal(input.outstandingPrincipal).isZero() ? now : null,
+      now,
+      now,
+    );
   return id;
 }
 
-function findOrCreateCreditCardAccount(
-  db: DatabaseSync,
+async function findOrCreateCreditCardAccount(
+  db: FinanceDatabase,
   input: CreditCardAccountInput,
   now: string,
-): string {
+): Promise<string> {
   if (input.creditCardAccountId) {
-    const found = db
+    const found = await db
       .prepare("SELECT id FROM credit_card_accounts WHERE id = ?")
       .get(input.creditCardAccountId);
     if (!found) throw new Error(`找不到信用卡帳戶：${input.name}`);
-    db.prepare(
-      `UPDATE credit_card_accounts SET name = ?, issuer = ?, currency = ?,
+    await db
+      .prepare(
+        `UPDATE credit_card_accounts SET name = ?, issuer = ?, currency = ?,
       shared_credit_limit = ?, statement_day_of_month = ?, payment_day_of_month = ?,
       status = ?, note = ?, archived_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(
+      )
+      .run(
+        input.name,
+        input.issuer,
+        input.currency,
+        input.sharedCreditLimit,
+        input.statementDayOfMonth ?? null,
+        input.paymentDayOfMonth ?? null,
+        input.status,
+        input.note ?? null,
+        input.status === "closed" ? now : null,
+        now,
+        input.creditCardAccountId,
+      );
+    return input.creditCardAccountId;
+  }
+  const found = (await db
+    .prepare(
+      `SELECT id FROM credit_card_accounts
+      WHERE lower(name) = lower(?) AND lower(issuer) = lower(?) AND currency = ?
+      ORDER BY archived_at IS NULL DESC LIMIT 1`,
+    )
+    .get(input.name, input.issuer, input.currency)) as Row | undefined;
+  if (found) return text(found.id);
+  const id = randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO credit_card_accounts(
+      id, name, issuer, currency, shared_credit_limit, statement_day_of_month,
+      payment_day_of_month, status, note, archived_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
       input.name,
       input.issuer,
       input.currency,
@@ -702,58 +796,67 @@ function findOrCreateCreditCardAccount(
       input.note ?? null,
       input.status === "closed" ? now : null,
       now,
-      input.creditCardAccountId,
+      now,
     );
-    return input.creditCardAccountId;
-  }
-  const found = db
-    .prepare(
-      `SELECT id FROM credit_card_accounts
-      WHERE lower(name) = lower(?) AND lower(issuer) = lower(?) AND currency = ?
-      ORDER BY archived_at IS NULL DESC LIMIT 1`,
-    )
-    .get(input.name, input.issuer, input.currency) as Row | undefined;
-  if (found) return text(found.id);
-  const id = randomUUID();
-  db.prepare(
-    `INSERT INTO credit_card_accounts(
-      id, name, issuer, currency, shared_credit_limit, statement_day_of_month,
-      payment_day_of_month, status, note, archived_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    input.name,
-    input.issuer,
-    input.currency,
-    input.sharedCreditLimit,
-    input.statementDayOfMonth ?? null,
-    input.paymentDayOfMonth ?? null,
-    input.status,
-    input.note ?? null,
-    input.status === "closed" ? now : null,
-    now,
-    now,
-  );
   return id;
 }
 
-function findOrCreateCreditCard(
-  db: DatabaseSync,
+async function findOrCreateCreditCard(
+  db: FinanceDatabase,
   accountId: string,
   input: CreditCardAccountInput["cards"][number],
   now: string,
-): string {
+): Promise<string> {
   if (input.cardId) {
-    const found = db
+    const found = await db
       .prepare(
         "SELECT id FROM credit_cards WHERE id = ? AND credit_card_account_id = ?",
       )
       .get(input.cardId, accountId);
     if (!found) throw new Error(`找不到實體信用卡：${input.name}`);
-    db.prepare(
-      `UPDATE credit_cards SET name = ?, last_four = ?, network = ?, holder_type = ?,
+    await db
+      .prepare(
+        `UPDATE credit_cards SET name = ?, last_four = ?, network = ?, holder_type = ?,
       status = ?, note = ?, archived_at = ?, updated_at = ? WHERE id = ?`,
-    ).run(
+      )
+      .run(
+        input.name,
+        input.lastFour ?? null,
+        input.network ?? null,
+        input.holderType ?? null,
+        input.status,
+        input.note ?? null,
+        input.status === "closed" ? now : null,
+        now,
+        input.cardId,
+      );
+    return input.cardId;
+  }
+  const found = input.lastFour
+    ? ((await db
+        .prepare(
+          `SELECT id FROM credit_cards
+          WHERE credit_card_account_id = ? AND last_four = ? LIMIT 1`,
+        )
+        .get(accountId, input.lastFour)) as Row | undefined)
+    : ((await db
+        .prepare(
+          `SELECT id FROM credit_cards
+          WHERE credit_card_account_id = ? AND lower(name) = lower(?) LIMIT 1`,
+        )
+        .get(accountId, input.name)) as Row | undefined);
+  if (found) return text(found.id);
+  const id = randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO credit_cards(
+      id, credit_card_account_id, name, last_four, network, holder_type,
+      status, note, archived_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      accountId,
       input.name,
       input.lastFour ?? null,
       input.network ?? null,
@@ -762,43 +865,8 @@ function findOrCreateCreditCard(
       input.note ?? null,
       input.status === "closed" ? now : null,
       now,
-      input.cardId,
+      now,
     );
-    return input.cardId;
-  }
-  const found = input.lastFour
-    ? (db
-        .prepare(
-          `SELECT id FROM credit_cards
-          WHERE credit_card_account_id = ? AND last_four = ? LIMIT 1`,
-        )
-        .get(accountId, input.lastFour) as Row | undefined)
-    : (db
-        .prepare(
-          `SELECT id FROM credit_cards
-          WHERE credit_card_account_id = ? AND lower(name) = lower(?) LIMIT 1`,
-        )
-        .get(accountId, input.name) as Row | undefined);
-  if (found) return text(found.id);
-  const id = randomUUID();
-  db.prepare(
-    `INSERT INTO credit_cards(
-      id, credit_card_account_id, name, last_four, network, holder_type,
-      status, note, archived_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    accountId,
-    input.name,
-    input.lastFour ?? null,
-    input.network ?? null,
-    input.holderType ?? null,
-    input.status,
-    input.note ?? null,
-    input.status === "closed" ? now : null,
-    now,
-    now,
-  );
   return id;
 }
 
@@ -913,15 +981,15 @@ function assertNoDuplicateIdentities(input: SnapshotCreateInput) {
   }
 }
 
-function createSnapshotInDb(
-  db: DatabaseSync,
+async function createSnapshotInDb(
+  db: FinanceDatabase,
   rawInput: SnapshotCreateInput,
-): string {
+): Promise<string> {
   const inheritedCreditCards =
     rawInput.creditCardAccounts === undefined && rawInput.baseSnapshotId
-      ? (getSnapshotDetail(rawInput.baseSnapshotId, db)?.creditCardAccounts.map(
-          creditCardViewToInput,
-        ) ?? [])
+      ? ((
+          await getSnapshotDetail(rawInput.baseSnapshotId, db)
+        )?.creditCardAccounts.map(creditCardViewToInput) ?? [])
       : rawInput.creditCardAccounts;
   const input = normalizeSnapshotIdentities({
     ...rawInput,
@@ -933,16 +1001,38 @@ function createSnapshotInDb(
   const capturedAt = input.capturedAt
     ? new Date(input.capturedAt).toISOString()
     : now;
-  db.prepare(
-    `INSERT INTO snapshots(
+  await db
+    .prepare(
+      `INSERT INTO snapshots(
     id, captured_at, base_snapshot_id, raw_input, parser_model, parser_schema_version,
     total_cash_twd, total_securities_twd, total_asset_value_twd,
     total_liabilities_twd, net_worth_twd, total_cost_twd,
     unrealized_pnl_twd, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, 'deterministic-rules', 2, '0', '0', '0', '0', '0', '0', '0', ?, ?)`,
-  ).run(id, capturedAt, input.baseSnapshotId ?? null, input.rawInput, now, now);
+  ) SELECT ?, ?, ?, ?, 'deterministic-rules', 2, '0', '0', '0', '0', '0', '0', '0', ?, ?
+    WHERE ? IS NULL OR ? = (
+      SELECT latest.id FROM snapshots latest
+      ORDER BY latest.captured_at DESC, latest.created_at DESC LIMIT 1
+    )`,
+    )
+    .run(
+      id,
+      capturedAt,
+      input.baseSnapshotId ?? null,
+      input.rawInput,
+      now,
+      now,
+      input.baseSnapshotId ?? null,
+      input.baseSnapshotId ?? null,
+    );
 
-  const fxCache = new Map<string, string>();
+  const fxCache = new Map<string, { id: string; rate: string }>();
+  const securityCache = new Map<string, string>();
+  const accountCache = (await db
+    .prepare(
+      `SELECT id, name, institution, account_reference FROM accounts
+      WHERE archived_at IS NULL`,
+    )
+    .all()) as Row[];
   let totalCash = zero;
   let totalSecurities = zero;
   let totalCost = zero;
@@ -957,11 +1047,11 @@ function createSnapshotInDb(
     institution?: string | null;
   }> = [];
 
-  input.accounts.forEach((account, index) => {
+  for (const [index, account] of input.accounts.entries()) {
     if (account.accountType === "cash" && account.positions.length > 0) {
       throw new Error(`現金帳戶不能包含投資品項：${account.name}`);
     }
-    const accountId = findOrCreateAccount(db, account, now);
+    const accountId = await findOrCreateAccount(db, account, now, accountCache);
     const snapshotAccountId = randomUUID();
     snapshotAccountLinks.push({
       accountId,
@@ -969,25 +1059,27 @@ function createSnapshotInDb(
       name: account.name,
       institution: account.institution,
     });
-    db.prepare(
-      `INSERT INTO snapshot_accounts(
+    await db
+      .prepare(
+        `INSERT INTO snapshot_accounts(
       id, snapshot_id, account_id, name, institution, account_type,
       account_reference, default_currency, sort_order
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      snapshotAccountId,
-      id,
-      accountId,
-      account.name,
-      account.institution ?? null,
-      account.accountType,
-      account.accountReference ?? null,
-      account.defaultCurrency,
-      index,
-    );
+      )
+      .run(
+        snapshotAccountId,
+        id,
+        accountId,
+        account.name,
+        account.institution ?? null,
+        account.accountType,
+        account.accountReference ?? null,
+        account.defaultCurrency,
+        index,
+      );
 
     for (const balance of account.cashBalances) {
-      const fx = ensureFxRate(
+      const fx = await ensureFxRate(
         db,
         id,
         balance.fxRate,
@@ -996,18 +1088,20 @@ function createSnapshotInDb(
       );
       const valueTwd = decimal(balance.amount).mul(fx.rate);
       totalCash = totalCash.plus(valueTwd);
-      db.prepare(
-        `INSERT INTO cash_balances(
+      await db
+        .prepare(
+          `INSERT INTO cash_balances(
         id, snapshot_account_id, currency, amount, fx_rate_id, value_twd
       ) VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        randomUUID(),
-        snapshotAccountId,
-        balance.currency,
-        balance.amount,
-        fx.id,
-        money(valueTwd),
-      );
+        )
+        .run(
+          randomUUID(),
+          snapshotAccountId,
+          balance.currency,
+          balance.amount,
+          fx.id,
+          money(valueTwd),
+        );
     }
 
     for (const position of account.positions) {
@@ -1020,8 +1114,13 @@ function createSnapshotInDb(
       ) {
         throw new Error(`期貨類型與市場不一致：${position.name}`);
       }
-      const securityId = findOrCreateSecurity(db, position, now);
-      const positionId = findOrCreatePosition(
+      const securityId = await findOrCreateSecurity(
+        db,
+        position,
+        now,
+        securityCache,
+      );
+      const positionId = await findOrCreatePosition(
         db,
         position,
         accountId,
@@ -1029,7 +1128,7 @@ function createSnapshotInDb(
         capturedAt,
         now,
       );
-      const fx = ensureFxRate(
+      const fx = await ensureFxRate(
         db,
         id,
         position.fxRate,
@@ -1055,8 +1154,9 @@ function createSnapshotInDb(
       totalSecurities = totalSecurities.plus(calculated.marketValueTwd);
       totalCost = totalCost.plus(calculated.costValueTwd);
       totalPnl = totalPnl.plus(calculated.unrealizedPnlTwd);
-      db.prepare(
-        `INSERT INTO snapshot_positions(
+      await db
+        .prepare(
+          `INSERT INTO snapshot_positions(
         id, snapshot_account_id, position_id, security_id, market, symbol, security_name,
         security_type, position_side, contract_multiplier, contract_expiry,
         quote_currency, quantity, average_cost, market_price, quote_as_of,
@@ -1064,38 +1164,39 @@ function createSnapshotInDb(
         cost_value_twd, market_value_twd, unrealized_pnl_twd, unrealized_return_pct,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        randomUUID(),
-        snapshotAccountId,
-        positionId,
-        securityId,
-        position.market,
-        position.symbol.toUpperCase(),
-        position.name,
-        position.securityType,
-        position.positionSide ?? null,
-        position.contractMultiplier ?? null,
-        position.contractExpiry ?? null,
-        position.quoteCurrency,
-        position.quantity,
-        position.averageCost,
-        position.marketPrice,
-        new Date(position.quoteAsOf).toISOString(),
-        position.quoteSource,
-        position.quoteStatus,
-        position.quoteNote ?? null,
-        fx.id,
-        calculated.costValueQuote,
-        calculated.marketValueQuote,
-        calculated.costValueTwd,
-        calculated.marketValueTwd,
-        calculated.unrealizedPnlTwd,
-        calculated.unrealizedReturnPct,
-        now,
-        now,
-      );
+        )
+        .run(
+          randomUUID(),
+          snapshotAccountId,
+          positionId,
+          securityId,
+          position.market,
+          position.symbol.toUpperCase(),
+          position.name,
+          position.securityType,
+          position.positionSide ?? null,
+          position.contractMultiplier ?? null,
+          position.contractExpiry ?? null,
+          position.quoteCurrency,
+          position.quantity,
+          position.averageCost,
+          position.marketPrice,
+          new Date(position.quoteAsOf).toISOString(),
+          position.quoteSource,
+          position.quoteStatus,
+          position.quoteNote ?? null,
+          fx.id,
+          calculated.costValueQuote,
+          calculated.marketValueQuote,
+          calculated.costValueTwd,
+          calculated.marketValueTwd,
+          calculated.unrealizedPnlTwd,
+          calculated.unrealizedReturnPct,
+          now,
+          now,
+        );
     }
-  });
+  }
 
   for (const [index, loan] of (input.loans ?? []).entries()) {
     let linkedAccount = snapshotAccountLinks.find(
@@ -1117,7 +1218,7 @@ function createSnapshotInDb(
       });
       if (candidates.length === 1) linkedAccount = candidates[0];
     }
-    const loanId = findOrCreateLoan(
+    const loanId = await findOrCreateLoan(
       db,
       {
         ...loan,
@@ -1126,51 +1227,59 @@ function createSnapshotInDb(
       },
       now,
     );
-    const fx = ensureFxRate(db, id, loan.fxRate, loan.currency, fxCache);
+    const fx = await ensureFxRate(db, id, loan.fxRate, loan.currency, fxCache);
     const valueTwd = decimal(loan.outstandingPrincipal).mul(fx.rate);
     totalLiabilities = totalLiabilities.plus(valueTwd);
-    db.prepare(
-      `INSERT INTO snapshot_loans(
+    await db
+      .prepare(
+        `INSERT INTO snapshot_loans(
       id, snapshot_id, snapshot_account_id, loan_id, name, institution, loan_type, currency,
       original_principal, outstanding_principal, annual_interest_rate, rate_type,
       monthly_payment, payment_day_of_month, next_payment_date, start_date, end_date, note,
       fx_rate_id, value_twd, sort_order, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      id,
-      linkedAccount?.snapshotAccountId ?? null,
-      loanId,
-      loan.name,
-      loan.institution ?? null,
-      loan.loanType,
-      loan.currency,
-      loan.originalPrincipal ?? null,
-      loan.outstandingPrincipal,
-      loan.annualInterestRate ?? null,
-      loan.rateType ?? null,
-      loan.monthlyPayment ?? null,
-      loan.paymentDayOfMonth ?? null,
-      loan.nextPaymentDate
-        ? new Date(loan.nextPaymentDate).toISOString()
-        : null,
-      loan.startDate ? new Date(loan.startDate).toISOString() : null,
-      loan.endDate ? new Date(loan.endDate).toISOString() : null,
-      loan.note ?? null,
-      fx.id,
-      money(valueTwd),
-      index,
-      now,
-      now,
-    );
+      )
+      .run(
+        randomUUID(),
+        id,
+        linkedAccount?.snapshotAccountId ?? null,
+        loanId,
+        loan.name,
+        loan.institution ?? null,
+        loan.loanType,
+        loan.currency,
+        loan.originalPrincipal ?? null,
+        loan.outstandingPrincipal,
+        loan.annualInterestRate ?? null,
+        loan.rateType ?? null,
+        loan.monthlyPayment ?? null,
+        loan.paymentDayOfMonth ?? null,
+        loan.nextPaymentDate
+          ? new Date(loan.nextPaymentDate).toISOString()
+          : null,
+        loan.startDate ? new Date(loan.startDate).toISOString() : null,
+        loan.endDate ? new Date(loan.endDate).toISOString() : null,
+        loan.note ?? null,
+        fx.id,
+        money(valueTwd),
+        index,
+        now,
+        now,
+      );
   }
 
   for (const [index, account] of (input.creditCardAccounts ?? []).entries()) {
-    const accountId = findOrCreateCreditCardAccount(db, account, now);
+    const accountId = await findOrCreateCreditCardAccount(db, account, now);
     for (const card of account.cards) {
-      findOrCreateCreditCard(db, accountId, card, now);
+      await findOrCreateCreditCard(db, accountId, card, now);
     }
-    const fx = ensureFxRate(db, id, account.fxRate, account.currency, fxCache);
+    const fx = await ensureFxRate(
+      db,
+      id,
+      account.fxRate,
+      account.currency,
+      fxCache,
+    );
     const statement = decimal(account.statementAmount);
     const payment = decimal(account.paymentAmount);
     const paymentDifference = statement.minus(payment);
@@ -1196,8 +1305,9 @@ function createSnapshotInDb(
       totalCreditCardLiabilities.plus(liabilityValueTwd);
     totalCreditCardCredits = totalCreditCardCredits.plus(creditAssetValueTwd);
     totalLiabilities = totalLiabilities.plus(liabilityValueTwd);
-    db.prepare(
-      `INSERT INTO snapshot_credit_card_accounts(
+    await db
+      .prepare(
+        `INSERT INTO snapshot_credit_card_accounts(
       id, snapshot_id, credit_card_account_id, name, issuer, currency,
       shared_credit_limit, statement_day_of_month, payment_day_of_month,
       account_status, note, statement_period, statement_date, due_date,
@@ -1206,90 +1316,105 @@ function createSnapshotInDb(
       statement_outstanding, utilization_pct, fx_rate_id, statement_amount_twd,
       liability_value_twd, credit_asset_value_twd, sort_order, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      id,
-      accountId,
-      account.name,
-      account.issuer,
-      account.currency,
-      account.sharedCreditLimit,
-      account.statementDayOfMonth ?? null,
-      account.paymentDayOfMonth ?? null,
-      account.status,
-      account.note ?? null,
-      account.statementPeriod,
-      new Date(account.statementDate).toISOString(),
-      new Date(account.dueDate).toISOString(),
-      account.statementAmount,
-      account.paymentAmount,
-      account.paymentDate ? new Date(account.paymentDate).toISOString() : null,
-      account.remainingInstallmentPrincipal,
-      account.overpaymentBalance,
-      money(statementOutstanding),
-      utilization,
-      fx.id,
-      money(statementAmountTwd),
-      money(liabilityValueTwd),
-      money(creditAssetValueTwd),
-      index,
-      now,
-      now,
-    );
+      )
+      .run(
+        randomUUID(),
+        id,
+        accountId,
+        account.name,
+        account.issuer,
+        account.currency,
+        account.sharedCreditLimit,
+        account.statementDayOfMonth ?? null,
+        account.paymentDayOfMonth ?? null,
+        account.status,
+        account.note ?? null,
+        account.statementPeriod,
+        new Date(account.statementDate).toISOString(),
+        new Date(account.dueDate).toISOString(),
+        account.statementAmount,
+        account.paymentAmount,
+        account.paymentDate
+          ? new Date(account.paymentDate).toISOString()
+          : null,
+        account.remainingInstallmentPrincipal,
+        account.overpaymentBalance,
+        money(statementOutstanding),
+        utilization,
+        fx.id,
+        money(statementAmountTwd),
+        money(liabilityValueTwd),
+        money(creditAssetValueTwd),
+        index,
+        now,
+        now,
+      );
   }
 
   for (const [index, flow] of (input.cashFlows ?? []).entries()) {
-    db.prepare(
-      `INSERT INTO snapshot_cash_flows(
+    await db
+      .prepare(
+        `INSERT INTO snapshot_cash_flows(
       id, snapshot_id, flow_type, amount_twd, note, sort_order, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      id,
-      flow.flowType,
-      money(flow.amountTwd),
-      flow.note ?? null,
-      index,
-      now,
-    );
+      )
+      .run(
+        randomUUID(),
+        id,
+        flow.flowType,
+        money(flow.amountTwd),
+        flow.note ?? null,
+        index,
+        now,
+      );
   }
 
-  db.prepare(
-    `UPDATE snapshots SET total_cash_twd = ?, total_securities_twd = ?,
+  await db
+    .prepare(
+      `UPDATE snapshots SET total_cash_twd = ?, total_securities_twd = ?,
     total_asset_value_twd = ?, total_liabilities_twd = ?, net_worth_twd = ?,
     total_credit_card_liabilities_twd = ?, total_credit_card_credits_twd = ?,
     total_cost_twd = ?, unrealized_pnl_twd = ?, updated_at = ?
     WHERE id = ?`,
-  ).run(
-    money(totalCash),
-    money(totalSecurities),
-    money(totalCash.plus(totalSecurities).plus(totalCreditCardCredits)),
-    money(totalLiabilities),
-    money(
-      totalCash
-        .plus(totalSecurities)
-        .plus(totalCreditCardCredits)
-        .minus(totalLiabilities),
-    ),
-    money(totalCreditCardLiabilities),
-    money(totalCreditCardCredits),
-    money(totalCost),
-    money(totalPnl),
-    now,
-    id,
-  );
+    )
+    .run(
+      money(totalCash),
+      money(totalSecurities),
+      money(totalCash.plus(totalSecurities).plus(totalCreditCardCredits)),
+      money(totalLiabilities),
+      money(
+        totalCash
+          .plus(totalSecurities)
+          .plus(totalCreditCardCredits)
+          .minus(totalLiabilities),
+      ),
+      money(totalCreditCardLiabilities),
+      money(totalCreditCardCredits),
+      money(totalCost),
+      money(totalPnl),
+      now,
+      id,
+    );
+  await db
+    .prepare(
+      "INSERT INTO snapshot_commits(snapshot_id, committed_at) VALUES (?, ?)",
+    )
+    .run(id, now);
   return id;
 }
 
-export function createSnapshot(input: SnapshotCreateInput): SnapshotDetail {
-  const id = withTransaction((db) => createSnapshotInDb(db, input));
-  const detail = getSnapshotDetail(id);
+export async function createSnapshot(
+  input: SnapshotCreateInput,
+): Promise<SnapshotDetail> {
+  const id = await withTransaction(async (db) => createSnapshotInDb(db, input));
+  const detail = await getSnapshotDetail(id);
   if (!detail) throw new Error("建立快照後無法讀取資料");
   return detail;
 }
 
-export function listSales(db = getDatabase()): SaleView[] {
-  const rows = db
+export async function listSales(db?: FinanceDatabase): Promise<SaleView[]> {
+  db ??= await getDatabase();
+  const rows = (await db
     .prepare(
       `SELECT ps.*, a.name AS account_name, settlement.name AS settlement_account_name,
       s.id AS security_id, s.symbol, s.name AS security_name
@@ -1300,7 +1425,7 @@ export function listSales(db = getDatabase()): SaleView[] {
     LEFT JOIN accounts settlement ON settlement.id = ps.settlement_account_id
     ORDER BY ps.sold_at DESC, ps.created_at DESC`,
     )
-    .all() as Row[];
+    .all()) as Row[];
   return rows.map((row) => ({
     id: text(row.id),
     positionId: text(row.position_id),
@@ -1360,18 +1485,18 @@ function dedupeLatestByTaipeiDay<T extends { capturedAt: string }>(rows: T[]) {
   );
 }
 
-export function getDashboard(range = "6m"): DashboardData {
-  const db = getDatabase();
-  const latest = getLatestSnapshot(db);
-  const history = listSnapshotSummaries(100, db);
+export async function getDashboard(range = "6m"): Promise<DashboardData> {
+  const db = await getDatabase();
+  const latest = await getLatestSnapshot(db);
+  const history = await listSnapshotSummaries(100, db);
   const since = dateFromRange(range);
   const rows = since
-    ? db
+    ? await db
         .prepare(
           "SELECT captured_at, net_worth_twd FROM snapshots WHERE captured_at >= ? ORDER BY captured_at",
         )
         .all(since)
-    : db
+    : await db
         .prepare(
           "SELECT captured_at, net_worth_twd FROM snapshots ORDER BY captured_at",
         )
@@ -1385,12 +1510,12 @@ export function getDashboard(range = "6m"): DashboardData {
         totalAssetValueTwd: text(row.net_worth_twd),
       })),
     ),
-    sold: listSales(db),
+    sold: await listSales(db),
     health: buildHealthReport(latest),
   };
 }
 
-export function sellPosition(
+export async function sellPosition(
   positionId: string,
   input: {
     soldAt: string;
@@ -1401,15 +1526,15 @@ export function sellPosition(
     tax: string;
     note?: string | null;
   },
-): SnapshotDetail {
-  const resultId = withTransaction((db) => {
-    const lifecycle = db
+): Promise<SnapshotDetail> {
+  const resultId = await withTransaction(async (db) => {
+    const lifecycle = (await db
       .prepare(
         "SELECT * FROM account_positions WHERE id = ? AND status = 'active'",
       )
-      .get(positionId) as Row | undefined;
+      .get(positionId)) as Row | undefined;
     if (!lifecycle) throw new Error("持倉已售出或不存在");
-    const latest = getLatestSnapshot(db);
+    const latest = await getLatestSnapshot(db);
     if (!latest) throw new Error("沒有可供賣出的最新快照");
     const current = latest.accounts
       .flatMap((account) => account.positions)
@@ -1488,7 +1613,7 @@ export function sellPosition(
       ),
     }));
     const soldAt = new Date(input.soldAt).toISOString();
-    const snapshotId = createSnapshotInDb(db, {
+    const snapshotId = await createSnapshotInDb(db, {
       rawInput: `${current.accountName} 的 ${current.symbol} 已全部賣出`,
       baseSnapshotId: latest.id,
       accounts,
@@ -1504,53 +1629,56 @@ export function sellPosition(
         : [],
     });
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO position_sales(
+    await db
+      .prepare(
+        `INSERT INTO position_sales(
       id, position_id, result_snapshot_id, sold_at, quantity, sale_price, currency,
       settlement_account_id, fee, tax, gross_proceeds, net_proceeds, cost_basis,
       realized_pnl, fx_rate, realized_pnl_twd, note, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      randomUUID(),
-      positionId,
-      snapshotId,
-      soldAt,
-      current.quantity,
-      input.salePrice,
-      input.currency,
-      settlementAccount.accountId,
-      money(fee),
-      money(tax),
-      money(grossProceeds),
-      money(netProceeds),
-      money(costBasis),
-      money(realizedPnl),
-      fxRate.toString(),
-      money(realizedPnl.mul(fxRate)),
-      input.note ?? null,
-      now,
-    );
-    db.prepare(
-      "UPDATE account_positions SET status = 'sold', sold_at = ?, updated_at = ? WHERE id = ?",
-    ).run(soldAt, now, positionId);
+      )
+      .run(
+        randomUUID(),
+        positionId,
+        snapshotId,
+        soldAt,
+        current.quantity,
+        input.salePrice,
+        input.currency,
+        settlementAccount.accountId,
+        money(fee),
+        money(tax),
+        money(grossProceeds),
+        money(netProceeds),
+        money(costBasis),
+        money(realizedPnl),
+        fxRate.toString(),
+        money(realizedPnl.mul(fxRate)),
+        input.note ?? null,
+        now,
+      );
+    await db
+      .prepare(
+        "UPDATE account_positions SET status = 'sold', sold_at = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(soldAt, now, positionId);
     return snapshotId;
   });
-  const detail = getSnapshotDetail(resultId);
+  const detail = await getSnapshotDetail(resultId);
   if (!detail) throw new Error("賣出後無法讀取結果快照");
   return detail;
 }
 
-export function deleteSnapshot(id: string): void {
-  withTransaction((db) => {
-    const result = db.prepare("DELETE FROM snapshots WHERE id = ?").run(id);
-    if (Number(result.changes) === 0) throw new Error("找不到快照");
-  });
+export async function deleteSnapshot(id: string): Promise<void> {
+  const db = await getDatabase();
+  const result = await db.prepare("DELETE FROM snapshots WHERE id = ?").run(id);
+  if (Number(result.changes) === 0) throw new Error("找不到快照");
 }
 
-export function getAccountTrend(accountId: string, range = "all") {
-  const db = getDatabase();
+export async function getAccountTrend(accountId: string, range = "all") {
+  const db = await getDatabase();
   const since = dateFromRange(range);
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT s.captured_at,
     COALESCE((SELECT SUM(CAST(cb.value_twd AS REAL)) FROM cash_balances cb WHERE cb.snapshot_account_id = sa.id), 0) AS cash_value,
@@ -1562,7 +1690,7 @@ export function getAccountTrend(accountId: string, range = "all") {
       AND (? IS NULL OR s.captured_at >= ?)
     ORDER BY s.captured_at`,
     )
-    .all(accountId, since, since) as Row[];
+    .all(accountId, since, since)) as Row[];
   return dedupeLatestByTaipeiDay(
     rows.map((row) => {
       const cashValue = decimal(text(row.cash_value));
@@ -1581,10 +1709,10 @@ export function getAccountTrend(accountId: string, range = "all") {
   );
 }
 
-export function getSecurityTrend(securityId: string, range = "all") {
-  const db = getDatabase();
+export async function getSecurityTrend(securityId: string, range = "all") {
+  const db = await getDatabase();
   const since = dateFromRange(range);
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT s.captured_at,
     COALESCE(SUM(CASE WHEN sp.security_id = ? THEN CAST(sp.quantity AS REAL) ELSE 0 END), 0) AS quantity,
@@ -1604,7 +1732,14 @@ export function getSecurityTrend(securityId: string, range = "all") {
     GROUP BY s.id, s.captured_at
     ORDER BY s.captured_at`,
     )
-    .all(securityId, securityId, securityId, securityId, since, since) as Row[];
+    .all(
+      securityId,
+      securityId,
+      securityId,
+      securityId,
+      since,
+      since,
+    )) as Row[];
   return dedupeLatestByTaipeiDay(
     rows.map((row) => ({
       capturedAt: text(row.captured_at),
@@ -1615,10 +1750,12 @@ export function getSecurityTrend(securityId: string, range = "all") {
   );
 }
 
-export function getCreditCardTrend(range = "all"): CreditCardTrendPoint[] {
-  const db = getDatabase();
+export async function getCreditCardTrend(
+  range = "all",
+): Promise<CreditCardTrendPoint[]> {
+  const db = await getDatabase();
   const since = dateFromRange(range);
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT s.captured_at, sc.credit_card_account_id, sc.statement_period,
       sc.statement_amount, sc.payment_amount, COALESCE(fx.rate, '1') AS fx_rate
@@ -1629,7 +1766,7 @@ export function getCreditCardTrend(range = "all"): CreditCardTrendPoint[] {
         AND s.raw_input <> '更新信用卡帳戶設定'
       ORDER BY s.captured_at`,
     )
-    .all(since, since) as Row[];
+    .all(since, since)) as Row[];
 
   const latestByAccountAndPeriod = new Map<string, Row>();
   for (const row of rows) {
@@ -1933,21 +2070,26 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
     app_settings: ["key", "value_json", "updated_at"],
   };
 
-export function exportBackup() {
-  const db = getDatabase();
+export async function exportBackup() {
+  const db = await getDatabase();
   return {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
     data: Object.fromEntries(
-      backupTables.map((table) => [
-        table,
-        db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(),
-      ]),
+      await Promise.all(
+        backupTables.map(
+          async (table) =>
+            [
+              table,
+              await db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(),
+            ] as const,
+        ),
+      ),
     ),
   };
 }
 
-export function importBackup(payload: unknown) {
+export async function importBackup(payload: unknown) {
   if (!payload || typeof payload !== "object") throw new Error("備份格式無效");
   const backup = payload as {
     schemaVersion?: number;
@@ -1955,12 +2097,18 @@ export function importBackup(payload: unknown) {
   };
   if (backup.schemaVersion !== 1 || !backup.data)
     throw new Error("不支援此備份版本");
-  return withTransaction((db) => {
+  return withTransaction(async (db) => {
     let imported = 0;
     let skipped = 0;
-    db.exec("PRAGMA defer_foreign_keys = ON");
+    await db.prepare("PRAGMA defer_foreign_keys = ON").run();
     for (const table of backupTables) {
       const rows = backup.data?.[table] ?? [];
+      const primaryColumn = backupColumns[table][0];
+      const existing = new Set(
+        (await db.prepare(`SELECT ${primaryColumn} FROM ${table}`).all()).map(
+          (row) => String(row[primaryColumn]),
+        ),
+      );
       for (const row of rows) {
         if (!row || typeof row !== "object" || Array.isArray(row))
           throw new Error(`${table} 備份列格式無效`);
@@ -1968,21 +2116,30 @@ export function importBackup(payload: unknown) {
           Object.hasOwn(row, column),
         );
         if (columns.length === 0) continue;
+        const primaryValue = String(row[primaryColumn]);
+        if (existing.has(primaryValue)) {
+          skipped += 1;
+          continue;
+        }
         const placeholders = columns.map(() => "?").join(", ");
-        const result = db
+        const result = await db
           .prepare(
             `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
           )
           .run(...columns.map((column) => row[column] as never));
-        if (Number(result.changes) > 0) imported += 1;
-        else skipped += 1;
+        if (Number(result.changes) > 0) {
+          imported += 1;
+          existing.add(primaryValue);
+        } else skipped += 1;
       }
     }
-    db.prepare(
-      `UPDATE snapshots SET net_worth_twd = total_asset_value_twd
+    await db
+      .prepare(
+        `UPDATE snapshots SET net_worth_twd = total_asset_value_twd
       WHERE total_liabilities_twd = '0' AND net_worth_twd = '0'
       AND total_asset_value_twd <> '0'`,
-    ).run();
+      )
+      .run();
     return { imported, skipped };
   });
 }

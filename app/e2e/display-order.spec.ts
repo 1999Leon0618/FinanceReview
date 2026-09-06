@@ -14,6 +14,7 @@ test("自訂排序套用首頁與全部清單、重新整理保留且可還原",
   const response = await request.post("/api/snapshots", {
     data: {
       rawInput: "排序測試",
+      capturedAt: new Date(Date.now() + 518_400_000).toISOString(),
       accounts: Array.from({ length: 7 }, (_, index) => ({
         name: `排序帳戶 ${index + 1}`,
         institution: "排序銀行",

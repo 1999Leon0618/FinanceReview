@@ -14,7 +14,7 @@ import {
 } from "@/lib/parser";
 
 describe("財務計算", () => {
-  it("用 Decimal 計算持倉與匯率", () => {
+  it("用 Decimal 計算持倉與匯率", async () => {
     expect(calculatePosition("10", "100.1", "120.2", "32")).toEqual({
       costValueQuote: "1001",
       marketValueQuote: "1202",
@@ -28,7 +28,7 @@ describe("財務計算", () => {
   it("臺股一張換算成 1000 股", () =>
     expect(toTaiwanShares("2.5", "lot")).toBe("2500"));
 
-  it("依方向、口數與契約乘數計算期貨未實現損益", () => {
+  it("依方向、口數與契約乘數計算期貨未實現損益", async () => {
     expect(
       calculateFuturesPosition("2", "22150", "22320", "50", "long"),
     ).toMatchObject({
@@ -44,7 +44,7 @@ describe("財務計算", () => {
     });
   });
 
-  it("可確定性解析小型臺指期與期貨帳戶權益", () => {
+  it("可確定性解析小型臺指期與期貨帳戶權益", async () => {
     const input =
       "元大期貨帳戶權益30萬，小型臺指期 2026/09 多單 2 口，均價 22,150";
     expect(extractCashBalances(input)).toMatchObject([
@@ -71,7 +71,7 @@ describe("財務計算", () => {
     ]);
   });
 
-  it("微型臺指期使用 TMF 與每點 10 元", () => {
+  it("微型臺指期使用 TMF 與每點 10 元", async () => {
     expect(
       extractFuturesPositions(
         "元大期貨帳戶權益30萬，微型臺指期 2026/09 空單 3 口，均價 46,031.67",
@@ -92,7 +92,7 @@ describe("財務計算", () => {
     ]);
   });
 
-  it("解析貸款未償本金、利率與月付金", () => {
+  it("解析貸款未償本金、利率與月付金", async () => {
     expect(
       extractLoans(
         "國泰房貸剩餘 850 萬，利率 2.1%，每月繳 38,000，下次繳款日 2026/09/05",
@@ -123,7 +123,7 @@ describe("財務計算", () => {
     });
   });
 
-  it("解析口語貸款餘額、月付金與每月還款日", () => {
+  it("解析口語貸款餘額、月付金與每月還款日", async () => {
     expect(
       extractLoans("國泰有貸款還有951400元每月要還14853元每月21日還款"),
     ).toEqual([
@@ -185,7 +185,7 @@ describe("財務計算", () => {
     });
   });
 
-  it("拒絕部分賣出與買入推算", () => {
+  it("拒絕部分賣出與買入推算", async () => {
     expect(classifyUnsupportedInput("0050 賣出 1000 股")).toContain("剩餘數量");
     expect(classifyUnsupportedInput("今天加碼 AAPL 10 股")).toContain(
       "持有數量",
@@ -193,7 +193,7 @@ describe("財務計算", () => {
     expect(classifyUnsupportedInput("0050 已全部賣出")).toBeNull();
   });
 
-  it("可辨識純銀行餘額，且不要求持倉資料", () => {
+  it("可辨識純銀行餘額，且不要求持倉資料", async () => {
     expect(extractCashBalances("永豐銀行餘額為30652元")).toEqual([
       {
         accountName: "永豐銀行",
@@ -205,7 +205,7 @@ describe("財務計算", () => {
     ]);
   });
 
-  it("可將同一銀行的不同幣別分次解析成獨立更新", () => {
+  it("可將同一銀行的不同幣別分次解析成獨立更新", async () => {
     expect(extractCashBalances("永豐銀行30652")).toMatchObject([
       { accountName: "永豐銀行", currency: "TWD", balance: "30652" },
     ]);
@@ -214,7 +214,7 @@ describe("財務計算", () => {
     ]);
   });
 
-  it("確定性解析會修正既有更新中的幣別", () => {
+  it("確定性解析會修正既有更新中的幣別", async () => {
     const patch = mergeDeterministicUpdates("永豐銀行日幣60000", {
       unsupportedReason: null,
       accountUpdates: [
@@ -236,7 +236,7 @@ describe("財務計算", () => {
     ]);
   });
 
-  it("會把基金級別代碼保存為精確行情代碼", () => {
+  it("會把基金級別代碼保存為精確行情代碼", async () => {
     const patch = mergeDeterministicUpdates(
       "兆豐證券持有安聯台灣大壩基金，基金級別代碼 T3601Y，100單位均價300",
       {
@@ -262,7 +262,7 @@ describe("財務計算", () => {
     expect(patch.positionUpdates[0].providerSymbol).toBe("T3601Y");
   });
 
-  it("可從混合敘述補出銀行餘額", () => {
+  it("可從混合敘述補出銀行餘額", async () => {
     expect(
       extractCashBalances(
         "永豐銀行目前餘額 30,652 元，富邦證券現金為 120000 元",

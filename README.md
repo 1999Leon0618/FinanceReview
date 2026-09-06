@@ -1,6 +1,8 @@
 # FinanceReview
 
-FinanceReview 是單一使用者、只監聽 `127.0.0.1` 的本機資產歷史工具。資料保存在 `data/finance-review.db`，包含帳戶、現金、持倉生命週期、快照、匯率與全部賣出紀錄。
+Workers＋D1 搬移的第 3 階段已完成：資料存取層可在本機使用 SQLite，或在 Cloudflare Workers 使用 D1。指令、架構與實測結果請見 [Workers＋D1 說明](app/WORKERS.md)。目前尚未建立正式雲端資源或公開部署。
+
+FinanceReview 是單一使用者的資產歷史工具。本機模式只監聽 `127.0.0.1`，資料保存在 `data/finance-review.db`；Workers 模式將相同資料模型保存在 D1。
 
 ![FinanceReview 財務總覽](preview-assets/financereview-social-preview.png)
 
@@ -69,7 +71,7 @@ FinanceReview 是單一使用者、只監聽 `127.0.0.1` 的本機資產歷史�
 
 ## 系統架構
 
-FinanceReview 是單一 Next.js 應用程式，瀏覽器只與本機 Route Handlers 溝通；業務邏輯、文字解析、行情存取與 SQLite 寫入都在 Node.js runtime 內執行。系統沒有外部應用伺服器或雲端資料庫。
+FinanceReview 是單一 Next.js 應用程式，瀏覽器透過 Route Handlers 使用業務邏輯、文字解析、行情與資料存取功能。本機由 Node.js runtime 寫入 SQLite；Cloudflare 版本由 vinext 建置成 Worker，並透過 binding 寫入 D1。
 
 ```mermaid
 flowchart LR
@@ -77,10 +79,10 @@ flowchart LR
     API[Next.js Route Handlers<br/>輸入驗證與錯誤轉換]
     DOMAIN[領域服務<br/>parser / quotes / finance]
     REPO[Repository<br/>快照與查詢]
-    DB[(SQLite<br/>data/finance-review.db)]
+    DB[(SQLite／D1<br/>依執行環境選擇)]
     MARKET[公開行情來源<br/>TWSE / TPEx / SITCA / TAIFEX / Yahoo]
 
-    UI -->|127.0.0.1 HTTP| API
+    UI -->|HTTP| API
     API --> DOMAIN
     API --> REPO
     DOMAIN --> REPO
@@ -95,7 +97,7 @@ flowchart LR
 | 表現層   | `app/components/`、`app/app/page.tsx`                              | 財務總覽、圖表、快照確認表、手動輸入、行情補價與備份操作 |
 | HTTP API | `app/app/api/`                                                     | 接收 JSON、以 Zod 驗證輸入、呼叫領域服務並統一回傳錯誤   |
 | 領域邏輯 | `app/lib/parser.ts`、`finance.ts`、`quotes.ts`、`quote-refresh.ts` | 文字解析、快照提案合併、Decimal 計算、行情與匯率解析     |
-| 資料存取 | `app/lib/repository.ts`、`db.ts`                                   | SQLite migration、交易、快照寫入、趨勢查詢、備份匯入匯出 |
+| 資料存取 | `app/lib/repository.ts`、`db.ts`                                   | SQLite／D1、原子寫入、快照與趨勢查詢、備份匯入匯出       |
 | 共用契約 | `app/lib/types.ts`、`validation.ts`                                | TypeScript 型別與 API 結構驗證                           |
 
 ### 規則式自然語言解析
@@ -132,11 +134,11 @@ sequenceDiagram
 - 買入、加碼及部分賣出不由系統推算數量或成本；系統會要求改填「目前數量與平均成本」。只有明確的全部賣出才進入賣出流程。
 - 無法以內建規則辨識時，原始輸入會保留，使用者可改用手動表單。
 
-文字整理全程在本機執行；行情更新會連線至下述公開資料來源。
+文字整理完全由應用程式內的規則執行；行情更新會連線至下述公開資料來源。
 
 ### 快照與行情資料流
 
-建立快照時，`POST /api/snapshots` 先以 Zod 驗證確認表，補齊外幣對 TWD 的匯率，再由 repository 在一個 `BEGIN IMMEDIATE` 交易內寫入完整快照與選填資金流。金額計算使用 `decimal.js`，資料庫則以十進位字串保存金額，避免 JavaScript 浮點數直接成為財務資料來源。
+建立快照時，`POST /api/snapshots` 先以 Zod 驗證確認表，補齊外幣對 TWD 的匯率，再由 repository 原子寫入完整快照與選填資金流。本機 SQLite 使用 `BEGIN IMMEDIATE`，D1 使用 `D1Database.batch()`。金額計算使用 `decimal.js`，資料庫則以十進位字串保存金額，避免 JavaScript 浮點數直接成為財務資料來源。
 
 「更新全部行情」分成兩階段：
 
@@ -156,9 +158,9 @@ sequenceDiagram
 
 `quote_cache` 保存可重新取得的行情以減少重複請求；它不包含在 JSON 備份中。
 
-### SQLite 資料庫
+### SQLite 與 D1 資料庫
 
-預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout。啟動時依 `PRAGMA user_version` 自動執行 `app/db/migrations/`，目前 schema version 為 9。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 11。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 
@@ -201,7 +203,7 @@ erDiagram
 | `quote_cache`                   | 可重新取得的行情快取，不列入備份                                       |
 | `app_settings`                  | 基準幣別、預設圖表區間與行情提供者等設定                               |
 
-刪除快照會受外鍵關係保護；快照內容使用 `ON DELETE CASCADE` 清理，主檔與持倉生命週期則多採 `RESTRICT`，避免歷史參照失效。所有重要寫入（建立快照、全部賣出、匯入備份）都包在交易中，失敗時 rollback。
+刪除快照會受外鍵關係保護；快照內容使用 `ON DELETE CASCADE` 清理，主檔與持倉生命週期則多採 `RESTRICT`，避免歷史參照失效。建立快照、全部賣出與匯入備份等重要寫入在兩種資料庫都會原子提交，失敗時整批 rollback。
 
 ### API 一覽
 
@@ -221,7 +223,7 @@ erDiagram
 
 ## 資料位置與環境變數
 
-預設資料庫位置：
+本機模式的預設資料庫位置：
 
 ```text
 data/finance-review.db
@@ -232,7 +234,7 @@ data/finance-review.db
 | `FINANCE_REVIEW_DB_PATH` | 覆寫 SQLite 資料庫路徑    |
 | `NEXT_DIST_DIR`          | 覆寫 Next.js 建置輸出目錄 |
 
-請勿將資料庫或匯出的財務備份提交至版本控制。SQLite 原始資料未加密，應搭配作業系統帳戶權限及磁碟加密保護。
+Workers 模式由 `wrangler.jsonc` 的 `DB` binding 連接 D1。請勿將資料庫或匯出的財務備份提交至版本控制。SQLite 原始資料未加密，應搭配作業系統帳戶權限及磁碟加密保護。
 
 ## 專案結構
 
@@ -242,9 +244,10 @@ FinanceReview/
 │  ├─ app/                    # 頁面與 Route Handlers
 │  ├─ components/             # 財務總覽、確認表與互動元件
 │  ├─ db/migrations/          # SQLite schema migrations
+│  ├─ d1/migrations/          # D1 初始 schema migration
 │  ├─ e2e/                    # Playwright 端對端測試
 │  ├─ lib/                    # 解析、行情、估值與 repository
-│  ├─ scripts/init-db.ts      # 資料庫初始化入口
+│  ├─ scripts/                # 資料庫初始化、D1 產生與 Workers 驗證
 │  └─ tests/                  # Vitest 單元／整合測試
 ├─ data/                      # 本機 SQLite 資料
 ├─ preview-assets/            # README 與社群預覽素材
@@ -260,7 +263,7 @@ npm run db:init
 npm run dev
 ```
 
-主要技術為 Next.js 16、React 19、TypeScript、Node.js 內建 SQLite、Decimal.js、Recharts、Zod、Vitest 與 Playwright。
+主要技術為 Next.js 16、React 19、TypeScript、Node.js 內建 SQLite、Cloudflare Workers＋D1、vinext、Decimal.js、Recharts、Zod、Vitest 與 Playwright。
 
 ## 開發驗證
 
@@ -268,6 +271,7 @@ npm run dev
 cd app
 npm run check
 npm run test:e2e
+npm run check:workers
 ```
 
 `npm run check` 會依序執行型別檢查、ESLint、Vitest 與正式建置。提交前亦可用
@@ -283,11 +287,11 @@ npx playwright install chromium
 
 ## 已知限制
 
-- 目前為單一使用者、本機工具，沒有帳號、權限或多人同步機制。
+- 目前僅設計給單一使用者；正式 Workers 站點尚未建立，登入保護將由 Cloudflare Access 提供。
 - 部分賣出不做交易推算，需直接輸入剩餘數量與新的平均成本。
 - 變動歸因依賴使用者正確填寫已反映在餘額中的資金流；未填項目會歸入「市場與匯率等」。
 - 目前資金流未記錄期間內的精確發生時間，因此績效以期間中點估算，不是逐日精確 TWR。
 - 第一階段信用卡功能不包含消費明細、未出帳金額、銀行自動對帳或自然語言解析；需在信用卡編輯器於每月期限前手動更新繳款結果。
 - 基準比較依賴 Yahoo Finance 歷史行情；來源不可用時仍會顯示自身績效，但暫不顯示基準。
 - 行情依外部來源可用性而定；無法取得時需人工補價。
-- SQLite 資料庫未提供應用層加密。
+- SQLite 與 D1 都未提供應用層欄位加密。

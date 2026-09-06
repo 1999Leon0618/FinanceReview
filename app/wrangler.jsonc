@@ -7,23 +7,42 @@
   "compatibility_date": "2026-09-06",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker-entry.ts",
-"routes": [
-  {
-    "pattern": "finance-staging.hsun.dev",
-    "custom_domain": true,
-  },
-],
-"d1_databases": [
-  {
-    "binding": "DB",
-    "database_name": "finance-review-staging",
-    "database_id": "72b4525e-77fa-46b1-8ba3-3d793924b7f1",
-    "migrations_dir": "d1/migrations",
-  },
-],
+  "routes": [
+    {
+      "pattern": "finance-staging.hsun.dev",
+      "custom_domain": true,
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "finance-review-staging",
+      "database_id": "72b4525e-77fa-46b1-8ba3-3d793924b7f1",
+      "migrations_dir": "d1/migrations",
+    },
+  ],
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "none",
     "binding": "ASSETS",
+  },
+  "env": {
+    "production": {
+      "name": "finance-review-production",
+      "routes": [
+        {
+          "pattern": "finance.hsun.dev",
+          "custom_domain": true,
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "finance-review-production",
+          "database_id": "5d8dea75-e72f-442a-935b-0f116bf2f616",
+          "migrations_dir": "d1/migrations",
+        },
+      ],
+    },
   },
 }

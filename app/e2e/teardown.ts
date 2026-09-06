@@ -1,3 +1,3 @@
 export default async function teardown() {
-  // Next.js 關閉前仍持有 SQLite WAL；下次 globalSetup 會在服務啟動前安全清除。
+  // 每次測試使用獨立資料庫，避免 Next.js 尚未關閉 SQLite 時發生鎖檔競態。
 }

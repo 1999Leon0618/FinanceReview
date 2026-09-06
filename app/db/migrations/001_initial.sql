@@ -14,12 +14,12 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE TABLE IF NOT EXISTS securities (
   id TEXT PRIMARY KEY,
-  market TEXT NOT NULL CHECK (market IN ('TWSE', 'TPEX', 'US')),
+  market TEXT NOT NULL CHECK (market IN ('TWSE', 'TPEX', 'US', 'FUND')),
   exchange TEXT,
   symbol TEXT NOT NULL,
   provider_symbol TEXT NOT NULL,
   name TEXT NOT NULL,
-  security_type TEXT NOT NULL CHECK (security_type IN ('stock', 'etf')),
+  security_type TEXT NOT NULL CHECK (security_type IN ('stock', 'etf', 'fund')),
   quote_currency TEXT NOT NULL,
   archived_at TEXT,
   created_at TEXT NOT NULL,

@@ -1,11 +1,13 @@
-import Decimal from 'decimal.js';
+import Decimal from "decimal.js";
 
 Decimal.set({ precision: 32, rounding: Decimal.ROUND_HALF_UP });
 
 export const zero = new Decimal(0);
 
-export function decimal(value: string | number | Decimal | null | undefined): Decimal {
-  if (value === null || value === undefined || value === '') return zero;
+export function decimal(
+  value: string | number | Decimal | null | undefined,
+): Decimal {
+  if (value === null || value === undefined || value === "") return zero;
   return new Decimal(value);
 }
 
@@ -25,7 +27,7 @@ export function calculatePosition(
   quantity: string,
   averageCost: string,
   marketPrice: string,
-  fxRate = '1',
+  fxRate = "1",
 ) {
   const qty = decimal(quantity);
   const cost = qty.mul(decimal(averageCost));
@@ -40,10 +42,45 @@ export function calculatePosition(
     costValueTwd: money(costTwd),
     marketValueTwd: money(marketTwd),
     unrealizedPnlTwd: money(pnl),
-    unrealizedReturnPct: costTwd.isZero() ? null : percentage(pnl.div(costTwd).mul(100)),
+    unrealizedReturnPct: costTwd.isZero()
+      ? null
+      : percentage(pnl.div(costTwd).mul(100)),
   };
 }
 
-export function toTaiwanShares(value: string, unit: 'share' | 'lot' = 'share'): string {
-  return shares(unit === 'lot' ? decimal(value).mul(1000) : value);
+export function calculateFuturesPosition(
+  contracts: string,
+  averageEntryPrice: string,
+  marketPrice: string,
+  multiplier: string,
+  side: "long" | "short",
+  fxRate = "1",
+) {
+  const direction = side === "long" ? new Decimal(1) : new Decimal(-1);
+  const costNotionalQuote = decimal(averageEntryPrice)
+    .mul(decimal(multiplier))
+    .mul(decimal(contracts));
+  const pnlQuote = decimal(marketPrice)
+    .minus(decimal(averageEntryPrice))
+    .mul(direction)
+    .mul(decimal(multiplier))
+    .mul(decimal(contracts));
+  const pnlTwd = pnlQuote.mul(decimal(fxRate));
+  return {
+    costValueQuote: "0",
+    marketValueQuote: "0",
+    costValueTwd: "0",
+    marketValueTwd: "0",
+    unrealizedPnlTwd: money(pnlTwd),
+    unrealizedReturnPct: costNotionalQuote.isZero()
+      ? null
+      : percentage(pnlQuote.div(costNotionalQuote).mul(100)),
+  };
+}
+
+export function toTaiwanShares(
+  value: string,
+  unit: "share" | "lot" = "share",
+): string {
+  return shares(unit === "lot" ? decimal(value).mul(1000) : value);
 }

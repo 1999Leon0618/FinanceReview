@@ -1,4 +1,6 @@
-data/*.db
-data/*.db-shm
-data/*.db-wal
-data/*.db-journal
+# Local database files and maintenance backups
+data/**/*.db*
+data/backups/
+
+# Local workspace probes
+_workspace-test.txt

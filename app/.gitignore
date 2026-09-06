@@ -13,6 +13,7 @@
 
 # next.js
 /.next/
+/.next-e2e/
 /.vinext/
 /out/
 
@@ -21,6 +22,7 @@
 *.pem
 
 # debug
+/debug.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,6 +1,6 @@
 # FinanceReview
 
-Workers＋D1 搬移的第 3 階段已完成：資料存取層可在本機使用 SQLite，或在 Cloudflare Workers 使用 D1。指令、架構與實測結果請見 [Workers＋D1 說明](app/WORKERS.md)。目前尚未建立正式雲端資源或公開部署。
+資料存取層可在本機使用 SQLite，或在 Cloudflare Workers 使用 D1。正式環境已部署於 `finance.hsun.dev`，並由 Cloudflare Access 保護；指令、架構與部署流程請見 [Workers＋D1 說明](app/WORKERS.md)。
 
 FinanceReview 是單一使用者的資產歷史工具。本機模式只監聽 `127.0.0.1`，資料保存在 `data/finance-review.db`；Workers 模式將相同資料模型保存在 D1。
 

@@ -548,9 +548,9 @@ export default function FinanceDashboard({
           <div className="privacy-note">
             <ShieldCheck size={17} />
             <div>
-              <p className="font-semibold text-white/80">僅儲存於本機</p>
+              <p className="font-semibold text-white/80">受保護的個人帳本</p>
               <p className="mt-1 leading-5 text-white/38">
-                財務資料不會上傳至雲端
+                請定期匯出備份並妥善保存
               </p>
             </div>
           </div>
@@ -1333,10 +1333,10 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
             <WalletCards size={34} className="text-[#d6f47a]" />
             <div>
               <p className="text-xs font-semibold tracking-[.14em] text-white/45">
-                LOCAL FIRST
+                PRIVATE BY DEFAULT
               </p>
               <p className="mt-3 text-2xl font-medium leading-snug">
-                你的財務資料不需要離開這台電腦。
+                每一筆資料都由你掌握，記得定期匯出備份。
               </p>
             </div>
           </div>

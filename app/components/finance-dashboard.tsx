@@ -823,7 +823,7 @@ export function SnapshotEditor({
                 新增資產與負債紀錄
               </h2>
               <span className="rounded-full bg-[#e8f1e9] px-2 py-1 text-[10px] font-bold tracking-wide text-[#2b674c]">
-                本機處理
+                規則式處理
               </span>
             </div>
             <p className="mt-1 text-xs text-[#718078]">
@@ -861,7 +861,7 @@ export function SnapshotEditor({
               </div>
               <div className="mt-6 flex items-center gap-2 rounded-xl bg-white/[.07] px-3 py-2.5 text-xs">
                 <span className="h-2 w-2 rounded-full bg-[#c8f16b]" />
-                使用內建規則在本機整理，不連線至 AI 服務
+                使用內建規則整理，不連線至 AI 服務
               </div>
             </div>
             <div className="bg-[#f8faf7] p-6 text-[#17251d]">
@@ -3137,7 +3137,7 @@ export default function FinanceDashboard() {
             </div>
             <div>
               <p className="font-semibold">FinanceReview</p>
-              <p className="text-xs text-white/45">本機資產紀錄</p>
+              <p className="text-xs text-white/45">個人資產紀錄</p>
             </div>
           </div>
           <nav className="mt-12 space-y-2 text-sm">

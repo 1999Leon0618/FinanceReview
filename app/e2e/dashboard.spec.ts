@@ -28,6 +28,10 @@ test.beforeEach(async ({ page }) => {
 test("深色模式可切換並保留使用者偏好", async ({ page }) => {
   await page.goto("/");
 
+  await expect(page).toHaveTitle("FinanceReview｜個人資產紀錄");
+  await expect(page.getByText("受保護的個人帳本")).toBeVisible();
+  await expect(page.getByText("財務資料不會上傳至雲端")).toHaveCount(0);
+
   const toggle = page.getByRole("button", { name: "切換為深色模式" });
   await toggle.click();
   await expect(page.locator("html")).toHaveClass(/dark/);

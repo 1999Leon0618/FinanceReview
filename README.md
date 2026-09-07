@@ -24,7 +24,7 @@ FinanceReview 是單一使用者的資產歷史工具。本機模式只監聽 `1
 必要環境：
 
 - Windows PowerShell
-- Node.js 22.13 或更新版本（含 npm）
+- Node.js 24 LTS（含 npm）
 
 在 PowerShell 執行：
 

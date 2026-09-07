@@ -12,14 +12,14 @@ $AppRoot = Join-Path $ProjectRoot 'app'
 $Url = "http://127.0.0.1:$Port"
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  throw 'Node.js was not found. Install Node.js 22.13 or newer.'
+  throw 'Node.js was not found. Install Node.js 24 LTS.'
 }
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw 'npm was not found. Reinstall Node.js.'
 }
 
 $NodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
-if ($NodeMajor -lt 22) { throw 'FinanceReview requires Node.js 22.13 or newer.' }
+if ($NodeMajor -ne 24) { throw 'FinanceReview requires Node.js 24 LTS.' }
 
 if (-not (Test-Path -LiteralPath (Join-Path $AppRoot 'node_modules'))) {
   Write-Host 'Installing dependencies for the first run...' -ForegroundColor Cyan

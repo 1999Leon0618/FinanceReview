@@ -1,8 +1,5 @@
 import handler from "vinext/server/fetch-handler";
-import {
-  runWithD1Database,
-  type D1DatabaseBinding,
-} from "./lib/db";
+import { runWithD1Database, type D1DatabaseBinding } from "./lib/db";
 
 type WorkerEnvironment = {
   DB: D1DatabaseBinding;

@@ -1,8 +1,11 @@
-# Workers＋D1 搬移（第 3 階段完成）
+# Workers＋D1 搬移（測試環境設定完成）
 
 應用程式目前支援兩種執行模式：原本的 Next.js 本機模式使用 SQLite，Cloudflare Workers 模式則透過 `DB` binding 使用 D1。Workers 的首頁、快照提案、建立快照、共用標的、全部賣出、過期版本阻擋及備份匯出，都已在本機 workerd＋D1 整合測試中通過。
 
-這仍不是正式部署。`wrangler.jsonc` 使用本機用的 D1 placeholder ID，並停用 `workers.dev`、預覽網址與公開路由；正式 D1、Cloudflare Access、自訂網域和真實資料搬移留到下一階段。
+`wrangler.jsonc` 已設定測試環境：Worker 綁定 `finance-review-staging` D1，並以自訂網域
+`finance-staging.hsun.dev` 作為路由。`workers.dev` 與 Wrangler 預覽網址仍停用，避免繞過預定的存取入口。
+
+這仍不是正式部署。正式 D1、Cloudflare Access 規則、正式自訂網域、真實資料搬移與切換演練仍須在上線前完成。測試與正式環境應使用不同的 D1 資料庫及部署設定，避免測試操作碰觸正式財務資料。
 
 ## 指令
 
@@ -51,11 +54,14 @@ npm run check:workers
 
 ## 正式上線前
 
-1. 在 Cloudflare 帳戶建立正式 D1，將實際 `database_id` 寫入部署設定。
-2. 對遠端 D1 套用 migration，先在受 Cloudflare Access 保護的測試網域驗收。
-3. 將本機 SQLite 資料轉成可核對的 D1 匯入資料，匯入後比對快照數量與最新總額。
-4. 設定 Access 僅允許自己的帳號，確認無痕視窗在登入前不能取得 HTML 或 API。
-5. 綁定自訂網域、執行瀏覽器端完整流程與備份還原演練，再切換正式使用。
+1. 先將測試環境部署至 `finance-staging.hsun.dev`，確認 D1 migration、首頁、API、行情更新、快照建立、全部賣出與備份匯出均可正常執行。
+2. 為測試網域設定 Cloudflare Access，僅允許自己的帳號；以無痕視窗確認登入前無法取得 HTML、靜態資源或 API 回應。
+3. 在 Cloudflare 帳戶建立獨立的正式 D1，並為正式環境準備獨立設定，避免覆寫目前的 staging D1 與網域。
+4. 對正式 D1 套用 migration，先以空資料庫執行冒煙測試，確認 schema 與 Worker 版本相容。
+5. 切換前停止本機資料寫入，建立 SQLite 與 JSON 備份，再將本機 SQLite 資料轉成可重複執行、可核對的 D1 匯入資料。
+6. 匯入後核對快照、帳戶、持倉、信用卡、貸款及賣出紀錄筆數，並比對最新淨值、各幣別總額與代表性歷史趨勢。
+7. 綁定正式自訂網域並套用同等的 Access 保護，執行瀏覽器端完整流程、未授權存取測試及備份匯出／還原演練。
+8. 保留 staging 與切換前備份作為回復路徑；確認監控與回復步驟後，再停止使用本機 SQLite 作為主要資料來源。
 
 不要將 `.db`、JSON 備份、`.dev.vars` 或 Cloudflare 權杖放到 `public/` 或 Git。
 

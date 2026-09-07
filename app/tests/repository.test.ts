@@ -762,7 +762,9 @@ describe("快照與全部賣出", () => {
       loans: second.loans,
     });
 
-    expect((await getAccountTrend(accountA.accountId, "all")).slice(-3, -1)).toEqual([
+    expect(
+      (await getAccountTrend(accountA.accountId, "all")).slice(-3, -1),
+    ).toEqual([
       {
         capturedAt: "2026-09-16T08:00:00.000Z",
         cashValueTwd: "100",

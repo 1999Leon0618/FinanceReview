@@ -48,7 +48,7 @@ export async function loadPerformanceInputs(
   const since = rangeStart(range);
   const where = since ? "WHERE snapshot.captured_at >= ?" : "";
   const parameters = since ? [since] : [];
-  const rows = await db
+  const rows = (await db
     .prepare(
       `SELECT snapshot.captured_at, snapshot.total_asset_value_twd,
       snapshot.id,
@@ -58,15 +58,15 @@ export async function loadPerformanceInputs(
       ${where}
       ORDER BY snapshot.captured_at`,
     )
-    .all(...parameters) as Row[];
-  const flowRows = await db
+    .all(...parameters)) as Row[];
+  const flowRows = (await db
     .prepare(
       `SELECT flow.snapshot_id, flow.flow_type, flow.amount_twd
       FROM snapshot_cash_flows flow
       JOIN snapshots snapshot ON snapshot.id = flow.snapshot_id
       ${where}`,
     )
-    .all(...parameters) as Row[];
+    .all(...parameters)) as Row[];
   const flowTotals = new Map<
     string,
     {

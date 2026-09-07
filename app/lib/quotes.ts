@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import YahooFinance from "yahoo-finance2";
 import { getDatabase } from "./db";
+import { getDataOwner } from "./data-owner";
 import type {
   AccountStateInput,
   FxRateInput,
@@ -385,6 +386,7 @@ async function lastQuote(
   symbol: string,
 ): Promise<Quote | null> {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const row = (await db
     .prepare(
       `SELECT price, currency, quote_as_of, source FROM quote_cache
@@ -404,9 +406,10 @@ async function lastQuote(
     sp.quote_as_of, sp.quote_source AS source FROM snapshot_positions sp
     JOIN snapshot_accounts sa ON sa.id = sp.snapshot_account_id
     JOIN snapshots s ON s.id = sa.snapshot_id
-    WHERE sp.market = ? AND sp.symbol = ? ORDER BY s.captured_at DESC LIMIT 1`,
+    WHERE sp.market = ? AND sp.symbol = ? AND s.owner_key = ?
+    ORDER BY s.captured_at DESC LIMIT 1`,
     )
-    .get(market, symbol)) as JsonRow | undefined;
+    .get(market, symbol, ownerKey)) as JsonRow | undefined;
   return snapshot
     ? {
         price: String(snapshot.price),

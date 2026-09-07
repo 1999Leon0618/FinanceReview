@@ -1,5 +1,6 @@
 import YahooFinance from "yahoo-finance2";
 import { getDatabase } from "./db";
+import { getDataOwner } from "./data-owner";
 import { decimal, money, percentage } from "./finance";
 import type {
   BenchmarkId,
@@ -45,9 +46,12 @@ export async function loadPerformanceInputs(
   range: PerformanceReport["range"],
 ): Promise<PerformanceInput[]> {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const since = rangeStart(range);
-  const where = since ? "WHERE snapshot.captured_at >= ?" : "";
-  const parameters = since ? [since] : [];
+  const where = since
+    ? "WHERE snapshot.owner_key = ? AND snapshot.captured_at >= ?"
+    : "WHERE snapshot.owner_key = ?";
+  const parameters = since ? [ownerKey, since] : [ownerKey];
   const rows = (await db
     .prepare(
       `SELECT snapshot.captured_at, snapshot.total_asset_value_twd,

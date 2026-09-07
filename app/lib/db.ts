@@ -164,6 +164,7 @@ const migrationNames = [
   "add_credit_cards",
   "fix_credit_card_due_dates",
   "add_snapshot_commits",
+  "add_data_owners",
 ] as const;
 
 function migrate(db: DatabaseSync) {

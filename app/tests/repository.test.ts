@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { closeDatabaseForTests } from "@/lib/db";
+import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
 import {
   createSnapshot,
   exportBackup,
@@ -50,6 +51,59 @@ beforeAll(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-08-28T12:00:00.000Z"));
   closeDatabaseForTests();
+});
+
+describe("依登入郵箱隔離資料", () => {
+  it("不同郵箱無法讀取彼此的快照、儀表板與備份", async () => {
+    const ownerA = dataOwnerFromEmail("User.A@Example.com");
+    const ownerB = dataOwnerFromEmail("user.b@example.com");
+    const snapshotA = await runWithDataOwner(ownerA, () =>
+      createSnapshot({
+        rawInput: "A 的私人資料",
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        accounts: [
+          {
+            name: "A 的帳戶",
+            accountType: "bank",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "100" }],
+            positions: [],
+          },
+        ],
+      }),
+    );
+
+    await runWithDataOwner(ownerB, async () => {
+      expect(await getSnapshotDetail(snapshotA.id)).toBeNull();
+      expect((await getDashboard()).latest).toBeNull();
+      expect((await exportBackup()).data.snapshots).toHaveLength(0);
+    });
+
+    await runWithDataOwner(ownerB, () =>
+      createSnapshot({
+        rawInput: "B 的私人資料",
+        capturedAt: "2026-09-02T00:00:00.000Z",
+        accounts: [
+          {
+            name: "B 的帳戶",
+            accountType: "bank",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "200" }],
+            positions: [],
+          },
+        ],
+      }),
+    );
+
+    await runWithDataOwner(ownerA, async () => {
+      expect((await getDashboard()).latest?.rawInput).toBe("A 的私人資料");
+      const backup = await exportBackup();
+      expect(backup.data.snapshots).toHaveLength(1);
+      expect(backup.data.accounts).toHaveLength(1);
+      expect(JSON.stringify(backup)).not.toContain(ownerA.key);
+      expect(JSON.stringify(backup)).not.toContain(ownerA.email);
+    });
+  });
 });
 afterAll(() => {
   closeDatabaseForTests();

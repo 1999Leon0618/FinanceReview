@@ -19,6 +19,7 @@ import {
 } from "./finance";
 import { getDatabase, withTransaction } from "./db";
 import { buildHealthReport } from "./health";
+import { getDataOwner } from "./data-owner";
 import type {
   AccountStateInput,
   AccountView,
@@ -109,9 +110,10 @@ export async function getSnapshotDetail(
   db?: FinanceDatabase,
 ): Promise<SnapshotDetail | null> {
   db ??= await getDatabase();
+  const ownerKey = getDataOwner().key;
   const snapshot = (await db
-    .prepare("SELECT * FROM snapshots WHERE id = ?")
-    .get(id)) as Row | undefined;
+    .prepare("SELECT * FROM snapshots WHERE id = ? AND owner_key = ?")
+    .get(id, ownerKey)) as Row | undefined;
   if (!snapshot) return null;
 
   const accountRows = (await db
@@ -343,9 +345,10 @@ export async function getSnapshotDetail(
   const previous = snapshot.base_snapshot_id
     ? ((await db
         .prepare(
-          "SELECT total_asset_value_twd, total_liabilities_twd, net_worth_twd FROM snapshots WHERE id = ?",
+          `SELECT total_asset_value_twd, total_liabilities_twd, net_worth_twd
+          FROM snapshots WHERE id = ? AND owner_key = ?`,
         )
-        .get(text(snapshot.base_snapshot_id))) as Row | undefined)
+        .get(text(snapshot.base_snapshot_id), ownerKey)) as Row | undefined)
     : undefined;
   const assetChange = previous
     ? decimal(text(snapshot.total_asset_value_twd)).minus(
@@ -402,11 +405,12 @@ export async function getLatestSnapshot(
   db?: FinanceDatabase,
 ): Promise<SnapshotDetail | null> {
   db ??= await getDatabase();
+  const ownerKey = getDataOwner().key;
   const row = (await db
     .prepare(
-      "SELECT id FROM snapshots ORDER BY captured_at DESC, created_at DESC LIMIT 1",
+      "SELECT id FROM snapshots WHERE owner_key = ? ORDER BY captured_at DESC, created_at DESC LIMIT 1",
     )
-    .get()) as Row | undefined;
+    .get(ownerKey)) as Row | undefined;
   return row ? await getSnapshotDetail(text(row.id), db) : null;
 }
 
@@ -415,12 +419,13 @@ export async function listSnapshotSummaries(
   db?: FinanceDatabase,
 ): Promise<SnapshotSummary[]> {
   db ??= await getDatabase();
+  const ownerKey = getDataOwner().key;
   return (
     (await db
       .prepare(
-        "SELECT * FROM snapshots ORDER BY captured_at DESC, created_at DESC LIMIT ?",
+        "SELECT * FROM snapshots WHERE owner_key = ? ORDER BY captured_at DESC, created_at DESC LIMIT ?",
       )
-      .all(limit)) as Row[]
+      .all(ownerKey, limit)) as Row[]
   ).map(snapshotSummary);
 }
 
@@ -465,15 +470,17 @@ async function findOrCreateAccount(
   now: string,
   active: Row[],
 ): Promise<string> {
+  const ownerKey = getDataOwner().key;
   if (input.accountId) {
     const found = await db
-      .prepare("SELECT id FROM accounts WHERE id = ?")
-      .get(input.accountId);
+      .prepare("SELECT id FROM accounts WHERE id = ? AND owner_key = ?")
+      .get(input.accountId, ownerKey);
     if (!found) throw new Error(`找不到帳戶：${input.name}`);
     await db
       .prepare(
         `UPDATE accounts SET name = ?, institution = ?, account_type = ?,
-      account_reference = ?, default_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
+      account_reference = ?, default_currency = ?, archived_at = NULL, updated_at = ?
+      WHERE id = ? AND owner_key = ?`,
       )
       .run(
         input.name,
@@ -483,6 +490,7 @@ async function findOrCreateAccount(
         input.defaultCurrency,
         now,
         input.accountId,
+        ownerKey,
       );
     const cached = active.find((row) => text(row.id) === input.accountId);
     const updated = {
@@ -542,11 +550,12 @@ async function findOrCreateAccount(
   const id = randomUUID();
   await db
     .prepare(
-      `INSERT INTO accounts(id, name, institution, account_type, account_reference,
-    default_currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO accounts(id, owner_key, name, institution, account_type, account_reference,
+    default_currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
+      ownerKey,
       input.name,
       input.institution ?? null,
       input.accountType,
@@ -642,12 +651,15 @@ async function findOrCreatePosition(
   capturedAt: string,
   now: string,
 ): Promise<string> {
+  const ownerKey = getDataOwner().key;
   if (input.positionId) {
     const found = await db
       .prepare(
-        "SELECT id FROM account_positions WHERE id = ? AND status = 'active'",
+        `SELECT position.id FROM account_positions position
+        JOIN accounts account ON account.id = position.account_id
+        WHERE position.id = ? AND position.status = 'active' AND account.owner_key = ?`,
       )
-      .get(input.positionId);
+      .get(input.positionId, ownerKey);
     if (!found) throw new Error(`持倉已售出或不存在：${input.symbol}`);
     return input.positionId;
   }
@@ -672,15 +684,16 @@ async function findOrCreateLoan(
   input: LoanInput,
   now: string,
 ): Promise<string> {
+  const ownerKey = getDataOwner().key;
   if (input.loanId) {
     const found = await db
-      .prepare("SELECT id FROM loans WHERE id = ?")
-      .get(input.loanId);
+      .prepare("SELECT id FROM loans WHERE id = ? AND owner_key = ?")
+      .get(input.loanId, ownerKey);
     if (!found) throw new Error(`找不到貸款：${input.name}`);
     await db
       .prepare(
         `UPDATE loans SET account_id = ?, name = ?, institution = ?, loan_type = ?, currency = ?,
-      archived_at = ?, updated_at = ? WHERE id = ?`,
+      archived_at = ?, updated_at = ? WHERE id = ? AND owner_key = ?`,
       )
       .run(
         input.accountId ?? null,
@@ -691,6 +704,7 @@ async function findOrCreateLoan(
         decimal(input.outstandingPrincipal).isZero() ? now : null,
         now,
         input.loanId,
+        ownerKey,
       );
     return input.loanId;
   }
@@ -699,9 +713,9 @@ async function findOrCreateLoan(
     (await db
       .prepare(
         `SELECT id, account_id, name, institution, currency FROM loans
-        WHERE archived_at IS NULL`,
+        WHERE archived_at IS NULL AND owner_key = ?`,
       )
-      .all()) as Row[]
+      .all(ownerKey)) as Row[]
   ).filter(
     (row) =>
       (!input.accountId ||
@@ -720,11 +734,12 @@ async function findOrCreateLoan(
   const id = randomUUID();
   await db
     .prepare(
-      `INSERT INTO loans(id, account_id, name, institution, loan_type, currency, archived_at,
-    created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO loans(id, owner_key, account_id, name, institution, loan_type, currency, archived_at,
+    created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
+      ownerKey,
       input.accountId ?? null,
       input.name,
       input.institution ?? null,
@@ -742,16 +757,20 @@ async function findOrCreateCreditCardAccount(
   input: CreditCardAccountInput,
   now: string,
 ): Promise<string> {
+  const ownerKey = getDataOwner().key;
   if (input.creditCardAccountId) {
     const found = await db
-      .prepare("SELECT id FROM credit_card_accounts WHERE id = ?")
-      .get(input.creditCardAccountId);
+      .prepare(
+        "SELECT id FROM credit_card_accounts WHERE id = ? AND owner_key = ?",
+      )
+      .get(input.creditCardAccountId, ownerKey);
     if (!found) throw new Error(`找不到信用卡帳戶：${input.name}`);
     await db
       .prepare(
         `UPDATE credit_card_accounts SET name = ?, issuer = ?, currency = ?,
       shared_credit_limit = ?, statement_day_of_month = ?, payment_day_of_month = ?,
-      status = ?, note = ?, archived_at = ?, updated_at = ? WHERE id = ?`,
+      status = ?, note = ?, archived_at = ?, updated_at = ?
+      WHERE id = ? AND owner_key = ?`,
       )
       .run(
         input.name,
@@ -765,6 +784,7 @@ async function findOrCreateCreditCardAccount(
         input.status === "closed" ? now : null,
         now,
         input.creditCardAccountId,
+        ownerKey,
       );
     return input.creditCardAccountId;
   }
@@ -772,20 +792,23 @@ async function findOrCreateCreditCardAccount(
     .prepare(
       `SELECT id FROM credit_card_accounts
       WHERE lower(name) = lower(?) AND lower(issuer) = lower(?) AND currency = ?
+      AND owner_key = ?
       ORDER BY archived_at IS NULL DESC LIMIT 1`,
     )
-    .get(input.name, input.issuer, input.currency)) as Row | undefined;
+    .get(input.name, input.issuer, input.currency, ownerKey)) as
+    Row | undefined;
   if (found) return text(found.id);
   const id = randomUUID();
   await db
     .prepare(
       `INSERT INTO credit_card_accounts(
-      id, name, issuer, currency, shared_credit_limit, statement_day_of_month,
+      id, owner_key, name, issuer, currency, shared_credit_limit, statement_day_of_month,
       payment_day_of_month, status, note, archived_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
+      ownerKey,
       input.name,
       input.issuer,
       input.currency,
@@ -985,6 +1008,7 @@ async function createSnapshotInDb(
   db: FinanceDatabase,
   rawInput: SnapshotCreateInput,
 ): Promise<string> {
+  const ownerKey = getDataOwner().key;
   const inheritedCreditCards =
     rawInput.creditCardAccounts === undefined && rawInput.baseSnapshotId
       ? ((
@@ -1004,18 +1028,20 @@ async function createSnapshotInDb(
   await db
     .prepare(
       `INSERT INTO snapshots(
-    id, captured_at, base_snapshot_id, raw_input, parser_model, parser_schema_version,
+    id, owner_key, captured_at, base_snapshot_id, raw_input, parser_model, parser_schema_version,
     total_cash_twd, total_securities_twd, total_asset_value_twd,
     total_liabilities_twd, net_worth_twd, total_cost_twd,
     unrealized_pnl_twd, created_at, updated_at
-  ) SELECT ?, ?, ?, ?, 'deterministic-rules', 2, '0', '0', '0', '0', '0', '0', '0', ?, ?
+  ) SELECT ?, ?, ?, ?, ?, 'deterministic-rules', 2, '0', '0', '0', '0', '0', '0', '0', ?, ?
     WHERE ? IS NULL OR ? = (
       SELECT latest.id FROM snapshots latest
+      WHERE latest.owner_key = ?
       ORDER BY latest.captured_at DESC, latest.created_at DESC LIMIT 1
     )`,
     )
     .run(
       id,
+      ownerKey,
       capturedAt,
       input.baseSnapshotId ?? null,
       input.rawInput,
@@ -1023,6 +1049,7 @@ async function createSnapshotInDb(
       now,
       input.baseSnapshotId ?? null,
       input.baseSnapshotId ?? null,
+      ownerKey,
     );
 
   const fxCache = new Map<string, { id: string; rate: string }>();
@@ -1030,9 +1057,9 @@ async function createSnapshotInDb(
   const accountCache = (await db
     .prepare(
       `SELECT id, name, institution, account_reference FROM accounts
-      WHERE archived_at IS NULL`,
+      WHERE archived_at IS NULL AND owner_key = ?`,
     )
-    .all()) as Row[];
+    .all(ownerKey)) as Row[];
   let totalCash = zero;
   let totalSecurities = zero;
   let totalCost = zero;
@@ -1414,6 +1441,7 @@ export async function createSnapshot(
 
 export async function listSales(db?: FinanceDatabase): Promise<SaleView[]> {
   db ??= await getDatabase();
+  const ownerKey = getDataOwner().key;
   const rows = (await db
     .prepare(
       `SELECT ps.*, a.name AS account_name, settlement.name AS settlement_account_name,
@@ -1423,9 +1451,10 @@ export async function listSales(db?: FinanceDatabase): Promise<SaleView[]> {
     JOIN accounts a ON a.id = ap.account_id
     JOIN securities s ON s.id = ap.security_id
     LEFT JOIN accounts settlement ON settlement.id = ps.settlement_account_id
+    WHERE a.owner_key = ?
     ORDER BY ps.sold_at DESC, ps.created_at DESC`,
     )
-    .all()) as Row[];
+    .all(ownerKey)) as Row[];
   return rows.map((row) => ({
     id: text(row.id),
     positionId: text(row.position_id),
@@ -1487,20 +1516,21 @@ function dedupeLatestByTaipeiDay<T extends { capturedAt: string }>(rows: T[]) {
 
 export async function getDashboard(range = "6m"): Promise<DashboardData> {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const latest = await getLatestSnapshot(db);
   const history = await listSnapshotSummaries(100, db);
   const since = dateFromRange(range);
   const rows = since
     ? await db
         .prepare(
-          "SELECT captured_at, net_worth_twd FROM snapshots WHERE captured_at >= ? ORDER BY captured_at",
+          "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? AND captured_at >= ? ORDER BY captured_at",
         )
-        .all(since)
+        .all(ownerKey, since)
     : await db
         .prepare(
-          "SELECT captured_at, net_worth_twd FROM snapshots ORDER BY captured_at",
+          "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? ORDER BY captured_at",
         )
-        .all();
+        .all(ownerKey);
   return {
     latest,
     history,
@@ -1528,11 +1558,14 @@ export async function sellPosition(
   },
 ): Promise<SnapshotDetail> {
   const resultId = await withTransaction(async (db) => {
+    const ownerKey = getDataOwner().key;
     const lifecycle = (await db
       .prepare(
-        "SELECT * FROM account_positions WHERE id = ? AND status = 'active'",
+        `SELECT position.* FROM account_positions position
+        JOIN accounts account ON account.id = position.account_id
+        WHERE position.id = ? AND position.status = 'active' AND account.owner_key = ?`,
       )
-      .get(positionId)) as Row | undefined;
+      .get(positionId, ownerKey)) as Row | undefined;
     if (!lifecycle) throw new Error("持倉已售出或不存在");
     const latest = await getLatestSnapshot(db);
     if (!latest) throw new Error("沒有可供賣出的最新快照");
@@ -1671,12 +1704,15 @@ export async function sellPosition(
 
 export async function deleteSnapshot(id: string): Promise<void> {
   const db = await getDatabase();
-  const result = await db.prepare("DELETE FROM snapshots WHERE id = ?").run(id);
+  const result = await db
+    .prepare("DELETE FROM snapshots WHERE id = ? AND owner_key = ?")
+    .run(id, getDataOwner().key);
   if (Number(result.changes) === 0) throw new Error("找不到快照");
 }
 
 export async function getAccountTrend(accountId: string, range = "all") {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const since = dateFromRange(range);
   const rows = (await db
     .prepare(
@@ -1687,10 +1723,11 @@ export async function getAccountTrend(accountId: string, range = "all") {
     FROM snapshot_accounts sa
     JOIN snapshots s ON s.id = sa.snapshot_id
     WHERE sa.account_id = ?
+      AND s.owner_key = ?
       AND (? IS NULL OR s.captured_at >= ?)
     ORDER BY s.captured_at`,
     )
-    .all(accountId, since, since)) as Row[];
+    .all(accountId, ownerKey, since, since)) as Row[];
   return dedupeLatestByTaipeiDay(
     rows.map((row) => {
       const cashValue = decimal(text(row.cash_value));
@@ -1711,6 +1748,7 @@ export async function getAccountTrend(accountId: string, range = "all") {
 
 export async function getSecurityTrend(securityId: string, range = "all") {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const since = dateFromRange(range);
   const rows = (await db
     .prepare(
@@ -1726,8 +1764,9 @@ export async function getSecurityTrend(securityId: string, range = "all") {
       FROM snapshot_positions first_position
       JOIN snapshot_accounts first_account ON first_account.id = first_position.snapshot_account_id
       JOIN snapshots first_snapshot ON first_snapshot.id = first_account.snapshot_id
-      WHERE first_position.security_id = ?
+      WHERE first_position.security_id = ? AND first_snapshot.owner_key = ?
     )
+      AND s.owner_key = ?
       AND (? IS NULL OR s.captured_at >= ?)
     GROUP BY s.id, s.captured_at
     ORDER BY s.captured_at`,
@@ -1737,6 +1776,8 @@ export async function getSecurityTrend(securityId: string, range = "all") {
       securityId,
       securityId,
       securityId,
+      ownerKey,
+      ownerKey,
       since,
       since,
     )) as Row[];
@@ -1754,6 +1795,7 @@ export async function getCreditCardTrend(
   range = "all",
 ): Promise<CreditCardTrendPoint[]> {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   const since = dateFromRange(range);
   const rows = (await db
     .prepare(
@@ -1762,11 +1804,11 @@ export async function getCreditCardTrend(
       FROM snapshot_credit_card_accounts sc
       JOIN snapshots s ON s.id = sc.snapshot_id
       LEFT JOIN snapshot_fx_rates fx ON fx.id = sc.fx_rate_id
-      WHERE (? IS NULL OR s.captured_at >= ?)
+      WHERE s.owner_key = ? AND (? IS NULL OR s.captured_at >= ?)
         AND s.raw_input <> '更新信用卡帳戶設定'
       ORDER BY s.captured_at`,
     )
-    .all(since, since)) as Row[];
+    .all(ownerKey, since, since)) as Row[];
 
   const latestByAccountAndPeriod = new Map<string, Row>();
   for (const row of rows) {
@@ -1850,9 +1892,6 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "provider_symbol",
       "name",
       "security_type",
-      "position_side",
-      "contract_multiplier",
-      "contract_expiry",
       "quote_currency",
       "archived_at",
       "created_at",
@@ -2070,10 +2109,105 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
     app_settings: ["key", "value_json", "updated_at"],
   };
 
+const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
+  accounts: "accounts item WHERE item.owner_key = ?",
+  securities: `securities item WHERE EXISTS (
+    SELECT 1 FROM account_positions position
+    JOIN accounts account ON account.id = position.account_id
+    WHERE position.security_id = item.id AND account.owner_key = ?
+  )`,
+  account_positions: `account_positions item JOIN accounts account ON account.id = item.account_id
+    WHERE account.owner_key = ?`,
+  loans: "loans item WHERE item.owner_key = ?",
+  credit_card_accounts: "credit_card_accounts item WHERE item.owner_key = ?",
+  credit_cards: `credit_cards item
+    JOIN credit_card_accounts account ON account.id = item.credit_card_account_id
+    WHERE account.owner_key = ?`,
+  snapshots: "snapshots item WHERE item.owner_key = ?",
+  snapshot_accounts: `snapshot_accounts item
+    JOIN snapshots snapshot ON snapshot.id = item.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  snapshot_fx_rates: `snapshot_fx_rates item
+    JOIN snapshots snapshot ON snapshot.id = item.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  cash_balances: `cash_balances item
+    JOIN snapshot_accounts snapshot_account ON snapshot_account.id = item.snapshot_account_id
+    JOIN snapshots snapshot ON snapshot.id = snapshot_account.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  snapshot_positions: `snapshot_positions item
+    JOIN snapshot_accounts snapshot_account ON snapshot_account.id = item.snapshot_account_id
+    JOIN snapshots snapshot ON snapshot.id = snapshot_account.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  snapshot_loans: `snapshot_loans item
+    JOIN snapshots snapshot ON snapshot.id = item.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  snapshot_credit_card_accounts: `snapshot_credit_card_accounts item
+    JOIN snapshots snapshot ON snapshot.id = item.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  snapshot_cash_flows: `snapshot_cash_flows item
+    JOIN snapshots snapshot ON snapshot.id = item.snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  position_sales: `position_sales item
+    JOIN snapshots snapshot ON snapshot.id = item.result_snapshot_id
+    WHERE snapshot.owner_key = ?`,
+  app_settings: "app_settings item WHERE ? IS NOT NULL",
+};
+
+function ownedBackupQuery(table: (typeof backupTables)[number]) {
+  const columns = backupColumns[table]
+    .map((column) => `item.${column}`)
+    .join(", ");
+  return `SELECT ${columns} FROM ${ownedBackupFrom[table]} ORDER BY 1`;
+}
+
+const backupParents: Partial<
+  Record<
+    (typeof backupTables)[number],
+    Array<
+      [
+        column: string,
+        parent: (typeof backupTables)[number],
+        nullable?: boolean,
+      ]
+    >
+  >
+> = {
+  account_positions: [["account_id", "accounts"]],
+  loans: [["account_id", "accounts", true]],
+  credit_cards: [["credit_card_account_id", "credit_card_accounts"]],
+  snapshots: [["base_snapshot_id", "snapshots", true]],
+  snapshot_accounts: [
+    ["snapshot_id", "snapshots"],
+    ["account_id", "accounts"],
+  ],
+  snapshot_fx_rates: [["snapshot_id", "snapshots"]],
+  cash_balances: [["snapshot_account_id", "snapshot_accounts"]],
+  snapshot_positions: [
+    ["snapshot_account_id", "snapshot_accounts"],
+    ["position_id", "account_positions"],
+  ],
+  snapshot_loans: [
+    ["snapshot_id", "snapshots"],
+    ["snapshot_account_id", "snapshot_accounts", true],
+    ["loan_id", "loans"],
+  ],
+  snapshot_credit_card_accounts: [
+    ["snapshot_id", "snapshots"],
+    ["credit_card_account_id", "credit_card_accounts"],
+  ],
+  snapshot_cash_flows: [["snapshot_id", "snapshots"]],
+  position_sales: [
+    ["position_id", "account_positions"],
+    ["result_snapshot_id", "snapshots"],
+    ["settlement_account_id", "accounts", true],
+  ],
+};
+
 export async function exportBackup() {
   const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     data: Object.fromEntries(
       await Promise.all(
@@ -2081,7 +2215,7 @@ export async function exportBackup() {
           async (table) =>
             [
               table,
-              await db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(),
+              await db.prepare(ownedBackupQuery(table)).all(ownerKey),
             ] as const,
         ),
       ),
@@ -2095,18 +2229,55 @@ export async function importBackup(payload: unknown) {
     schemaVersion?: number;
     data?: Record<string, Row[]>;
   };
-  if (backup.schemaVersion !== 1 || !backup.data)
+  if (![1, 2].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
   return withTransaction(async (db) => {
+    const ownerKey = getDataOwner().key;
     let imported = 0;
     let skipped = 0;
     await db.prepare("PRAGMA defer_foreign_keys = ON").run();
+
+    const allowedIds = new Map<string, Set<string>>();
+    for (const table of backupTables) {
+      const primaryColumn = backupColumns[table][0];
+      const owned = await db.prepare(ownedBackupQuery(table)).all(ownerKey);
+      allowedIds.set(
+        table,
+        new Set([
+          ...owned.map((row) => String(row[primaryColumn])),
+          ...(backup.data?.[table] ?? []).map((row) =>
+            String(row[primaryColumn]),
+          ),
+        ]),
+      );
+    }
+    for (const [table, parents] of Object.entries(backupParents)) {
+      for (const row of backup.data?.[table] ?? []) {
+        for (const [column, parent, nullable] of parents ?? []) {
+          const value = row[column];
+          if (
+            (value === null || value === undefined || value === "") &&
+            nullable
+          )
+            continue;
+          if (!allowedIds.get(parent)?.has(String(value)))
+            throw new Error(`${table}.${column} 不屬於目前登入郵箱`);
+        }
+      }
+    }
+
+    const ownerTables = new Set([
+      "accounts",
+      "loans",
+      "credit_card_accounts",
+      "snapshots",
+    ]);
     for (const table of backupTables) {
       const rows = backup.data?.[table] ?? [];
       const primaryColumn = backupColumns[table][0];
       const existing = new Set(
-        (await db.prepare(`SELECT ${primaryColumn} FROM ${table}`).all()).map(
-          (row) => String(row[primaryColumn]),
+        (await db.prepare(ownedBackupQuery(table)).all(ownerKey)).map((row) =>
+          String(row[primaryColumn]),
         ),
       );
       for (const row of rows) {
@@ -2121,12 +2292,18 @@ export async function importBackup(payload: unknown) {
           skipped += 1;
           continue;
         }
-        const placeholders = columns.map(() => "?").join(", ");
+        const insertColumns = ownerTables.has(table)
+          ? [...columns, "owner_key"]
+          : columns;
+        const values = ownerTables.has(table)
+          ? [...columns.map((column) => row[column] as never), ownerKey]
+          : columns.map((column) => row[column] as never);
+        const placeholders = insertColumns.map(() => "?").join(", ");
         const result = await db
           .prepare(
-            `INSERT OR IGNORE INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
+            `INSERT OR IGNORE INTO ${table} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
           )
-          .run(...columns.map((column) => row[column] as never));
+          .run(...values);
         if (Number(result.changes) > 0) {
           imported += 1;
           existing.add(primaryValue);
@@ -2137,9 +2314,9 @@ export async function importBackup(payload: unknown) {
       .prepare(
         `UPDATE snapshots SET net_worth_twd = total_asset_value_twd
       WHERE total_liabilities_twd = '0' AND net_worth_twd = '0'
-      AND total_asset_value_twd <> '0'`,
+      AND total_asset_value_twd <> '0' AND owner_key = ?`,
       )
-      .run();
+      .run(ownerKey);
     return { imported, skipped };
   });
 }

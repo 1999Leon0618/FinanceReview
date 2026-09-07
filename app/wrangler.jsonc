@@ -7,6 +7,18 @@
   "compatibility_date": "2026-09-06",
   "compatibility_flags": ["nodejs_compat"],
   "main": "worker-entry.ts",
+  "access": {
+    "dev": {
+      "aud": "finance-review-local",
+      "identity": {
+        "email": "developer@localhost.invalid",
+      },
+    },
+  },
+  "vars": {
+    "TEAM_DOMAIN": "https://white-leaf-f24d.cloudflareaccess.com",
+    "POLICY_AUD": "573f022375260a915558d3af0e7d1a73e9358a3814198b11700ce390eefa5219",
+  },
   "routes": [
     {
       "pattern": "finance-staging.hsun.dev",
@@ -29,6 +41,10 @@
   "env": {
     "production": {
       "name": "finance-review-production",
+      "vars": {
+        "TEAM_DOMAIN": "https://white-leaf-f24d.cloudflareaccess.com",
+        "POLICY_AUD": "573f022375260a915558d3af0e7d1a73e9358a3814198b11700ce390eefa5219",
+      },
       "routes": [
         {
           "pattern": "finance.hsun.dev",

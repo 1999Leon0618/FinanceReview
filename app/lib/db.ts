@@ -46,7 +46,9 @@ export function runWithD1Database<T>(
 }
 
 class LocalStatement implements FinanceStatement {
-  constructor(private readonly statement: ReturnType<DatabaseSync["prepare"]>) {}
+  constructor(
+    private readonly statement: ReturnType<DatabaseSync["prepare"]>,
+  ) {}
 
   async get(...values: SqlValue[]) {
     return this.statement.get(...values) as Record<string, unknown> | undefined;
@@ -168,10 +170,17 @@ function migrate(db: DatabaseSync) {
   const currentVersion = Number(
     db.prepare("PRAGMA user_version").get()?.user_version ?? 0,
   );
-  for (let version = currentVersion + 1; version <= migrationNames.length; version += 1) {
+  for (
+    let version = currentVersion + 1;
+    version <= migrationNames.length;
+    version += 1
+  ) {
     const filename = `${String(version).padStart(3, "0")}_${migrationNames[version - 1]}.sql`;
     db.exec(
-      readFileSync(path.resolve(process.cwd(), "db", "migrations", filename), "utf8"),
+      readFileSync(
+        path.resolve(process.cwd(), "db", "migrations", filename),
+        "utf8",
+      ),
     );
   }
 }

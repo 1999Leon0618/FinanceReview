@@ -380,14 +380,17 @@ async function saveQuote(market: Market, symbol: string, quote: Quote) {
     );
 }
 
-async function lastQuote(market: Market, symbol: string): Promise<Quote | null> {
+async function lastQuote(
+  market: Market,
+  symbol: string,
+): Promise<Quote | null> {
   const db = await getDatabase();
-  const row = await db
+  const row = (await db
     .prepare(
       `SELECT price, currency, quote_as_of, source FROM quote_cache
     WHERE market = ? AND symbol = ? ORDER BY quote_as_of DESC, fetched_at DESC LIMIT 1`,
     )
-    .get(market, symbol) as JsonRow | undefined;
+    .get(market, symbol)) as JsonRow | undefined;
   if (row)
     return {
       price: String(row.price),
@@ -395,7 +398,7 @@ async function lastQuote(market: Market, symbol: string): Promise<Quote | null> 
       quoteAsOf: String(row.quote_as_of),
       source: String(row.source) as QuoteSource,
     };
-  const snapshot = await db
+  const snapshot = (await db
     .prepare(
       `SELECT sp.market_price AS price, sp.quote_currency AS currency,
     sp.quote_as_of, sp.quote_source AS source FROM snapshot_positions sp
@@ -403,7 +406,7 @@ async function lastQuote(market: Market, symbol: string): Promise<Quote | null> 
     JOIN snapshots s ON s.id = sa.snapshot_id
     WHERE sp.market = ? AND sp.symbol = ? ORDER BY s.captured_at DESC LIMIT 1`,
     )
-    .get(market, symbol) as JsonRow | undefined;
+    .get(market, symbol)) as JsonRow | undefined;
   return snapshot
     ? {
         price: String(snapshot.price),

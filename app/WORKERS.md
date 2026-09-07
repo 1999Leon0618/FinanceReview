@@ -4,6 +4,8 @@
 
 `wrangler.jsonc` 的頂層設定是 `finance-staging.hsun.dev` 與測試 D1；`production` 環境使用獨立的 `finance-review-production` Worker、`finance.hsun.dev` 與正式 D1。兩個環境不共用資料。
 
+`workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過預定的 Access 與自訂網域入口。設定完成不代表已正式上線；Cloudflare Access、遠端 migration、真實資料搬移、驗收與切換演練仍須依下列流程完成。
+
 ## 指令
 
 ```powershell
@@ -57,11 +59,14 @@ npm run deploy:production
 
 ## 正式上線流程
 
-1. 先為 `finance.hsun.dev` 建立 Cloudflare Access self-hosted application，Allow policy 只放自己的完整電子郵件，登入方式使用 One-time PIN。
-2. 執行 `npm run db:d1:migrate:production`，確認正式 D1 顯示 `No migrations to apply`。
-3. 執行 `npm run deploy:production`，再用無痕視窗確認首頁與 `/api/backup` 都會先導向 Cloudflare Access。
-4. 從本機應用匯出 JSON 備份，在正式網站匯入，核對快照數量、最新日期、各帳戶餘額及總資產。
-5. 再匯出一次正式網站備份並妥善保存，完成新增快照、重新整理及手機登入驗收。
+1. 先將測試環境部署至 `finance-staging.hsun.dev`，確認 D1 migration、首頁、API、行情更新、快照建立、全部賣出與備份匯出均可正常執行。
+2. 分別為 `finance-staging.hsun.dev` 與 `finance.hsun.dev` 建立 Cloudflare Access self-hosted application；Allow policy 只放自己的完整電子郵件，登入方式使用 One-time PIN。以無痕視窗確認登入前無法取得首頁、靜態資源或 `/api/backup`。
+3. 執行 `npm run db:d1:migrate:production`，確認正式 D1 schema 已完成且再次執行時顯示 `No migrations to apply`。
+4. 切換前停止本機資料寫入，建立 SQLite 與 JSON 備份；記錄快照、帳戶、持倉、信用卡、貸款及賣出紀錄筆數，以及最新淨值與各幣別總額。
+5. 執行 `npm run deploy:production`，先以空資料庫完成登入、首頁、API、行情與備份匯出的冒煙測試。
+6. 從本機應用匯出 JSON，在正式網站匯入；匯入後核對步驟 4 的筆數、最新淨值、各帳戶餘額及代表性歷史趨勢。
+7. 再匯出一次正式網站備份並妥善保存，完成新增快照、重新整理、全部賣出、手機登入與備份還原演練。
+8. 保留 staging 與切換前備份作為回復路徑；確認監控與回復步驟後，再停止使用本機 SQLite 作為主要資料來源。
 
 不要將 `.db`、JSON 備份、`.dev.vars` 或 Cloudflare 權杖放到 `public/` 或 Git。
 

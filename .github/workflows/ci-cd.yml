@@ -1,0 +1,69 @@
+name: CI/CD
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/ci-cd.yml"
+  push:
+    branches:
+      - "codex/cloudflare-migration"
+      - "codex/production-deployment"
+    paths:
+      - "app/**"
+      - ".github/workflows/ci-cd.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 驗證應用程式與 Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:workers
+
+  deploy-production:
+    name: 部署正式環境
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/production-deployment'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: 套用 D1 migrations
+        run: npm run db:d1:migrate:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: 部署 Worker
+        run: npm run deploy:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

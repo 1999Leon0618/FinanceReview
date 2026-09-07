@@ -31,6 +31,17 @@ npm run db:d1:migrate:production
 npm run deploy:production
 ```
 
+## GitHub Actions CI/CD
+
+`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置及本機 Workers＋D1 整合測試。只有推送到 `codex/production-deployment` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
+
+部署工作使用 GitHub Environment `production`，可在 GitHub 設定必要審核者，避免合併後立刻自動改動正式財務系統。請在該 Environment 建立以下 Secrets：
+
+- `CLOUDFLARE_API_TOKEN`：最小權限的 Cloudflare API Token，需可部署 Workers、管理該網域路由與套用正式 D1 migrations。
+- `CLOUDFLARE_ACCOUNT_ID`：對應的 Cloudflare Account ID。
+
+絕不可將 API Token、`.dev.vars`、資料庫或資料備份提交至 Git。
+
 原本的 `npm run dev`、`npm run build`、`npm run start` 和 `npm run check` 仍以 Next.js＋本機 SQLite 執行。
 
 ## 實作方式

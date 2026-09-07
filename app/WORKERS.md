@@ -1,11 +1,10 @@
-# Workers＋D1 搬移（測試環境設定完成）
+# Workers＋D1 部署
 
 應用程式目前支援兩種執行模式：原本的 Next.js 本機模式使用 SQLite，Cloudflare Workers 模式則透過 `DB` binding 使用 D1。Workers 的首頁、快照提案、建立快照、共用標的、全部賣出、過期版本阻擋及備份匯出，都已在本機 workerd＋D1 整合測試中通過。
 
-`wrangler.jsonc` 已設定測試環境：Worker 綁定 `finance-review-staging` D1，並以自訂網域
-`finance-staging.hsun.dev` 作為路由。`workers.dev` 與 Wrangler 預覽網址仍停用，避免繞過預定的存取入口。
+`wrangler.jsonc` 的頂層設定是 `finance-staging.hsun.dev` 與測試 D1；`production` 環境使用獨立的 `finance-review-production` Worker、`finance.hsun.dev` 與正式 D1。兩個環境不共用資料。`workers.dev` 與 Wrangler 預覽網址仍停用，避免繞過預定的 Access 入口。
 
-這仍不是正式部署。正式 D1、Cloudflare Access 規則、正式自訂網域、真實資料搬移與切換演練仍須在上線前完成。測試與正式環境應使用不同的 D1 資料庫及部署設定，避免測試操作碰觸正式財務資料。
+設定完成不代表已正式上線；Cloudflare Access、遠端 migration、真實資料搬移、驗收與切換演練仍須完成。測試與正式環境使用不同 D1，避免測試操作碰觸正式財務資料。
 
 ## 指令
 
@@ -24,7 +23,24 @@ npm run test:workers
 
 # 建置與整合測試
 npm run check:workers
+
+# 套用正式 D1 migrations
+npm run db:d1:migrate:production
+
+# 建置並部署正式 Worker
+npm run deploy:production
 ```
+
+## GitHub Actions CI/CD
+
+`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置及本機 Workers＋D1 整合測試。只有推送到 `codex/production-deployment` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
+
+部署工作使用 GitHub Environment `production`，可在 GitHub 設定必要審核者，避免合併後立刻自動改動正式財務系統。請在該 Environment 建立以下 Secrets：
+
+- `CLOUDFLARE_API_TOKEN`：最小權限的 Cloudflare API Token，需可部署 Workers、管理該網域路由與套用正式 D1 migrations。
+- `CLOUDFLARE_ACCOUNT_ID`：對應的 Cloudflare Account ID。
+
+絕不可將 API Token、`.dev.vars`、資料庫或資料備份提交至 Git。
 
 原本的 `npm run dev`、`npm run build`、`npm run start` 和 `npm run check` 仍以 Next.js＋本機 SQLite 執行。
 

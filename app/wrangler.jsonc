@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "finance-review",
-  // 正式公開前仍須完成 Cloudflare Access 與自訂網域設定。
+  // Staging 與 production 均須由 Cloudflare Access 保護。
   "workers_dev": false,
   "preview_urls": false,
   "compatibility_date": "2026-09-06",
@@ -25,5 +25,24 @@
     "directory": "dist/client",
     "not_found_handling": "none",
     "binding": "ASSETS",
+  },
+  "env": {
+    "production": {
+      "name": "finance-review-production",
+      "routes": [
+        {
+          "pattern": "finance.hsun.dev",
+          "custom_domain": true,
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "finance-review-production",
+          "database_id": "5d8dea75-e72f-442a-935b-0f116bf2f616",
+          "migrations_dir": "d1/migrations",
+        },
+      ],
+    },
   },
 }

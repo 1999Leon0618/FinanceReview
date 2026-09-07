@@ -33,9 +33,27 @@ const commands = {
     "DB",
     "--local",
   ],
+  "migrate:production": [
+    "wrangler/bin/wrangler.js",
+    "d1",
+    "migrations",
+    "apply",
+    "DB",
+    "--remote",
+    "--env",
+    "production",
+  ],
+  "deploy:production": [
+    "@vinext/cloudflare/dist/cli.js",
+    "deploy",
+    "--env",
+    "production",
+  ],
 };
 if (!Object.hasOwn(commands, command))
-  throw new Error("請指定 build、dev、preview 或 migrate:local。");
+  throw new Error(
+    "請指定 build、dev、preview、migrate:local、migrate:production 或 deploy:production。",
+  );
 const [entry, ...defaults] = commands[command];
 const child = spawn(
   process.execPath,

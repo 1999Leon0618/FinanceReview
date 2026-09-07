@@ -20,9 +20,11 @@
     "db:init": "tsx scripts/init-db.ts",
     "db:d1:generate": "node scripts/generate-d1-migration.mjs",
     "db:d1:migrate:local": "node scripts/workers.mjs migrate:local",
+    "db:d1:migrate:production": "node scripts/workers.mjs migrate:production",
     "dev:workers": "node scripts/workers.mjs dev",
     "build:workers": "node scripts/workers.mjs build",
     "preview:workers": "node scripts/workers.mjs preview",
+    "deploy:production": "node scripts/workers.mjs deploy:production",
     "test:workers": "node scripts/test-workers.mjs",
     "test:workers:live": "node scripts/test-workers.mjs --live",
     "check:workers": "npm run build:workers && npm run test:workers"

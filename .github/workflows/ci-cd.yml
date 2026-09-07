@@ -7,8 +7,7 @@ on:
       - ".github/workflows/ci-cd.yml"
   push:
     branches:
-      - "codex/cloudflare-migration"
-      - "codex/production-deployment"
+      - "main"
     paths:
       - "app/**"
       - ".github/workflows/ci-cd.yml"
@@ -42,7 +41,7 @@ jobs:
   deploy-production:
     name: 部署正式環境
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/production-deployment'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

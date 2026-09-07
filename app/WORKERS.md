@@ -4,7 +4,7 @@
 
 `wrangler.jsonc` 的頂層設定是 `finance-staging.hsun.dev` 與測試 D1；`production` 環境使用獨立的 `finance-review-production` Worker、`finance.hsun.dev` 與正式 D1。兩個環境不共用資料。
 
-`workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過預定的 Access 與自訂網域入口。設定完成不代表已正式上線；Cloudflare Access、遠端 migration、真實資料搬移、驗收與切換演練仍須依下列流程完成。
+`workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過 Access 與自訂網域入口。正式 Worker、D1 與 Cloudflare Access 已上線；真實資料搬移、驗收與切換演練仍須依下列流程完成。
 
 ## 指令
 
@@ -33,7 +33,7 @@ npm run deploy:production
 
 ## GitHub Actions CI/CD
 
-`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置及本機 Workers＋D1 整合測試。只有推送到 `codex/production-deployment` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
+`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置及本機 Workers＋D1 整合測試。只有推送到 `main` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
 
 部署工作使用 GitHub Environment `production`，可在 GitHub 設定必要審核者，避免合併後立刻自動改動正式財務系統。請在該 Environment 建立以下 Secrets：
 

@@ -3,6 +3,7 @@ import {
   parseSitcaFundQuotes,
   parseTaifexFuturesQuotes,
   pickSitcaFundQuote,
+  resolveAccountQuotes,
   resolveSnapshotFxRates,
   yahooProviderSymbol,
 } from "@/lib/quotes";
@@ -164,5 +165,64 @@ describe("儲存前自動補匯率", () => {
     expect(resolver).toHaveBeenCalledWith("USD");
     expect(resolved.accounts[0].positions[0].fxRate).toEqual(fxRate);
     expect(resolved.loans?.[0].fxRate).toEqual(fxRate);
+  });
+});
+
+describe("批次行情更新", () => {
+  it("相同標的與幣別只查詢一次", async () => {
+    const quote = vi.fn().mockResolvedValue({
+      price: "200",
+      currency: "USD",
+      quoteAsOf: "2026-09-08T00:00:00.000Z",
+      source: "YAHOO",
+      status: "fresh",
+      note: null,
+    });
+    const fx = vi.fn().mockResolvedValue({
+      baseCurrency: "USD",
+      quoteCurrency: "TWD",
+      rate: "31",
+      rateAsOf: "2026-09-08T00:00:00.000Z",
+      source: "YAHOO",
+      status: "fresh",
+      overriddenByUser: false,
+    });
+    const position = {
+      market: "US" as const,
+      symbol: "AAPL",
+      name: "Apple",
+      securityType: "stock" as const,
+      quoteCurrency: "USD",
+      quantity: "1",
+      averageCost: "100",
+      marketPrice: "100",
+      quoteAsOf: "2026-09-01T00:00:00.000Z",
+      quoteSource: "MANUAL" as const,
+      quoteStatus: "manual" as const,
+    };
+
+    const result = await resolveAccountQuotes(
+      [
+        {
+          name: "帳戶一",
+          accountType: "brokerage",
+          defaultCurrency: "USD",
+          cashBalances: [{ currency: "USD", amount: "10" }],
+          positions: [position],
+        },
+        {
+          name: "帳戶二",
+          accountType: "brokerage",
+          defaultCurrency: "USD",
+          cashBalances: [],
+          positions: [position],
+        },
+      ],
+      { quote, fx },
+    );
+
+    expect(quote).toHaveBeenCalledOnce();
+    expect(fx).toHaveBeenCalledOnce();
+    expect(result.accounts[1].positions[0].marketPrice).toBe("200");
   });
 });

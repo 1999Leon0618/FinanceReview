@@ -44,6 +44,30 @@ const endpoints = {
   TWSE: "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
   TPEX: "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes",
 } as const;
+const taiwanRowsCache = new Map<
+  "TWSE" | "TPEX",
+  { expiresAt: number; rows: Promise<JsonRow[]> }
+>();
+const marketListCacheMs = 30_000;
+
+function taiwanMarketRows(market: "TWSE" | "TPEX") {
+  const cached = taiwanRowsCache.get(market);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+  const rows = fetch(endpoints[market], {
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  }).then(async (response) => {
+    if (!response.ok)
+      throw new Error(`${market} 行情服務回傳 ${response.status}`);
+    return (await response.json()) as JsonRow[];
+  });
+  taiwanRowsCache.set(market, {
+    expiresAt: Date.now() + marketListCacheMs,
+    rows,
+  });
+  rows.catch(() => taiwanRowsCache.delete(market));
+  return rows;
+}
 
 const value = (row: JsonRow, keys: string[]) => {
   for (const key of keys)
@@ -317,13 +341,7 @@ async function taiwanQuote(
   market: "TWSE" | "TPEX",
   symbol: string,
 ): Promise<Quote> {
-  const response = await fetch(endpoints[market], {
-    cache: "no-store",
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok)
-    throw new Error(`${market} 行情服務回傳 ${response.status}`);
-  const body = (await response.json()) as JsonRow[];
+  const body = await taiwanMarketRows(market);
   const row = body.find(
     (item) =>
       value(item, ["Code", "SecuritiesCompanyCode", "證券代號", "股票代號"]) ===
@@ -606,6 +624,10 @@ export async function resolveSnapshotFxRates(
 
 export async function resolveAccountQuotes(
   accounts: AccountStateInput[],
+  dependencies: {
+    quote?: typeof resolveQuote;
+    fx?: typeof resolveFx;
+  } = {},
 ): Promise<{ accounts: AccountStateInput[]; warnings: string[] }> {
   const warnings: string[] = [];
   const fx = new Map<string, FxRateInput>();
@@ -617,54 +639,65 @@ export async function resolveAccountQuotes(
       ])
       .filter((currency) => currency !== "TWD"),
   );
-  for (const currency of needFx) {
-    try {
-      fx.set(currency, await resolveFx(currency));
-    } catch {
-      warnings.push(`${currency}/TWD 無法取得匯率，請手動輸入。`);
-    }
-  }
-  const resolved: AccountStateInput[] = [];
-  for (const account of accounts) {
-    const positions: PositionInput[] = [];
-    for (const position of account.positions) {
+  const fxResults = await Promise.all(
+    [...needFx].map(async (currency) => {
       try {
-        const quote = await resolveQuote(position.market, position.symbol, {
+        return [
+          currency,
+          await (dependencies.fx ?? resolveFx)(currency),
+        ] as const;
+      } catch {
+        return [currency, null] as const;
+      }
+    }),
+  );
+  for (const [currency, rate] of fxResults) {
+    if (rate) fx.set(currency, rate);
+    else warnings.push(`${currency}/TWD 無法取得匯率，請手動輸入。`);
+  }
+
+  const quotePromises = new Map<
+    string,
+    Promise<Awaited<ReturnType<typeof resolveQuote>>>
+  >();
+  let activeQuotes = 0;
+  const quoteQueue: Array<() => void> = [];
+  const runQuote = <T>(task: () => Promise<T>) =>
+    new Promise<T>((resolve, reject) => {
+      const start = () => {
+        activeQuotes += 1;
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            activeQuotes -= 1;
+            quoteQueue.shift()?.();
+          });
+      };
+      if (activeQuotes < 4) start();
+      else quoteQueue.push(start);
+    });
+  const quoteFor = (position: PositionInput) => {
+    const key = [
+      position.market,
+      position.symbol.toUpperCase(),
+      position.providerSymbol ?? "",
+      position.market === "FUND" ? position.name : "",
+    ].join("\u0000");
+    let promise = quotePromises.get(key);
+    if (!promise) {
+      promise = runQuote(() =>
+        (dependencies.quote ?? resolveQuote)(position.market, position.symbol, {
           name: position.name,
           providerSymbol: position.providerSymbol,
-        });
-        positions.push({
-          ...position,
-          marketPrice: quote.price,
-          quoteCurrency: quote.currency,
-          quoteAsOf: quote.quoteAsOf,
-          quoteSource: quote.source,
-          quoteStatus: quote.status,
-          quoteNote: quote.note,
-          fxRate:
-            quote.currency === "TWD"
-              ? undefined
-              : (fx.get(quote.currency) ?? position.fxRate),
-        });
-        if (quote.status === "stale")
-          warnings.push(`${position.symbol} 沿用舊行情。`);
-      } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : "無可用行情，請手動補價";
-        positions.push({
-          ...position,
-          fxRate:
-            position.quoteCurrency === "TWD"
-              ? undefined
-              : (fx.get(position.quoteCurrency) ?? position.fxRate),
-          quoteStatus: "manual",
-          quoteSource: "MANUAL",
-          quoteNote: reason,
-        });
-        warnings.push(`${position.symbol}：${reason}`);
-      }
+        }),
+      );
+      quotePromises.set(key, promise);
     }
-    resolved.push({
+    return promise;
+  };
+
+  const resolved = await Promise.all(
+    accounts.map(async (account) => ({
       ...account,
       cashBalances: account.cashBalances.map((balance) => ({
         ...balance,
@@ -673,8 +706,43 @@ export async function resolveAccountQuotes(
             ? undefined
             : (fx.get(balance.currency) ?? balance.fxRate),
       })),
-      positions,
-    });
-  }
+      positions: await Promise.all(
+        account.positions.map(async (position) => {
+          try {
+            const quote = await quoteFor(position);
+            if (quote.status === "stale")
+              warnings.push(`${position.symbol} 沿用舊行情。`);
+            return {
+              ...position,
+              marketPrice: quote.price,
+              quoteCurrency: quote.currency,
+              quoteAsOf: quote.quoteAsOf,
+              quoteSource: quote.source,
+              quoteStatus: quote.status,
+              quoteNote: quote.note,
+              fxRate:
+                quote.currency === "TWD"
+                  ? undefined
+                  : (fx.get(quote.currency) ?? position.fxRate),
+            };
+          } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : "無可用行情，請手動補價";
+            warnings.push(`${position.symbol}：${reason}`);
+            return {
+              ...position,
+              fxRate:
+                position.quoteCurrency === "TWD"
+                  ? undefined
+                  : (fx.get(position.quoteCurrency) ?? position.fxRate),
+              quoteStatus: "manual" as const,
+              quoteSource: "MANUAL" as const,
+              quoteNote: reason,
+            };
+          }
+        }),
+      ),
+    })),
+  );
   return { accounts: resolved, warnings };
 }

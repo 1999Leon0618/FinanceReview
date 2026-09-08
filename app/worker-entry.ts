@@ -30,11 +30,14 @@ const worker = {
     } catch {
       return new Response("未通過 Cloudflare Access 身分驗證", { status: 403 });
     }
-    return runWithDataOwner(owner, () =>
+    const response = (await runWithDataOwner(owner, () =>
       runWithD1Database(environment.DB, () =>
         handler.fetch(request, environment, context),
       ),
-    );
+    )) as Response;
+    const secured = new Response(response.body, response);
+    secured.headers.set("Cache-Control", "private, no-store");
+    return secured;
   },
 };
 

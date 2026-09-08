@@ -107,6 +107,7 @@ try {
   await check("D1 可提供首頁與有效快照提案", async () => {
     const dashboard = await worker.fetch("http://localhost/api/dashboard");
     assert.equal(dashboard.status, 200, await dashboard.clone().text());
+    assert.equal(dashboard.headers.get("cache-control"), "private, no-store");
     const home = await worker.fetch("http://localhost/");
     assert.equal(home.status, 200, await home.clone().text());
     const proposal = await post("/api/snapshot-proposals", {
@@ -262,7 +263,13 @@ try {
 
     const backup = await worker.fetch("http://localhost/api/backup");
     assert.equal(backup.status, 200);
-    assert.equal((await backup.json()).data.position_sales.length, 1);
+    const backupBody = await backup.json();
+    assert.equal(backupBody.data.position_sales.length, 1);
+    const restored = await post("/api/backup", backupBody);
+    assert.equal(restored.status, 200, await restored.clone().text());
+    const restoredBody = await restored.json();
+    assert.equal(restoredBody.imported, 0);
+    assert.ok(restoredBody.skipped > 0);
   });
   await worker.stop();
   worker = undefined;

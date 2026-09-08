@@ -37,6 +37,7 @@ export type D1DatabaseBinding = {
 };
 
 const d1Context = new AsyncLocalStorage<D1DatabaseBinding>();
+const localTransactionContext = new AsyncLocalStorage<boolean>();
 
 export function runWithD1Database<T>(
   database: D1DatabaseBinding,
@@ -48,41 +49,72 @@ export function runWithD1Database<T>(
 class LocalStatement implements FinanceStatement {
   constructor(
     private readonly statement: ReturnType<DatabaseSync["prepare"]>,
+    private readonly execute: <T>(run: () => T) => Promise<T>,
   ) {}
 
   async get(...values: SqlValue[]) {
-    return this.statement.get(...values) as Record<string, unknown> | undefined;
+    return this.execute(
+      () =>
+        this.statement.get(...values) as Record<string, unknown> | undefined,
+    );
   }
 
   async all(...values: SqlValue[]) {
-    return this.statement.all(...values) as Record<string, unknown>[];
+    return this.execute(
+      () => this.statement.all(...values) as Record<string, unknown>[],
+    );
   }
 
   async run(...values: SqlValue[]) {
-    const result = this.statement.run(...values);
-    return { changes: Number(result.changes) };
+    return this.execute(() => {
+      const result = this.statement.run(...values);
+      return { changes: Number(result.changes) };
+    });
   }
 }
 
 class LocalDatabase implements FinanceDatabase {
   readonly kind = "local" as const;
+  private queue = Promise.resolve();
 
   constructor(private readonly database: DatabaseSync) {}
 
   prepare(sql: string) {
-    return new LocalStatement(this.database.prepare(sql));
+    return new LocalStatement(this.database.prepare(sql), (run) =>
+      this.execute(run),
+    );
+  }
+
+  private schedule<T>(run: () => T | Promise<T>): Promise<T> {
+    const next = this.queue.then(run, run);
+    this.queue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private execute<T>(run: () => T): Promise<T> {
+    return localTransactionContext.getStore()
+      ? Promise.resolve(run())
+      : this.schedule(run);
   }
 
   async atomic<T>(run: (db: FinanceDatabase) => Promise<T>): Promise<T> {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = await run(this);
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    if (localTransactionContext.getStore()) return run(this);
+    return this.schedule(() =>
+      localTransactionContext.run(true, async () => {
+        this.database.exec("BEGIN IMMEDIATE");
+        try {
+          const result = await run(this);
+          this.database.exec("COMMIT");
+          return result;
+        } catch (error) {
+          this.database.exec("ROLLBACK");
+          throw error;
+        }
+      }),
+    );
   }
 }
 

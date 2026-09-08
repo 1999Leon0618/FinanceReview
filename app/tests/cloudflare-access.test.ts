@@ -21,11 +21,7 @@ describe("Cloudflare Access 身分", () => {
 
   it("缺少 Access 身分與 JWT 時拒絕請求", async () => {
     await expect(
-      authenticateDataOwner(
-        new Request("https://finance.hsun.dev"),
-        {},
-        {},
-      ),
+      authenticateDataOwner(new Request("https://finance.hsun.dev"), {}, {}),
     ).rejects.toThrow("缺少 Cloudflare Access 驗證資訊");
   });
 });

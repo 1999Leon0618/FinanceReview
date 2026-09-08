@@ -44,6 +44,7 @@ import {
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
 import { snapshotCreateSchema } from "@/lib/validation";
+import { requestJson as request } from "@/lib/client-request";
 
 const twd = new Intl.NumberFormat("zh-TW", {
   maximumFractionDigits: 0,
@@ -302,22 +303,6 @@ function loanBelongsToAccount(
     (loan.accountId && account.accountId === loan.accountId) ||
     (loan.accountName && loan.accountName === account.name),
   );
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const body =
-    response.status === 204
-      ? null
-      : ((await response.json()) as { error?: string } | T);
-  if (!response.ok) {
-    const message =
-      body && typeof body === "object" && "error" in body
-        ? String(body.error)
-        : "操作失敗";
-    throw new Error(message);
-  }
-  return body as T;
 }
 
 function Modal({

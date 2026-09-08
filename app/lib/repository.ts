@@ -115,28 +115,49 @@ export async function getSnapshotDetail(
     .prepare("SELECT * FROM snapshots WHERE id = ? AND owner_key = ?")
     .get(id, ownerKey)) as Row | undefined;
   if (!snapshot) return null;
+  const fxRates = new Map<string, Promise<FxRateInput | undefined>>();
+  const loadFxRate = (fxRateId: string | null) => {
+    if (!fxRateId) return Promise.resolve(undefined);
+    let rate = fxRates.get(fxRateId);
+    if (!rate) {
+      rate = fxRateById(db, fxRateId);
+      fxRates.set(fxRateId, rate);
+    }
+    return rate;
+  };
 
   const accountRows = (await db
     .prepare(
       "SELECT * FROM snapshot_accounts WHERE snapshot_id = ? ORDER BY sort_order, name",
     )
     .all(id)) as Row[];
+  const balanceRows = (await db
+    .prepare(
+      `SELECT balance.* FROM cash_balances balance
+      JOIN snapshot_accounts account ON account.id = balance.snapshot_account_id
+      WHERE account.snapshot_id = ?
+      ORDER BY account.sort_order,
+      CASE WHEN balance.currency = 'TWD' THEN 0 ELSE 1 END, balance.currency`,
+    )
+    .all(id)) as Row[];
+  const positionRows = (await db
+    .prepare(
+      `SELECT position.*, security.provider_symbol FROM snapshot_positions position
+      JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
+      JOIN securities security ON security.id = position.security_id
+      WHERE account.snapshot_id = ?
+      ORDER BY account.sort_order, position.security_name, position.symbol`,
+    )
+    .all(id)) as Row[];
   const accounts: AccountView[] = await Promise.all(
     accountRows.map(async (account) => {
       const snapshotAccountId = text(account.id);
-      const balances = (await db
-        .prepare(
-          `SELECT * FROM cash_balances WHERE snapshot_account_id = ?
-        ORDER BY CASE WHEN currency = 'TWD' THEN 0 ELSE 1 END, currency`,
-        )
-        .all(snapshotAccountId)) as Row[];
-      const positions = (await db
-        .prepare(
-          `SELECT sp.*, s.provider_symbol FROM snapshot_positions sp
-        JOIN securities s ON s.id = sp.security_id
-        WHERE sp.snapshot_account_id = ? ORDER BY sp.security_name, sp.symbol`,
-        )
-        .all(snapshotAccountId)) as Row[];
+      const balances = balanceRows.filter(
+        (row) => text(row.snapshot_account_id) === snapshotAccountId,
+      );
+      const positions = positionRows.filter(
+        (row) => text(row.snapshot_account_id) === snapshotAccountId,
+      );
       return {
         accountId: text(account.account_id),
         name: text(account.name),
@@ -148,7 +169,7 @@ export async function getSnapshotDetail(
           balances.map(async (balance) => ({
             currency: text(balance.currency),
             amount: text(balance.amount),
-            fxRate: await fxRateById(db, nullableText(balance.fx_rate_id)),
+            fxRate: await loadFxRate(nullableText(balance.fx_rate_id)),
           })),
         ),
         positions: await Promise.all(
@@ -184,7 +205,7 @@ export async function getSnapshotDetail(
               position.quote_status,
             ) as PositionView["quoteStatus"],
             quoteNote: nullableText(position.quote_note),
-            fxRate: await fxRateById(db, nullableText(position.fx_rate_id)),
+            fxRate: await loadFxRate(nullableText(position.fx_rate_id)),
             costValueTwd: text(position.cost_value_twd),
             marketValueTwd: text(position.market_value_twd),
             unrealizedPnlTwd: text(position.unrealized_pnl_twd),
@@ -228,7 +249,7 @@ export async function getSnapshotDetail(
       startDate: nullableText(loan.start_date),
       endDate: nullableText(loan.end_date),
       note: nullableText(loan.note),
-      fxRate: await fxRateById(db, nullableText(loan.fx_rate_id)),
+      fxRate: await loadFxRate(nullableText(loan.fx_rate_id)),
       valueTwd: text(loan.value_twd),
     })),
   );
@@ -238,32 +259,38 @@ export async function getSnapshotDetail(
       WHERE snapshot_id = ? ORDER BY sort_order, name`,
     )
     .all(id)) as Row[];
+  const cardRows = (await db
+    .prepare(
+      `SELECT card.* FROM credit_cards card
+      JOIN snapshot_credit_card_accounts snapshot_account
+      ON snapshot_account.credit_card_account_id = card.credit_card_account_id
+      WHERE snapshot_account.snapshot_id = ?
+      ORDER BY snapshot_account.sort_order,
+      CASE card.status WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END,
+      card.name`,
+    )
+    .all(id)) as Row[];
   const creditCardAccounts: CreditCardAccountView[] = await Promise.all(
     creditCardRows.map(async (account) => {
       const accountId = text(account.credit_card_account_id);
-      const cards = (
-        (await db
-          .prepare(
-            `SELECT * FROM credit_cards WHERE credit_card_account_id = ?
-            ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END, name`,
-          )
-          .all(accountId)) as Row[]
-      ).map((card) => ({
-        cardId: text(card.id),
-        name: text(card.name),
-        lastFour: nullableText(card.last_four),
-        network:
-          (nullableText(card.network) as
-            CreditCardAccountView["cards"][number]["network"] | null) ?? null,
-        holderType:
-          (nullableText(card.holder_type) as
-            CreditCardAccountView["cards"][number]["holderType"] | null) ??
-          null,
-        status: text(
-          card.status,
-        ) as CreditCardAccountView["cards"][number]["status"],
-        note: nullableText(card.note),
-      }));
+      const cards = cardRows
+        .filter((card) => text(card.credit_card_account_id) === accountId)
+        .map((card) => ({
+          cardId: text(card.id),
+          name: text(card.name),
+          lastFour: nullableText(card.last_four),
+          network:
+            (nullableText(card.network) as
+              CreditCardAccountView["cards"][number]["network"] | null) ?? null,
+          holderType:
+            (nullableText(card.holder_type) as
+              CreditCardAccountView["cards"][number]["holderType"] | null) ??
+            null,
+          status: text(
+            card.status,
+          ) as CreditCardAccountView["cards"][number]["status"],
+          note: nullableText(card.note),
+        }));
       const statementAmount = text(account.statement_amount);
       const paymentAmount = text(account.payment_amount);
       const overpaymentBalance = text(account.overpayment_balance);
@@ -297,7 +324,7 @@ export async function getSnapshotDetail(
           account.remaining_installment_principal,
         ),
         overpaymentBalance,
-        fxRate: await fxRateById(db, nullableText(account.fx_rate_id)),
+        fxRate: await loadFxRate(nullableText(account.fx_rate_id)),
         statementOutstanding: text(account.statement_outstanding),
         utilizationPct: nullableText(account.utilization_pct),
         paymentStatus: creditCardPaymentStatus(
@@ -2231,11 +2258,56 @@ export async function importBackup(payload: unknown) {
   };
   if (![1, 2].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
+  const backupData = backup.data;
   return withTransaction(async (db) => {
     const ownerKey = getDataOwner().key;
     let imported = 0;
     let skipped = 0;
     await db.prepare("PRAGMA defer_foreign_keys = ON").run();
+
+    const ownerTables = new Set([
+      "accounts",
+      "loans",
+      "credit_card_accounts",
+      "snapshots",
+    ]);
+    const existingIds = new Map<string, Set<string>>();
+
+    // A backup is also the proof needed to claim rows created before owner
+    // isolation existed. Claim only matching legacy IDs; an ID owned by another
+    // Access identity is always a hard conflict.
+    for (const table of backupTables) {
+      const primaryColumn = backupColumns[table][0];
+      const existing = new Set<string>();
+      for (const row of backupData[table] ?? []) {
+        if (!row || typeof row !== "object" || Array.isArray(row))
+          throw new Error(`${table} 備份列格式無效`);
+        if (!Object.hasOwn(row, primaryColumn))
+          throw new Error(`${table}.${primaryColumn} 不可缺少`);
+        const primaryValue = String(row[primaryColumn]);
+        const columns = ownerTables.has(table)
+          ? `${primaryColumn}, owner_key`
+          : primaryColumn;
+        const found = (await db
+          .prepare(`SELECT ${columns} FROM ${table} WHERE ${primaryColumn} = ?`)
+          .get(primaryValue)) as Row | undefined;
+        if (!found) continue;
+
+        if (ownerTables.has(table)) {
+          const existingOwner = String(found.owner_key);
+          if (existingOwner !== ownerKey && existingOwner !== "legacy")
+            throw new Error(`${table}.${primaryColumn} 已屬於其他登入帳號`);
+          if (existingOwner === "legacy")
+            await db
+              .prepare(
+                `UPDATE ${table} SET owner_key = ? WHERE ${primaryColumn} = ? AND owner_key = 'legacy'`,
+              )
+              .run(ownerKey, primaryValue);
+        }
+        existing.add(primaryValue);
+      }
+      existingIds.set(table, existing);
+    }
 
     const allowedIds = new Map<string, Set<string>>();
     for (const table of backupTables) {
@@ -2245,14 +2317,12 @@ export async function importBackup(payload: unknown) {
         table,
         new Set([
           ...owned.map((row) => String(row[primaryColumn])),
-          ...(backup.data?.[table] ?? []).map((row) =>
-            String(row[primaryColumn]),
-          ),
+          ...(backupData[table] ?? []).map((row) => String(row[primaryColumn])),
         ]),
       );
     }
     for (const [table, parents] of Object.entries(backupParents)) {
-      for (const row of backup.data?.[table] ?? []) {
+      for (const row of backupData[table] ?? []) {
         for (const [column, parent, nullable] of parents ?? []) {
           const value = row[column];
           if (
@@ -2266,23 +2336,16 @@ export async function importBackup(payload: unknown) {
       }
     }
 
-    const ownerTables = new Set([
-      "accounts",
-      "loans",
-      "credit_card_accounts",
-      "snapshots",
-    ]);
     for (const table of backupTables) {
-      const rows = backup.data?.[table] ?? [];
+      const rows = backupData[table] ?? [];
       const primaryColumn = backupColumns[table][0];
       const existing = new Set(
         (await db.prepare(ownedBackupQuery(table)).all(ownerKey)).map((row) =>
           String(row[primaryColumn]),
         ),
       );
+      for (const value of existingIds.get(table) ?? []) existing.add(value);
       for (const row of rows) {
-        if (!row || typeof row !== "object" || Array.isArray(row))
-          throw new Error(`${table} 備份列格式無效`);
         const columns = backupColumns[table].filter((column) =>
           Object.hasOwn(row, column),
         );
@@ -2299,15 +2362,13 @@ export async function importBackup(payload: unknown) {
           ? [...columns.map((column) => row[column] as never), ownerKey]
           : columns.map((column) => row[column] as never);
         const placeholders = insertColumns.map(() => "?").join(", ");
-        const result = await db
+        await db
           .prepare(
-            `INSERT OR IGNORE INTO ${table} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
+            `INSERT INTO ${table} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
           )
           .run(...values);
-        if (Number(result.changes) > 0) {
-          imported += 1;
-          existing.add(primaryValue);
-        } else skipped += 1;
+        imported += 1;
+        existing.add(primaryValue);
       }
     }
     await db

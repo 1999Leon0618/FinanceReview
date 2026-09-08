@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Area,
   AreaChart,
@@ -42,17 +43,13 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import {
-  SaleDialog,
-  SnapshotEditor,
-  SoldHistoryDialog,
-} from "@/components/finance-dashboard";
 import type { QuoteRefreshPreview } from "@/lib/quote-refresh";
 import {
   DisplayOrderEditor,
   useDisplayOrder,
 } from "@/components/display-order-editor";
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
+import { requestJson as request } from "@/lib/client-request";
 import {
   creditCardCycleDates,
   followingCreditCardDueDate,
@@ -76,6 +73,20 @@ import type {
   SecurityTrendPoint,
   SnapshotSummary,
 } from "@/lib/types";
+
+const SnapshotEditor = dynamic(() =>
+  import("@/components/finance-dashboard").then(
+    (module) => module.SnapshotEditor,
+  ),
+);
+const SaleDialog = dynamic(() =>
+  import("@/components/finance-dashboard").then((module) => module.SaleDialog),
+);
+const SoldHistoryDialog = dynamic(() =>
+  import("@/components/finance-dashboard").then(
+    (module) => module.SoldHistoryDialog,
+  ),
+);
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
 type DashboardNotification = {
@@ -134,22 +145,6 @@ const shortDate = (value: string) =>
 const hiddenValue = "••••••";
 const privateValue = (hidden: boolean, value: string) =>
   hidden ? hiddenValue : value;
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const body =
-    response.status === 204
-      ? null
-      : ((await response.json()) as { error?: string } | T);
-  if (!response.ok) {
-    const message =
-      body && typeof body === "object" && "error" in body
-        ? String(body.error)
-        : "操作失敗";
-    throw new Error(message);
-  }
-  return body as T;
-}
 
 export default function FinanceDashboard({
   initialData,

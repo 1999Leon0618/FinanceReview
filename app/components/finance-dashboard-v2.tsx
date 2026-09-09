@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   Area,
   AreaChart,
@@ -15,13 +16,15 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
-  Activity,
   ArrowLeft,
   ArrowUpDown,
   Banknote,
   BellRing,
   Building2,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   Clock3,
   CreditCard,
@@ -33,6 +36,8 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -51,8 +56,9 @@ import {
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
 import { requestJson as request } from "@/lib/client-request";
 import {
+  creditCardDisplayPayment,
+  creditCardPaymentMonthLabel,
   creditCardCycleDates,
-  followingCreditCardDueDate,
   inputDate,
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
@@ -89,6 +95,8 @@ const SoldHistoryDialog = dynamic(() =>
 );
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
+export type FinancePage =
+  "overview" | "accounts" | "investments" | "credit-cards";
 type DashboardNotification = {
   title: string;
   message: string;
@@ -133,9 +141,10 @@ const positionUnrealizedReturnPct = (item: PositionView) => {
 };
 const compactTwd = (value: number) => {
   const absolute = Math.abs(value);
-  if (absolute >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}億`;
-  if (absolute >= 10_000) return `${Math.round(value / 10_000)}萬`;
-  return twd.format(value);
+  if (absolute >= 100_000_000)
+    return `NT$${(value / 100_000_000).toFixed(1)}億`;
+  if (absolute >= 10_000) return `NT$${Math.round(value / 10_000)}萬`;
+  return `NT$${twd.format(value)}`;
 };
 const shortDate = (value: string) =>
   new Date(value).toLocaleDateString("zh-TW", {
@@ -143,16 +152,21 @@ const shortDate = (value: string) =>
     day: "numeric",
   });
 const hiddenValue = "••••••";
+const dashboardRangeStorageKey = "finance-review-dashboard-range";
+const sidebarHiddenStorageKey = "finance-review-sidebar-hidden";
 const privateValue = (hidden: boolean, value: string) =>
   hidden ? hiddenValue : value;
 
 export default function FinanceDashboard({
   initialData,
+  page = "overview",
 }: {
   initialData: DashboardData;
+  page?: FinancePage;
 }) {
   const [data, setData] = useState<DashboardData | null>(initialData);
   const [range, setRange] = useState("6m");
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [valuesHidden, setValuesHidden] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [benchmark, setBenchmark] = useState<BenchmarkId>("twii");
@@ -216,6 +230,31 @@ export default function FinanceDashboard({
   const toggleValues = () => setValuesHidden((current) => !current);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedRange = localStorage.getItem(dashboardRangeStorageKey);
+      if (savedRange === "6m" || savedRange === "1y" || savedRange === "all")
+        setRange(savedRange);
+      setSidebarHidden(
+        localStorage.getItem(sidebarHiddenStorageKey) === "true",
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const selectRange = (nextRange: string) => {
+    setRange(nextRange);
+    localStorage.setItem(dashboardRangeStorageKey, nextRange);
+  };
+
+  const toggleSidebar = () => {
+    setSidebarHidden((current) => {
+      const next = !current;
+      localStorage.setItem(sidebarHiddenStorageKey, String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
     const timer = window.setTimeout(
       () => setDarkMode(document.documentElement.classList.contains("dark")),
       0,
@@ -266,6 +305,7 @@ export default function FinanceDashboard({
   }, [range]);
 
   useEffect(() => {
+    if (page !== "investments") return;
     let cancelled = false;
     const loadingTimer = window.setTimeout(() => {
       if (!cancelled) setPerformanceLoading(true);
@@ -287,7 +327,7 @@ export default function FinanceDashboard({
       cancelled = true;
       window.clearTimeout(loadingTimer);
     };
-  }, [benchmark, range, data?.latest?.id]);
+  }, [benchmark, range, data?.latest?.id, page]);
 
   useEffect(() => {
     if (!data?.health.shouldWarnOnOpen || !data.health.lastUpdatedAt) return;
@@ -498,9 +538,54 @@ export default function FinanceDashboard({
   const cashRatio = totalAssets
     ? (Number(latest?.totalCashTwd ?? 0) / totalAssets) * 100
     : 0;
+  const pageMeta = {
+    overview: {
+      eyebrow: "OVERVIEW",
+      title: "財務總覽",
+      location: "個人資產中心",
+    },
+    accounts: {
+      eyebrow: "ACCOUNTS",
+      title: "帳戶",
+      location: "帳戶與現金",
+    },
+    investments: {
+      eyebrow: "INVESTMENTS",
+      title: "投資",
+      location: "投資持倉與績效",
+    },
+    "credit-cards": {
+      eyebrow: "CREDIT CARDS",
+      title: "信用卡",
+      location: "信用卡帳單",
+    },
+  }[page];
+  const primarySortSection: DisplaySection =
+    page === "investments"
+      ? "holdings"
+      : page === "credit-cards"
+        ? "creditCards"
+        : page === "overview"
+          ? "loans"
+          : "accounts";
 
   return (
-    <main className="dashboard-shell min-h-screen text-[#18231d]">
+    <main
+      className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""}`}
+    >
+      <button
+        aria-label={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
+        aria-pressed={sidebarHidden}
+        title={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
+        className="sidebar-toggle"
+        onClick={toggleSidebar}
+      >
+        {sidebarHidden ? (
+          <PanelLeftOpen size={16} />
+        ) : (
+          <PanelLeftClose size={16} />
+        )}
+      </button>
       <aside className="dashboard-sidebar">
         <div className="brand-lockup">
           <div className="brand-mark">
@@ -517,26 +602,35 @@ export default function FinanceDashboard({
         </div>
 
         <nav className="sidebar-nav" aria-label="主要導覽">
-          <a className="active" href="#top">
+          <Link className={page === "overview" ? "active" : ""} href="/">
             <LayoutDashboard size={17} />
             財務總覽
-          </a>
-          <a href="#accounts">
+          </Link>
+          <Link
+            className={page === "accounts" ? "active" : ""}
+            href="/accounts"
+          >
             <WalletCards size={17} />
-            帳戶與持倉
-          </a>
-          <a href="#credit-cards">
+            帳戶
+          </Link>
+          <Link
+            className={page === "investments" ? "active" : ""}
+            href="/investments"
+          >
+            <TrendingUp size={17} />
+            投資
+          </Link>
+          <Link
+            className={page === "credit-cards" ? "active" : ""}
+            href="/credit-cards"
+          >
             <CreditCard size={17} />
             信用卡
-          </a>
-          <a href="#performance">
-            <Activity size={17} />
-            投資績效
-          </a>
-          <a href="#history">
+          </Link>
+          <Link href="/#history">
             <History size={17} />
             歷史紀錄
-          </a>
+          </Link>
         </nav>
 
         <div className="mt-auto">
@@ -578,14 +672,14 @@ export default function FinanceDashboard({
             </div>
             <span>FinanceReview</span>
           </div>
-          <p className="topbar-location">個人資產中心</p>
+          <p className="topbar-location">{pageMeta.location}</p>
           <div className="flex items-center gap-2.5">
             <button
               className="secondary display-order-entry"
               aria-label="自訂排序"
               title="自訂排序"
               disabled={!latest || !displayOrder.ready}
-              onClick={() => setSortingSection("accounts")}
+              onClick={() => setSortingSection(primarySortSection)}
             >
               <ArrowUpDown size={16} />
               <span>自訂排序</span>
@@ -639,11 +733,39 @@ export default function FinanceDashboard({
           </div>
         </header>
 
+        <nav className="mobile-page-nav" aria-label="手機主要導覽">
+          <Link className={page === "overview" ? "active" : ""} href="/">
+            <LayoutDashboard size={16} />
+            總覽
+          </Link>
+          <Link
+            className={page === "accounts" ? "active" : ""}
+            href="/accounts"
+          >
+            <WalletCards size={16} />
+            帳戶
+          </Link>
+          <Link
+            className={page === "investments" ? "active" : ""}
+            href="/investments"
+          >
+            <TrendingUp size={16} />
+            投資
+          </Link>
+          <Link
+            className={page === "credit-cards" ? "active" : ""}
+            href="/credit-cards"
+          >
+            <CreditCard size={16} />
+            信用卡
+          </Link>
+        </nav>
+
         <section id="top" className="dashboard-content">
           <div className="page-intro">
             <div>
-              <p className="eyebrow">OVERVIEW</p>
-              <h1>財務總覽</h1>
+              <p className="eyebrow">{pageMeta.eyebrow}</p>
+              <h1>{pageMeta.title}</h1>
               <p>
                 {new Date().toLocaleDateString("zh-TW", { dateStyle: "full" })}
                 {latest && (
@@ -667,195 +789,197 @@ export default function FinanceDashboard({
             <EmptyState onCreate={() => setEditor(true)} />
           ) : (
             <>
-              <section className="summary-grid">
-                <NetWorthCard
-                  latest={latest}
-                  trend={data.trend}
-                  range={range}
-                  onRange={setRange}
-                  trendChange={trendChange}
-                  trendChangePct={trendChangePct}
-                  valuesHidden={valuesHidden}
-                />
-                <div className="overview-stack">
-                  <OverviewCard
-                    icon={<TrendingUp size={18} />}
-                    label="證券市值"
-                    value={money(latest.totalSecuritiesTwd)}
-                    detail={`占總資產 ${securitiesRatio.toFixed(1)}%・未實現損益 ${money(latest.unrealizedPnlTwd)}`}
-                    positive={Number(latest.unrealizedPnlTwd) >= 0}
-                    ratio={securitiesRatio}
-                    valuesHidden={valuesHidden}
-                  />
-                  <OverviewCard
-                    icon={<Landmark size={18} />}
-                    label="負債總額"
-                    value={money(latest.totalLiabilitiesTwd)}
-                    detail={`占資產總額 ${liabilitiesRatio.toFixed(1)}%・${latest.loans.length} 筆貸款・${latest.creditCardAccounts.length} 個信用卡群組`}
-                    ratio={liabilitiesRatio}
-                    valuesHidden={valuesHidden}
-                  />
-                  <OverviewCard
-                    icon={<Banknote size={18} />}
-                    label="現金餘額"
-                    value={money(latest.totalCashTwd)}
-                    detail={`占總資產 ${cashRatio.toFixed(1)}%・${latest.accounts.length} 個帳號`}
-                    ratio={cashRatio}
-                    accounts={latest.accounts}
-                    valuesHidden={valuesHidden}
-                  />
-                </div>
-              </section>
+              {page === "overview" && (
+                <>
+                  <section className="summary-grid">
+                    <NetWorthCard
+                      latest={latest}
+                      trend={data.trend}
+                      range={range}
+                      onRange={selectRange}
+                      trendChange={trendChange}
+                      trendChangePct={trendChangePct}
+                      valuesHidden={valuesHidden}
+                    />
+                    <div className="overview-stack">
+                      <OverviewCard
+                        icon={<TrendingUp size={18} />}
+                        label="證券市值"
+                        value={money(latest.totalSecuritiesTwd)}
+                        detail={`占總資產 ${securitiesRatio.toFixed(1)}%・未實現損益 ${money(latest.unrealizedPnlTwd)}`}
+                        positive={Number(latest.unrealizedPnlTwd) >= 0}
+                        ratio={securitiesRatio}
+                        valuesHidden={valuesHidden}
+                      />
+                      <OverviewCard
+                        icon={<Landmark size={18} />}
+                        label="負債總額"
+                        value={money(latest.totalLiabilitiesTwd)}
+                        detail={`占資產總額 ${liabilitiesRatio.toFixed(1)}%・${latest.loans.length} 筆貸款・${latest.creditCardAccounts.length} 個信用卡群組`}
+                        ratio={liabilitiesRatio}
+                        valuesHidden={valuesHidden}
+                      />
+                      <OverviewCard
+                        icon={<Banknote size={18} />}
+                        label="現金餘額"
+                        value={money(latest.totalCashTwd)}
+                        detail={`占總資產 ${cashRatio.toFixed(1)}%・${latest.accounts.length} 個帳號`}
+                        ratio={cashRatio}
+                        accounts={latest.accounts}
+                        valuesHidden={valuesHidden}
+                      />
+                    </div>
+                  </section>
 
-              {latest.changeBreakdown.netWorthChangeTwd !== null && (
-                <ChangeBreakdownCard
-                  breakdown={latest.changeBreakdown}
-                  valuesHidden={valuesHidden}
-                />
+                  {latest.changeBreakdown.netWorthChangeTwd !== null && (
+                    <ChangeBreakdownCard
+                      breakdown={latest.changeBreakdown}
+                      valuesHidden={valuesHidden}
+                    />
+                  )}
+
+                  <HealthCenter
+                    health={data.health}
+                    valuesHidden={valuesHidden}
+                    onUpdate={() => setEditor(true)}
+                  />
+
+                  <LoanPanel
+                    loans={latest.loans}
+                    onViewAll={() => setViewAll("loans")}
+                    sortAction={
+                      <SortButton
+                        onClick={() => setSortingSection("loans")}
+                        disabled={!displayOrder.ready}
+                      />
+                    }
+                  />
+
+                  <section
+                    id="history"
+                    className="history-grid content-section scroll-mt-24"
+                  >
+                    <HistoryPanel
+                      data={data}
+                      valuesHidden={valuesHidden}
+                      onViewAll={() => setViewAll("history")}
+                    />
+                    <SoldPanel
+                      data={data}
+                      onOpen={openSoldHistory}
+                      onViewAll={() => setViewAll("sold")}
+                    />
+                  </section>
+                </>
               )}
 
-              <HealthCenter
-                health={data.health}
-                valuesHidden={valuesHidden}
-                onUpdate={() => setEditor(true)}
-              />
-
-              <PerformancePanel
-                report={performance}
-                loading={performanceLoading}
-                benchmark={benchmark}
-                onBenchmark={setBenchmark}
-                valuesHidden={valuesHidden}
-              />
-
-              <section id="accounts" className="content-section scroll-mt-24">
-                <SectionHeading
-                  eyebrow="ACCOUNTS"
-                  title="帳戶與現金"
-                  description={`${latest.accounts.length} 個帳戶・最新快照`}
-                  action={
-                    <div className="section-actions">
+              {page === "accounts" && (
+                <section
+                  id="accounts"
+                  className="content-section page-primary-section"
+                >
+                  <SectionHeading
+                    eyebrow="ACCOUNTS"
+                    title="所有帳戶與現金"
+                    description={`${latest.accounts.length} 個帳戶・依最新快照`}
+                    action={
                       <SortButton
                         onClick={() => setSortingSection("accounts")}
                         disabled={!displayOrder.ready}
                       />
-                      <button
-                        className="secondary"
-                        onClick={() => setViewAll("accounts")}
-                      >
-                        <Eye size={14} />
-                        檢視全部
-                      </button>
-                    </div>
-                  }
-                />
-                <div className="accounts-grid">
-                  {latest.accounts.slice(0, 6).map((account) => (
-                    <AccountCard
-                      key={account.accountId}
-                      account={account}
-                      onOpen={() => setSelectedAccount(account)}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <LoanPanel
-                loans={latest.loans}
-                onViewAll={() => setViewAll("loans")}
-                sortAction={
-                  <SortButton
-                    onClick={() => setSortingSection("loans")}
-                    disabled={!displayOrder.ready}
+                    }
                   />
-                }
-              />
-
-              <CreditCardPanel
-                accounts={latest.creditCardAccounts}
-                valuesHidden={valuesHidden}
-                onManage={() => setCreditCardEditor(true)}
-                sortAction={
-                  <SortButton
-                    onClick={() => setSortingSection("creditCards")}
-                    disabled={!displayOrder.ready}
-                  />
-                }
-              />
-
-              <section className="content-section">
-                <SectionHeading
-                  eyebrow="HOLDINGS"
-                  title="股票、ETF、基金與期貨"
-                  description={`${positions.length} 筆持倉・依最新行情計算`}
-                  action={
-                    <div className="section-actions">
-                      <SortButton
-                        onClick={() => setSortingSection("holdings")}
-                        disabled={!displayOrder.ready}
-                      />
-                      <button
-                        className="secondary"
-                        onClick={() => setViewAll("holdings")}
-                      >
-                        <Eye size={14} />
-                        檢視全部
-                      </button>
-                      <button
-                        className="primary"
-                        disabled={refreshingQuotes || positions.length === 0}
-                        onClick={refreshQuotes}
-                        title="取得全部標的最新行情並建立新快照"
-                      >
-                        <RefreshCw
-                          className={refreshingQuotes ? "animate-spin" : ""}
-                          size={15}
-                        />
-                        {refreshingQuotes ? "更新現值中…" : "一鍵更新現值"}
-                      </button>
-                    </div>
-                  }
-                />
-                <div className="holdings-panel">
-                  {positions.length === 0 ? (
-                    <div className="py-14 text-center">
-                      <TrendingUp className="mx-auto text-[#a0aaa3]" />
-                      <p className="mt-3 text-sm text-[#7c8981]">
-                        目前沒有投資品項
-                      </p>
-                    </div>
+                  {latest.accounts.length === 0 ? (
+                    <div className="page-empty-state">目前沒有帳戶資料</div>
                   ) : (
-                    positions
-                      .slice(0, 10)
-                      .map((item, index) => (
-                        <HoldingRow
-                          key={item.positionId}
-                          item={item}
-                          divided={index > 0}
-                          canSell
-                          onOpen={() => setSelectedSecurity(item)}
-                          onSell={() => setSale(item)}
+                    <div className="accounts-grid">
+                      {latest.accounts.map((account) => (
+                        <AccountCard
+                          key={account.accountId}
+                          account={account}
+                          onOpen={() => setSelectedAccount(account)}
                         />
-                      ))
+                      ))}
+                    </div>
                   )}
-                </div>
-              </section>
+                </section>
+              )}
 
-              <section
-                id="history"
-                className="history-grid content-section scroll-mt-24"
-              >
-                <HistoryPanel
-                  data={data}
+              {page === "investments" && (
+                <>
+                  <PerformancePanel
+                    report={performance}
+                    loading={performanceLoading}
+                    benchmark={benchmark}
+                    onBenchmark={setBenchmark}
+                    valuesHidden={valuesHidden}
+                  />
+                  <section className="content-section">
+                    <SectionHeading
+                      eyebrow="HOLDINGS"
+                      title="所有投資持倉"
+                      description={`${positions.length} 筆持倉・依最新行情計算`}
+                      action={
+                        <div className="section-actions">
+                          <SortButton
+                            onClick={() => setSortingSection("holdings")}
+                            disabled={!displayOrder.ready}
+                          />
+                          <button
+                            className="primary"
+                            disabled={
+                              refreshingQuotes || positions.length === 0
+                            }
+                            onClick={refreshQuotes}
+                            title="取得全部標的最新行情並建立新快照"
+                          >
+                            <RefreshCw
+                              className={refreshingQuotes ? "animate-spin" : ""}
+                              size={15}
+                            />
+                            {refreshingQuotes ? "更新現值中…" : "一鍵更新現值"}
+                          </button>
+                        </div>
+                      }
+                    />
+                    <div className="holdings-panel">
+                      {positions.length === 0 ? (
+                        <div className="py-14 text-center">
+                          <TrendingUp className="mx-auto text-[#a0aaa3]" />
+                          <p className="mt-3 text-sm text-[#7c8981]">
+                            目前沒有投資品項
+                          </p>
+                        </div>
+                      ) : (
+                        positions.map((item, index) => (
+                          <HoldingRow
+                            key={item.positionId}
+                            item={item}
+                            divided={index > 0}
+                            canSell
+                            onOpen={() => setSelectedSecurity(item)}
+                            onSell={() => setSale(item)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {page === "credit-cards" && (
+                <CreditCardPanel
+                  accounts={latest.creditCardAccounts}
                   valuesHidden={valuesHidden}
-                  onViewAll={() => setViewAll("history")}
+                  onManage={() => setCreditCardEditor(true)}
+                  sortAction={
+                    <SortButton
+                      onClick={() => setSortingSection("creditCards")}
+                      disabled={!displayOrder.ready}
+                    />
+                  }
                 />
-                <SoldPanel
-                  data={data}
-                  onOpen={openSoldHistory}
-                  onViewAll={() => setViewAll("sold")}
-                />
-              </section>
+              )}
             </>
           )}
 
@@ -1029,7 +1153,6 @@ export default function FinanceDashboard({
           {editor && (
             <SnapshotEditor
               latest={latest ?? null}
-              recentInputs={data?.history.map((item) => item.rawInput) ?? []}
               onClose={() => setEditor(false)}
               onSaved={saved}
             />
@@ -1401,22 +1524,7 @@ function NetWorthCard({
             </span>
           </div>
         </div>
-        <select
-          aria-label="走勢範圍"
-          className="range-select"
-          value={range}
-          onChange={(event) => onRange(event.target.value)}
-        >
-          <option className="text-black" value="6m">
-            6 個月
-          </option>
-          <option className="text-black" value="1y">
-            1 年
-          </option>
-          <option className="text-black" value="all">
-            全部
-          </option>
-        </select>
+        <RangeCombobox value={range} onChange={onRange} />
       </div>
       {trend.length >= 2 && (
         <div className="relative mt-5 grid grid-cols-3 gap-2 border-y border-white/[.08] py-2.5 text-[10px] max-sm:grid-cols-2">
@@ -1547,6 +1655,84 @@ function NetWorthCard({
   );
 }
 
+const rangeOptions = [
+  { value: "6m", label: "近 6 個月", description: "掌握近期變化" },
+  { value: "1y", label: "近 1 年", description: "觀察年度趨勢" },
+  { value: "all", label: "全部期間", description: "檢視完整紀錄" },
+] as const;
+
+function RangeCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const selected =
+    rangeOptions.find((option) => option.value === value) ?? rangeOptions[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="range-combobox" ref={root}>
+      <button
+        type="button"
+        aria-label={`資產淨值圖表期間，目前為${selected.label}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>圖表期間</span>
+        <strong>{selected.label}</strong>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="range-combobox-menu"
+          role="listbox"
+          aria-label="圖表期間"
+        >
+          {rangeOptions.map((option) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={option.value === value ? "selected" : ""}
+              key={option.value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.description}</small>
+              </span>
+              {option.value === value && <Check size={15} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OverviewCard({
   icon,
   label,
@@ -1634,35 +1820,37 @@ function ChangeBreakdownCard({
     ["市場與匯率等", breakdown.marketAndFxTwd ?? "0"],
   ] as const;
   return (
-    <section className="content-section rounded-[26px] border border-[#dde5df] bg-white p-6 shadow-[0_12px_34px_rgba(25,52,38,.05)]">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <details className="dashboard-disclosure content-section">
+      <summary className="dashboard-disclosure-summary">
         <div>
           <p className="eyebrow">CHANGE BREAKDOWN</p>
           <h2 className="mt-1 text-lg font-semibold">本期淨值變動歸因</h2>
           <p className="mt-1 text-xs text-[#748178]">
-            以本快照和上一份快照比較；「市場與匯率等」是扣除已記錄資金流後的資產變動。
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-[11px] text-[#7b8880]">淨值變動</p>
-          <p
-            className={`mt-1 text-xl font-semibold ${Number(breakdown.netWorthChangeTwd) >= 0 ? "text-[#2e7651]" : "text-[#a8443d]"}`}
-          >
+            淨值變動{" "}
             {privateValue(valuesHidden, money(breakdown.netWorthChangeTwd))}
           </p>
         </div>
+        <span className="dashboard-disclosure-action">
+          查看歸因
+          <ChevronDown size={16} aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="dashboard-disclosure-body">
+        <p className="text-xs text-[#748178]">
+          以本快照和上一份快照比較；「市場與匯率等」是扣除已記錄資金流後的資產變動。
+        </p>
+        <div className="mt-4 grid grid-cols-6 gap-2 max-xl:grid-cols-3 max-sm:grid-cols-2">
+          {items.map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-[#f6f8f5] px-4 py-3">
+              <p className="text-[11px] text-[#7b8880]">{label}</p>
+              <p className="mt-1 text-sm font-semibold tabular-nums">
+                {privateValue(valuesHidden, money(value))}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="mt-5 grid grid-cols-6 gap-2 max-xl:grid-cols-3 max-sm:grid-cols-2">
-        {items.map(([label, value]) => (
-          <div key={label} className="rounded-2xl bg-[#f6f8f5] px-4 py-3">
-            <p className="text-[11px] text-[#7b8880]">{label}</p>
-            <p className="mt-1 text-sm font-semibold tabular-nums">
-              {privateValue(valuesHidden, money(value))}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+    </details>
   );
 }
 
@@ -1738,76 +1926,91 @@ function HealthCenter({
   );
   const actions = health.findings.filter((item) => item.category === "action");
   return (
-    <section className="content-section rounded-[26px] border border-[#dde5df] bg-white p-6 shadow-[0_12px_34px_rgba(25,52,38,.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <details className="dashboard-disclosure content-section">
+      <summary className="dashboard-disclosure-summary">
         <div>
           <p className="eyebrow">HEALTH CHECK</p>
           <h2 className="mt-1 text-lg font-semibold">資料健檢與行動提醒</h2>
           <p className="mt-1 text-xs text-[#748178]">
-            開啟應用時依最新快照、行情、匯率、貸款與期貨資料即時計算。
+            {health.findings.length === 0
+              ? "目前沒有待處理事項"
+              : `${health.findings.length} 項需要留意`}
           </p>
         </div>
-        <button className="secondary" onClick={onUpdate}>
-          <RefreshCw size={14} />
-          更新財務資料
-        </button>
+        <span className="dashboard-disclosure-action">
+          查看健檢
+          <ChevronDown size={16} aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="dashboard-disclosure-body">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-[#748178]">
+            依最新快照、行情、匯率、貸款與期貨資料即時計算。
+          </p>
+          <button className="secondary" onClick={onUpdate}>
+            <RefreshCw size={14} />
+            更新財務資料
+          </button>
+        </div>
+        {health.findings.length === 0 ? (
+          <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#edf7ef] px-4 py-4 text-sm text-[#34704f]">
+            <CheckCircle2 size={18} />
+            目前沒有發現資料缺漏或待處理事項。
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-4 max-lg:grid-cols-1">
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold text-[#56665d]">
+                  資料完整性
+                </p>
+                <span className="text-[11px] text-[#8a958e]">
+                  {completeness.length} 項
+                </span>
+              </div>
+              {completeness.length ? (
+                <ul className="space-y-2">
+                  {completeness.map((item) => (
+                    <HealthFindingRow
+                      key={item.id}
+                      item={item}
+                      valuesHidden={valuesHidden}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-2xl bg-[#f5f8f5] p-4 text-xs text-[#718078]">
+                  明細加總、行情與匯率資料均通過檢查。
+                </p>
+              )}
+            </div>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold text-[#56665d]">行動提醒</p>
+                <span className="text-[11px] text-[#8a958e]">
+                  {actions.length} 項
+                </span>
+              </div>
+              {actions.length ? (
+                <ul className="space-y-2">
+                  {actions.map((item) => (
+                    <HealthFindingRow
+                      key={item.id}
+                      item={item}
+                      valuesHidden={valuesHidden}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-2xl bg-[#f5f8f5] p-4 text-xs text-[#718078]">
+                  目前沒有即將到期或需要更新的項目。
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-      {health.findings.length === 0 ? (
-        <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#edf7ef] px-4 py-4 text-sm text-[#34704f]">
-          <CheckCircle2 size={18} />
-          目前沒有發現資料缺漏或待處理事項。
-        </div>
-      ) : (
-        <div className="mt-5 grid grid-cols-2 gap-4 max-lg:grid-cols-1">
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-semibold text-[#56665d]">資料完整性</p>
-              <span className="text-[11px] text-[#8a958e]">
-                {completeness.length} 項
-              </span>
-            </div>
-            {completeness.length ? (
-              <ul className="space-y-2">
-                {completeness.map((item) => (
-                  <HealthFindingRow
-                    key={item.id}
-                    item={item}
-                    valuesHidden={valuesHidden}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-2xl bg-[#f5f8f5] p-4 text-xs text-[#718078]">
-                明細加總、行情與匯率資料均通過檢查。
-              </p>
-            )}
-          </div>
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-semibold text-[#56665d]">行動提醒</p>
-              <span className="text-[11px] text-[#8a958e]">
-                {actions.length} 項
-              </span>
-            </div>
-            {actions.length ? (
-              <ul className="space-y-2">
-                {actions.map((item) => (
-                  <HealthFindingRow
-                    key={item.id}
-                    item={item}
-                    valuesHidden={valuesHidden}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-2xl bg-[#f5f8f5] p-4 text-xs text-[#718078]">
-                目前沒有即將到期或需要更新的項目。
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
+    </details>
   );
 }
 
@@ -1833,156 +2036,172 @@ function PerformancePanel({
         );
   const hasPerformance = report?.cumulativeReturnPct !== null;
   return (
-    <section
+    <details
       id="performance"
-      className="content-section scroll-mt-24 rounded-[26px] border border-[#dbe4dc] bg-[#172d23] p-6 text-white shadow-[0_18px_50px_rgba(15,39,28,.12)]"
+      className="dashboard-disclosure dashboard-disclosure-dark content-section scroll-mt-24"
     >
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <summary className="dashboard-disclosure-summary">
         <div>
           <p className="text-[10px] font-semibold tracking-[.18em] text-white/42">
             PERFORMANCE
           </p>
           <h2 className="mt-1 text-lg font-semibold">投資績效與基準比較</h2>
           <p className="mt-1 text-xs leading-5 text-white/48">
-            排除投入與提領，以快照間資金流中點估算；指數均以期初 100 正規化。
+            {hasPerformance && report
+              ? `資金流調整報酬 ${metric(report.cumulativeReturnPct)}`
+              : "至少需要兩份期間內快照才能計算績效"}
           </p>
         </div>
-        <select
-          aria-label="比較基準"
-          className="range-select"
-          value={benchmark}
-          onChange={(event) => onBenchmark(event.target.value as BenchmarkId)}
-        >
-          <option className="text-black" value="twii">
-            臺灣加權指數
-          </option>
-          <option className="text-black" value="sp500">
-            S&amp;P 500（SPY）
-          </option>
-          <option className="text-black" value="global">
-            全球股票（VT）
-          </option>
-        </select>
-      </div>
+        <span className="dashboard-disclosure-action">
+          展開分析
+          <ChevronDown size={16} aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="dashboard-disclosure-body">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p className="text-xs leading-5 text-white/48">
+            排除投入與提領，以快照間資金流中點估算；指數均以期初 100 正規化。
+          </p>
+          <select
+            aria-label="比較基準"
+            className="range-select"
+            value={benchmark}
+            onChange={(event) => onBenchmark(event.target.value as BenchmarkId)}
+          >
+            <option className="text-black" value="twii">
+              臺灣加權指數
+            </option>
+            <option className="text-black" value="sp500">
+              S&amp;P 500（SPY）
+            </option>
+            <option className="text-black" value="global">
+              全球股票（VT）
+            </option>
+          </select>
+        </div>
 
-      {loading && !report ? (
-        <div className="grid min-h-64 place-items-center text-sm text-white/45">
-          <LoaderCircle className="mb-2 animate-spin" />
-          正在計算績效…
-        </div>
-      ) : !hasPerformance || !report ? (
-        <div className="mt-6 grid min-h-48 place-items-center rounded-2xl border border-dashed border-white/12 text-sm text-white/42">
-          至少需要兩份期間內快照才能計算績效。
-        </div>
-      ) : (
-        <>
-          <div className="mt-5 grid grid-cols-4 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
-            {[
-              ["資金流調整報酬", metric(report.cumulativeReturnPct)],
-              ["年化報酬", metric(report.annualizedReturnPct)],
-              ["最大回撤", metric(report.maxDrawdownPct)],
-              [`超越 ${report.benchmarkName}`, metric(report.excessReturnPct)],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-2xl bg-white/[.065] p-4">
-                <p className="text-[11px] text-white/42">{label}</p>
-                <p className="mt-1 text-lg font-semibold">{value}</p>
-              </div>
-            ))}
+        {loading && !report ? (
+          <div className="grid min-h-64 place-items-center text-sm text-white/45">
+            <LoaderCircle className="mb-2 animate-spin" />
+            正在計算績效…
           </div>
-          <div className="mt-5 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={report.series}
-                margin={{ top: 10, right: 8, bottom: 0, left: -12 }}
-              >
-                <CartesianGrid
-                  stroke="rgba(255,255,255,.07)"
-                  strokeDasharray="3 5"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="capturedAt"
-                  tickFormatter={shortDate}
-                  tick={{ fill: "rgba(255,255,255,.38)", fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={42}
-                />
-                <YAxis
-                  tickFormatter={(value) =>
-                    valuesHidden ? "•••" : Number(value).toFixed(0)
-                  }
-                  tick={{ fill: "rgba(255,255,255,.35)", fontSize: 9 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={48}
-                  domain={["auto", "auto"]}
-                />
-                <Tooltip
-                  formatter={(value, name) => [
-                    valuesHidden ? hiddenValue : Number(value).toFixed(2),
-                    name === "portfolioIndex"
-                      ? "投資組合"
-                      : report.benchmarkName,
-                  ]}
-                  labelFormatter={(value) =>
-                    new Date(String(value)).toLocaleDateString("zh-TW")
-                  }
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgba(22,45,34,.1)",
-                    background: "rgba(255,255,255,.97)",
-                    color: "#183025",
-                    fontSize: 11,
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="portfolioIndex"
-                  name="portfolioIndex"
-                  stroke="#d4f47c"
-                  strokeWidth={2.5}
-                  dot={false}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="benchmarkIndex"
-                  name="benchmarkIndex"
-                  stroke="#87b7ff"
-                  strokeWidth={2}
-                  strokeDasharray="5 4"
-                  dot={false}
-                  connectNulls
-                />
-              </LineChart>
-            </ResponsiveContainer>
+        ) : !hasPerformance || !report ? (
+          <div className="mt-6 grid min-h-48 place-items-center rounded-2xl border border-dashed border-white/12 text-sm text-white/42">
+            至少需要兩份期間內快照才能計算績效。
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-white/45">
-            <span>
-              期初資產{" "}
-              {privateValue(valuesHidden, money(report.beginningValueTwd))}
-            </span>
-            <span>
-              期末資產{" "}
-              {privateValue(valuesHidden, money(report.endingValueTwd))}
-            </span>
-            <span>
-              外部淨投入{" "}
-              {privateValue(valuesHidden, money(report.externalNetFlowTwd))}
-            </span>
-            {report.benchmarkError && (
-              <span className="text-[#ffd0c8]">{report.benchmarkError}</span>
-            )}
-            {report.calculationWarning && (
-              <span className="text-[#ffe49a]">
-                {report.calculationWarning}
+        ) : (
+          <>
+            <div className="mt-5 grid grid-cols-4 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
+              {[
+                ["資金流調整報酬", metric(report.cumulativeReturnPct)],
+                ["年化報酬", metric(report.annualizedReturnPct)],
+                ["最大回撤", metric(report.maxDrawdownPct)],
+                [
+                  `超越 ${report.benchmarkName}`,
+                  metric(report.excessReturnPct),
+                ],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-white/[.065] p-4">
+                  <p className="text-[11px] text-white/42">{label}</p>
+                  <p className="mt-1 text-lg font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={report.series}
+                  margin={{ top: 10, right: 8, bottom: 0, left: -12 }}
+                >
+                  <CartesianGrid
+                    stroke="rgba(255,255,255,.07)"
+                    strokeDasharray="3 5"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="capturedAt"
+                    tickFormatter={shortDate}
+                    tick={{ fill: "rgba(255,255,255,.38)", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={42}
+                  />
+                  <YAxis
+                    tickFormatter={(value) =>
+                      valuesHidden ? "•••" : Number(value).toFixed(0)
+                    }
+                    tick={{ fill: "rgba(255,255,255,.35)", fontSize: 9 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={48}
+                    domain={["auto", "auto"]}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [
+                      valuesHidden ? hiddenValue : Number(value).toFixed(2),
+                      name === "portfolioIndex"
+                        ? "投資組合"
+                        : report.benchmarkName,
+                    ]}
+                    labelFormatter={(value) =>
+                      new Date(String(value)).toLocaleDateString("zh-TW")
+                    }
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "1px solid rgba(22,45,34,.1)",
+                      background: "rgba(255,255,255,.97)",
+                      color: "#183025",
+                      fontSize: 11,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="portfolioIndex"
+                    name="portfolioIndex"
+                    stroke="#d4f47c"
+                    strokeWidth={2.5}
+                    dot={false}
+                    connectNulls
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="benchmarkIndex"
+                    name="benchmarkIndex"
+                    stroke="#87b7ff"
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    connectNulls
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-white/45">
+              <span>
+                期初資產{" "}
+                {privateValue(valuesHidden, money(report.beginningValueTwd))}
               </span>
-            )}
-          </div>
-        </>
-      )}
-    </section>
+              <span>
+                期末資產{" "}
+                {privateValue(valuesHidden, money(report.endingValueTwd))}
+              </span>
+              <span>
+                外部淨投入{" "}
+                {privateValue(valuesHidden, money(report.externalNetFlowTwd))}
+              </span>
+              {report.benchmarkError && (
+                <span className="text-[#ffd0c8]">{report.benchmarkError}</span>
+              )}
+              {report.calculationWarning && (
+                <span className="text-[#ffe49a]">
+                  {report.calculationWarning}
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -2139,7 +2358,34 @@ function AccountCard({
           ))}
         </div>
       )}
+      <span className="card-detail-link">
+        查看帳戶明細
+        <ChevronRight size={14} aria-hidden="true" />
+      </span>
     </button>
+  );
+}
+
+function DetailDisclosure({
+  title,
+  summary,
+  children,
+}: {
+  title: string;
+  summary: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="detail-disclosure">
+      <summary>
+        <span>
+          <strong>{title}</strong>
+          <small>{summary}</small>
+        </span>
+        <ChevronDown size={16} aria-hidden="true" />
+      </summary>
+      <div className="detail-disclosure-body">{children}</div>
+    </details>
   );
 }
 
@@ -2239,8 +2485,10 @@ function AccountDetailDialog({
             </div>
           </dl>
         </section>
-        <section>
-          <h3 className="detail-section-title">帳戶歷史走勢</h3>
+        <DetailDisclosure
+          title="帳戶歷史走勢"
+          summary="查看各快照的資產與淨值變化"
+        >
           <p className="mb-3 text-xs text-[#7c8981]">
             顯示各快照的帳戶資產與扣除關聯負債後淨值。
           </p>
@@ -2258,9 +2506,11 @@ function AccountDetailDialog({
             error={trendError}
             valuesHidden={valuesHidden}
           />
-        </section>
-        <section>
-          <h3 className="detail-section-title">帳戶基本資料</h3>
+        </DetailDisclosure>
+        <DetailDisclosure
+          title="帳戶基本資料"
+          summary={`${type}・${account.defaultCurrency}`}
+        >
           <dl className="account-detail-grid">
             <div>
               <dt>機構</dt>
@@ -2279,9 +2529,11 @@ function AccountDetailDialog({
               <dd>{account.defaultCurrency}</dd>
             </div>
           </dl>
-        </section>
-        <section>
-          <h3 className="detail-section-title">現金餘額</h3>
+        </DetailDisclosure>
+        <DetailDisclosure
+          title="現金餘額"
+          summary={`${account.cashBalances.length} 種幣別`}
+        >
           {account.cashBalances.length ? (
             <div className="account-detail-list">
               {account.cashBalances.map((balance) => (
@@ -2307,9 +2559,11 @@ function AccountDetailDialog({
           ) : (
             <p className="text-sm text-[#7c8981]">沒有現金餘額</p>
           )}
-        </section>
-        <section>
-          <h3 className="detail-section-title">投資持倉</h3>
+        </DetailDisclosure>
+        <DetailDisclosure
+          title="投資持倉"
+          summary={`${account.positions.length} 筆持倉`}
+        >
           {account.positions.length ? (
             <div className="holdings-panel view-all-holdings">
               {account.positions.map((item, index) => (
@@ -2324,9 +2578,11 @@ function AccountDetailDialog({
           ) : (
             <p className="text-sm text-[#7c8981]">目前沒有投資持倉</p>
           )}
-        </section>
-        <section>
-          <h3 className="detail-section-title">關聯貸款與負債</h3>
+        </DetailDisclosure>
+        <DetailDisclosure
+          title="關聯貸款與負債"
+          summary={`${account.loans?.length ?? 0} 筆`}
+        >
           {account.loans?.length ? (
             <div className="accounts-grid view-all-grid">
               {account.loans.map((loan) => (
@@ -2336,7 +2592,7 @@ function AccountDetailDialog({
           ) : (
             <p className="text-sm text-[#7c8981]">目前沒有關聯貸款或負債</p>
           )}
-        </section>
+        </DetailDisclosure>
       </div>
     </ViewAllDialog>
   );
@@ -2447,8 +2703,7 @@ function SecurityDetailDialog({
             </div>
           </dl>
         </section>
-        <section>
-          <h3 className="detail-section-title">持有市值與成本走勢</h3>
+        <DetailDisclosure title="持有市值與成本走勢" summary="查看歷史快照變化">
           <p className="mb-3 text-xs text-[#7c8981]">
             買進、賣出與行情都會改變數值；此圖不代表排除資金進出的投資績效。
           </p>
@@ -2462,9 +2717,11 @@ function SecurityDetailDialog({
             error={trendError}
             valuesHidden={valuesHidden}
           />
-        </section>
-        <section>
-          <h3 className="detail-section-title">目前持有帳戶</h3>
+        </DetailDisclosure>
+        <DetailDisclosure
+          title="目前持有帳戶"
+          summary={`${positions.length} 個帳戶`}
+        >
           <div className="holdings-panel view-all-holdings">
             {positions.map((item, index) => (
               <HoldingRow
@@ -2474,10 +2731,12 @@ function SecurityDetailDialog({
               />
             ))}
           </div>
-        </section>
+        </DetailDisclosure>
         {sales.length > 0 && (
-          <section>
-            <h3 className="detail-section-title">歷史全部賣出</h3>
+          <DetailDisclosure
+            title="歷史全部賣出"
+            summary={`${sales.length} 筆紀錄`}
+          >
             <div className="account-detail-list">
               {sales.map((sale) => (
                 <div key={sale.id}>
@@ -2496,7 +2755,7 @@ function SecurityDetailDialog({
                 </div>
               ))}
             </div>
-          </section>
+          </DetailDisclosure>
         )}
         {security.securityType === "future" && (
           <p className="notice">
@@ -2700,10 +2959,12 @@ function LoanPanel({
         action={
           <div className="section-actions">
             {sortAction}
-            <button className="secondary" onClick={onViewAll}>
-              <Eye size={14} />
-              檢視全部
-            </button>
+            {loans.length > 6 && (
+              <button className="secondary" onClick={onViewAll}>
+                <Eye size={14} />
+                檢視全部
+              </button>
+            )}
           </div>
         }
       />
@@ -2722,18 +2983,6 @@ function LoanPanel({
   );
 }
 
-const creditCardPaymentLabels: Record<
-  CreditCardAccountView["paymentStatus"],
-  string
-> = {
-  no_statement: "無帳單",
-  unpaid: "未繳",
-  partially_paid: "部分繳款",
-  paid: "已全額繳清",
-  overpaid: "溢繳",
-  overdue: "逾期",
-};
-
 function CreditCardPanel({
   accounts,
   valuesHidden,
@@ -2751,7 +3000,7 @@ function CreditCardPanel({
   const trendKey = accounts
     .map(
       (account) =>
-        `${account.creditCardAccountId}:${account.statementPeriod}:${account.statementAmount}:${account.paymentAmount}`,
+        `${account.creditCardAccountId}:${account.dueDate}:${account.statementAmount}:${account.paymentAmount}`,
     )
     .join("|");
   useEffect(() => {
@@ -2815,17 +3064,21 @@ function CreditCardPanel({
         </div>
       ) : (
         <>
-          <article className="history-panel mt-4">
-            <div className="section-heading compact-heading">
+          <details className="inline-disclosure mt-4">
+            <summary className="inline-disclosure-summary">
               <div>
                 <p className="eyebrow">MONTHLY PAYMENTS</p>
                 <h2>每月卡費走勢</h2>
                 <p className="mt-1 text-xs text-[#7c8981]">
-                  同月份每個信用卡帳戶只採用最後一次更新，並統一換算為新臺幣。
+                  依繳款到期月份統計；同月份每個信用卡帳戶只採用最後一次更新，並統一換算為新臺幣。
                 </p>
               </div>
-            </div>
-            <div className="mt-4">
+              <span className="dashboard-disclosure-action">
+                展開走勢
+                <ChevronDown size={16} aria-hidden="true" />
+              </span>
+            </summary>
+            <div className="inline-disclosure-body">
               <TrendChart
                 data={trend}
                 lines={[
@@ -2847,30 +3100,19 @@ function CreditCardPanel({
                 allowSinglePoint
                 xTickFormatter={(value) => `${Number(value.slice(5, 7))} 月`}
                 xLabelFormatter={(value) =>
-                  `${value.slice(0, 4)} 年 ${Number(value.slice(5, 7))} 月卡費`
+                  `${value.slice(0, 4)} 年 ${Number(value.slice(5, 7))} 月應繳`
                 }
               />
             </div>
-          </article>
+          </details>
           <div className="accounts-grid">
             {accounts.map((account) => {
-              const paymentComplete =
-                account.paymentStatus === "paid" ||
-                account.paymentStatus === "overpaid";
-              const currentDueDate = account.paymentDayOfMonth
-                ? (creditCardCycleDates(
-                    account.paymentDate || account.dueDate,
-                    account.statementDayOfMonth,
-                    account.paymentDayOfMonth,
-                  )?.dueDate ?? null)
-                : null;
-              const displayedDueDate =
-                paymentComplete && currentDueDate
-                  ? followingCreditCardDueDate(
-                      currentDueDate,
-                      account.paymentDayOfMonth,
-                    )
-                  : currentDueDate;
+              const displayPayment = creditCardDisplayPayment(
+                account.dueDate,
+                account.paymentDayOfMonth,
+                account.paymentStatus,
+              );
+              const paymentLabel = displayPayment.label;
 
               return (
                 <article
@@ -2900,15 +3142,19 @@ function CreditCardPanel({
                             ? `・${account.cards.filter((card) => card.status !== "active").length} 張停用／剪卡`
                             : ""}
                         </p>
+                        <p className="mt-2 text-sm font-semibold text-[#40564a]">
+                          {creditCardPaymentMonthLabel(displayPayment.dueDate)}
+                          應繳
+                        </p>
                       </div>
                     </div>
                     <span
-                      className={`status ${!account.cards.some((card) => card.status === "active") ? "stale" : account.paymentStatus === "paid" || account.paymentStatus === "no_statement" ? "fresh" : account.paymentStatus === "overdue" ? "manual" : "stale"}`}
+                      className={`status ${!account.cards.some((card) => card.status === "active") ? "stale" : paymentLabel === "已繳" ? "fresh" : account.paymentStatus === "overdue" ? "manual" : "stale"}`}
                     >
                       {account.cards.length > 0 &&
                       !account.cards.some((card) => card.status === "active")
                         ? "無使用中卡片"
-                        : creditCardPaymentLabels[account.paymentStatus]}
+                        : paymentLabel}
                     </span>
                   </div>
                   <div className="account-balances">
@@ -2965,11 +3211,15 @@ function CreditCardPanel({
                     )}
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[#7c8981]">
-                    {paymentComplete ? "下次繳款期限" : "繳款期限"}{" "}
-                    {displayedDueDate ?? "尚未設定"}
-                    {paymentComplete
-                      ? "・本期已繳清"
-                      : account.paymentDate
+                    帳單月份{" "}
+                    {displayPayment.awaitingUpdate
+                      ? "待更新"
+                      : creditCardPaymentMonthLabel(account.statementPeriod)}
+                    ・繳款期限 {displayPayment.dueDate || "尚未設定"}
+                    {!displayPayment.awaitingUpdate &&
+                    account.paymentStatus === "overdue"
+                      ? "・已逾期"
+                      : !displayPayment.awaitingUpdate && account.paymentDate
                         ? `・${account.paidOnTime ? "準時繳款" : "逾期繳款"}`
                         : ""}
                   </p>
@@ -3705,7 +3955,7 @@ function HoldingRow({
         label={
           item.securityType === "future" ? "均價 / 現價" : "平均成本 / 現價"
         }
-        value={`${number.format(Number(item.averageCost))} / ${number.format(Number(item.marketPrice))}`}
+        value={`${item.quoteCurrency} ${number.format(Number(item.averageCost))} / ${number.format(Number(item.marketPrice))}`}
       />
       <HoldingValue
         label="未實現損益 / 比例"
@@ -3714,17 +3964,7 @@ function HoldingRow({
       />
       <HoldingValue
         label={item.securityType === "future" ? "參考名目價值" : "市值"}
-        value={
-          item.securityType === "future"
-            ? money(
-                String(
-                  Number(item.marketPrice) *
-                    Number(item.contractMultiplier ?? 0) *
-                    Number(item.quantity),
-                ),
-              )
-            : money(item.marketValueTwd)
-        }
+        value={money(item.marketValueTwd)}
         align="right"
       />
       <div className="flex items-center justify-end gap-2">
@@ -3745,6 +3985,13 @@ function HoldingRow({
           >
             全部賣出
           </button>
+        )}
+        {onOpen && (
+          <ChevronRight
+            className="holding-detail-arrow"
+            size={16}
+            aria-hidden="true"
+          />
         )}
       </div>
     </div>
@@ -3786,10 +4033,12 @@ function HistoryPanel({
           <p className="eyebrow">SNAPSHOTS</p>
           <h2>歷史快照</h2>
         </div>
-        <button className="secondary" onClick={onViewAll}>
-          <Eye size={14} />
-          檢視全部
-        </button>
+        {data.history.length > 5 && (
+          <button className="secondary" onClick={onViewAll}>
+            <Eye size={14} />
+            檢視全部
+          </button>
+        )}
       </div>
       <HistoryList
         items={data.history.slice(0, 5)}
@@ -3833,15 +4082,9 @@ function HistoryList({
               </p>
               <p
                 className="mt-1 line-clamp-1 text-[11px] leading-4 text-[#65736a]"
-                title={
-                  valuesHidden
-                    ? "輸入內容已隱藏"
-                    : item.rawInput || "手動建立資產快照"
-                }
+                title={item.rawInput || "手動建立資產快照"}
               >
-                {valuesHidden
-                  ? "輸入內容已隱藏"
-                  : item.rawInput || "手動建立資產快照"}
+                {item.rawInput || "手動建立資產快照"}
               </p>
             </div>
             <strong className="text-sm font-semibold">
@@ -3874,10 +4117,12 @@ function SoldPanel({
           <span className="rounded-full bg-[#f2f5f1] px-2.5 py-1 text-xs text-[#77847c]">
             {data.sold.length}
           </span>
-          <button className="secondary" onClick={onViewAll}>
-            <Eye size={14} />
-            檢視全部
-          </button>
+          {data.sold.length > 5 && (
+            <button className="secondary" onClick={onViewAll}>
+              <Eye size={14} />
+              檢視全部
+            </button>
+          )}
         </div>
       </div>
       {data.sold.length === 0 ? (

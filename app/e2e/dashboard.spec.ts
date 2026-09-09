@@ -48,6 +48,101 @@ test("深色模式可切換並保留使用者偏好", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("電腦版左側欄可隱藏並保留偏好", async ({ page }) => {
+  await page.goto("/");
+
+  const sidebar = page.locator(".dashboard-sidebar");
+  const toggle = page.getByRole("button", { name: "隱藏左側欄" });
+  await expect(sidebar).toBeVisible();
+  await expect(toggle).toHaveCSS("left", "16px");
+  await toggle.click();
+  await expect(sidebar).toBeHidden();
+  const reopen = page.getByRole("button", { name: "顯示左側欄" });
+  await expect(reopen).toBeVisible();
+  await expect(reopen).toHaveCSS("left", "16px");
+
+  await page.reload();
+  await expect(sidebar).toBeHidden();
+  await reopen.click();
+  await expect(sidebar).toBeVisible();
+});
+
+test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) => {
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立獨立頁面導覽測試資料",
+      capturedAt: "2026-08-01T08:00:00.000Z",
+      accounts: [
+        {
+          name: "獨立頁面測試帳戶",
+          accountType: "cash",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "1000" }],
+          positions: [],
+        },
+      ],
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+
+  await page.goto("/");
+
+  await page.getByRole("link", { name: "帳戶", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/accounts$/);
+  await expect(
+    page.getByRole("heading", { name: "帳戶", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "所有帳戶與現金" }),
+  ).toBeVisible();
+  await expect(page.locator("#history")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "投資", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/investments$/);
+  await expect(
+    page.getByRole("heading", { name: "投資", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "所有投資持倉" }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "信用卡", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/credit-cards$/);
+  await expect(
+    page.getByRole("heading", { name: "信用卡", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "信用卡帳單" })).toBeVisible();
+});
+
+test("資產淨值圖表期間由下拉選單設定並保留", async ({ page, request }) => {
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立圖表期間測試資料",
+      capturedAt: "2026-08-20T08:00:00.000Z",
+      accounts: [
+        {
+          name: "圖表期間測試帳戶",
+          accountType: "cash",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "1000" }],
+          positions: [],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  await page.goto("/");
+
+  const range = page.getByRole("button", {
+    name: /資產淨值圖表期間/,
+  });
+  await range.click();
+  await page.getByRole("option", { name: /近 1 年/ }).click();
+  await expect(range).toHaveAccessibleName(/目前為近 1 年/);
+  await page.reload();
+  await expect(range).toHaveAccessibleName(/目前為近 1 年/);
+});
+
 test("建立快照後可從介面完成全部賣出", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {
@@ -81,8 +176,10 @@ test("建立快照後可從介面完成全部賣出", async ({ page, request }) 
   });
   expect(created.ok()).toBeTruthy();
 
-  await page.goto("/");
-  await expect(page.getByText("NT$550,000").first()).toBeVisible();
+  await page.goto("/investments");
+  await expect(
+    page.getByRole("heading", { name: "所有投資持倉" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "全部賣出" }).click();
   await expect(
     page.getByRole("heading", { name: "確認全部賣出" }),
@@ -99,6 +196,8 @@ test("建立快照後可從介面完成全部賣出", async ({ page, request }) 
   await expect(saleSummary).toContainText("TWD 149,250");
   await expect(saleSummary).toContainText("+49.75%");
   await page.getByRole("button", { name: "確認全部賣出" }).last().click();
+  await expect(page.getByRole("button", { name: "全部賣出" })).toHaveCount(0);
+  await page.goto("/");
   await expect(page.getByText("NT$549,250").first()).toBeVisible();
   await expect(page.locator("#sold")).toContainText("已實現 NT$149,250");
 });
@@ -161,7 +260,7 @@ test("一鍵更新現值完成後使用浮動通知且不插入結果卡片", as
     await route.fulfill({ contentType: "application/json", body: "{}" });
   });
 
-  await page.goto("/");
+  await page.goto("/investments");
   await page.getByRole("button", { name: "一鍵更新現值" }).click();
   const notification = page.getByRole("status").filter({
     hasText: "現值更新完成",
@@ -172,17 +271,25 @@ test("一鍵更新現值完成後使用浮動通知且不插入結果卡片", as
   await expect(notification).toHaveCount(0);
 });
 
-test("新增快照先保持空白，手動表單依帳戶類型顯示欄位", async ({ page }) => {
+test("新增快照可建立全新帳戶並依帳戶類型顯示欄位", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新增快照" }).click();
 
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("尚未建立確認表")).toBeVisible();
+  await expect(dialog).toHaveAccessibleName("建立財務快照");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText(
+    "選擇帳戶",
+  );
+  await expect(
+    dialog.getByRole("heading", { name: "選擇要更新的帳戶" }),
+  ).toBeVisible();
   await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(0);
 
-  await dialog.getByRole("button", { name: "手動新增資料" }).click();
+  await dialog.getByRole("button", { name: "新增全新帳戶" }).click();
+  await expect(dialog.locator('[aria-current="step"]')).toContainText(
+    "確認明細",
+  );
   await expect(dialog.getByRole("button", { name: "新增帳戶" })).toBeVisible();
-  await dialog.getByRole("button", { name: "新增帳戶" }).click();
   await expect(dialog.getByLabel("帳戶名稱")).toHaveValue("新帳戶");
 
   await dialog.getByLabel("類型").selectOption("cash");
@@ -202,8 +309,7 @@ test("貸款資料不合理時顯示警告並停止保存", async ({ page }) => 
   await page.getByRole("button", { name: "新增快照" }).click();
 
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "手動新增資料" }).click();
-  await dialog.getByRole("button", { name: "新增帳戶" }).click();
+  await dialog.getByRole("button", { name: "新增全新帳戶" }).click();
   await dialog.getByRole("button", { name: "＋ 新增貸款" }).click();
   await dialog.getByLabel("原始貸款金額").fill("100000");
   await dialog.getByLabel("目前未償本金").fill("120000");
@@ -216,63 +322,45 @@ test("貸款資料不合理時顯示警告並停止保存", async ({ page }) => 
   ).toBeDisabled();
 });
 
-test("新增快照會聚焦輸入框，Enter 整理確認表且 Shift+Enter 能換行", async ({
-  page,
-}) => {
-  let proposalCount = 0;
-  await page.route("**/api/snapshot-proposals", async (route) => {
-    proposalCount += 1;
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        accounts: [
-          {
-            name: `測試帳戶 ${proposalCount}`,
-            institution: null,
-            accountType: "bank",
-            defaultCurrency: "TWD",
-            cashBalances: [{ currency: "TWD", amount: "1000" }],
-            positions: [],
-          },
-        ],
-        preservedAccounts: [],
-        loans: [],
-        preservedLoans: [],
-        sales: [],
-        warnings: [],
-        unsupportedReason: null,
-      }),
-    });
+test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, request }) => {
+  const capturedAt = new Date(Date.now() + 172_800_000).toISOString();
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立多帳戶選擇測試",
+      capturedAt,
+      accounts: [
+        {
+          name: "多選帳戶甲",
+          institution: "測試銀行",
+          accountType: "bank",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "1000" }],
+          positions: [],
+        },
+        {
+          name: "多選帳戶乙",
+          institution: "測試券商",
+          accountType: "brokerage",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "2000" }],
+          positions: [],
+        },
+      ],
+    },
   });
-  await page.route("**/api/quotes/resolve", async (route) => {
-    const requestBody = route.request().postDataJSON();
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        accounts: requestBody.accounts,
-        loans: requestBody.loans,
-        warnings: [],
-      }),
-    });
-  });
+  expect(created.ok()).toBeTruthy();
 
   await page.goto("/");
   await page.getByRole("button", { name: "新增快照" }).click();
 
   const dialog = page.getByRole("dialog");
-  const input = dialog.getByLabel("這次要更新的資料");
-  await expect(input).toBeFocused();
-
-  await input.fill("測試 Enter");
-  await input.press("Enter");
-  await expect(dialog.getByLabel("帳戶名稱")).toHaveValue("測試帳戶 1");
-
-  await dialog.getByRole("button", { name: "修改原始輸入" }).click();
-  await input.fill("第一行");
-  await input.press("Shift+Enter");
-  await input.type("第二行");
-  await expect(input).toHaveValue("第一行\n第二行");
-  expect(proposalCount).toBe(1);
+  await dialog.getByRole("checkbox", { name: /多選帳戶甲/ }).click();
+  await dialog.getByRole("checkbox", { name: /多選帳戶乙/ }).click();
+  await expect(dialog.getByText("已選取 2 個帳戶")).toBeVisible();
+  await dialog.getByRole("button", { name: "更新所選帳戶" }).click();
+  await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(2);
+  await expect(dialog.getByLabel("帳戶名稱").nth(0)).toHaveValue("多選帳戶甲");
+  await expect(dialog.getByLabel("帳戶名稱").nth(1)).toHaveValue("多選帳戶乙");
 });
 
 test("快照資金流會顯示淨值變動歸因", async ({ page, request }) => {
@@ -316,13 +404,45 @@ test("快照資金流會顯示淨值變動歸因", async ({ page, request }) => 
   expect(second.ok()).toBeTruthy();
 
   await page.goto("/");
-  const card = page.locator("section.content-section").filter({
+  const card = page.locator("details.dashboard-disclosure").filter({
     has: page.getByRole("heading", { name: "本期淨值變動歸因" }),
   });
+  await expect(card).not.toHaveAttribute("open", "");
+  await card.locator("summary").click();
+  await expect(card).toHaveAttribute("open", "");
   await expect(card).toContainText("外部投入");
   await expect(card).toContainText("NT$20,000");
   await expect(card).toContainText("市場與匯率等");
   await expect(card).toContainText("NT$0");
+});
+
+test("隱藏金額時歷史快照仍顯示日期與更新內容", async ({ page, request }) => {
+  const capturedAt = new Date(Date.now() + 324_000_000).toISOString();
+  const rawInput = "隱私模式仍應顯示的更新內容";
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput,
+      capturedAt,
+      accounts: [
+        {
+          name: "隱私顯示測試帳戶",
+          accountType: "cash",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "123456" }],
+          positions: [],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "隱藏財務數字" }).click();
+  const history = page.locator("#history");
+  await expect(history).toContainText(rawInput);
+  await expect(history).toContainText("最新快照");
+  await expect(history).toContainText("••••••");
+  await expect(history).not.toContainText("輸入內容已隱藏");
 });
 
 test("可從持倉下鑽檢視跨帳戶的單一標的", async ({ page, request }) => {
@@ -364,7 +484,7 @@ test("可從持倉下鑽檢視跨帳戶的單一標的", async ({ page, request 
   });
   expect(created.ok()).toBeTruthy();
 
-  await page.goto("/");
+  await page.goto("/investments");
   await page
     .getByRole("button", { name: "檢視 2330 的標的資訊" })
     .first()
@@ -442,16 +562,20 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   });
   expect(created.ok()).toBeTruthy();
 
-  await page.goto("/");
+  await page.goto("/credit-cards");
   const panel = page.locator("#credit-cards");
   await expect(panel).toContainText("總應繳使用比例 15.0%");
   await expect(panel).toContainText("CUBE 卡 •••• 1234、蝦皮卡 •••• 5678");
   await expect(panel).toContainText("已剪卡");
   await expect(panel).toContainText("1 張使用中・1 張停用／剪卡");
+  await expect(panel).toContainText("2026 年 9 月應繳");
+  await expect(panel).toContainText("帳單月份 2026 年 8 月");
+  await expect(panel).toContainText("已繳");
   await expect(panel).toContainText("NT$20,000");
-  await expect(panel).toContainText("下次繳款期限 2026-10-18");
+  await expect(panel).toContainText("繳款期限 2026-09-18");
   await expect(panel.locator("circle.recharts-line-dot")).toHaveCount(2);
-  await expect(panel.getByText("8 月", { exact: true })).toBeVisible();
+  await panel.locator("details.inline-disclosure > summary").click();
+  await expect(panel.getByText("9 月", { exact: true })).toBeVisible();
 
   await panel.getByRole("button", { name: "管理信用卡帳戶" }).click();
   const accountDialog = page.getByRole("dialog", {
@@ -464,11 +588,12 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await accountDialog
     .getByRole("button", { name: "保存信用卡帳戶設定" })
     .click();
-  await expect(panel).toContainText("下次繳款期限 2026-10-19");
+  await expect(panel).toContainText("繳款期限 2026-09-19");
 
   await page.getByRole("button", { name: "新增快照" }).first().click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "手動新增資料" }).click();
+  await expect(dialog.getByText("更新本月信用卡繳款狀況")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "只更新信用卡" }).click();
   await expect(dialog).toContainText("更新本月信用卡繳款狀況");
   await expect(dialog).toContainText("繳款期限 2026-09-19");
   await expect(dialog.getByText("本次繳款期限")).toHaveCount(0);
@@ -479,11 +604,12 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await dialog.getByLabel("繳款日期").fill("2026-09-17");
   await dialog.getByRole("button", { name: "保存這筆紀錄" }).click();
 
-  await expect(panel).toContainText("溢繳");
+  await expect(panel).toContainText("2026 年 9 月應繳");
+  await expect(panel).toContainText("已繳");
   await expect(panel).toContainText("溢繳資產");
   await expect(panel.getByText("每月卡費走勢")).toBeVisible();
   await expect(panel).not.toContainText(
     "至少需要兩個月份的信用卡紀錄才能顯示走勢",
   );
-  await expect(page.getByText("NT$105,000").first()).toBeVisible();
+  await expect(panel).toContainText("NT$5,000");
 });

@@ -314,7 +314,7 @@ export interface SecurityTrendPoint {
 
 export interface CreditCardTrendPoint {
   capturedAt: string;
-  statementPeriod: string;
+  paymentPeriod: string;
   totalDueTwd: string;
   paymentAmountTwd: string;
 }

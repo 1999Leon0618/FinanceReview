@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("自訂排序套用首頁與全部清單、重新整理保留且可還原", async ({
+test("自訂排序套用獨立頁面、重新整理保留且可還原", async ({
   page,
   request,
 }) => {
@@ -27,13 +27,13 @@ test("自訂排序套用首頁與全部清單、重新整理保留且可還原",
     },
   });
   expect(response.ok(), await response.text()).toBeTruthy();
-  await page.goto("/");
+  await page.goto("/accounts");
   await page.addStyleTag({
     content: "*, *::before, *::after { transition: none !important; }",
   });
   const cards = page.locator("#accounts .account-card h3");
   const original = await cards.allTextContents();
-  expect(original).toHaveLength(6);
+  expect(original).toHaveLength(7);
   await page
     .locator("#accounts")
     .getByRole("button", { name: "排序", exact: true })
@@ -66,17 +66,11 @@ test("自訂排序套用首頁與全部清單、重新整理保留且可還原",
   await rows.last().getByRole("button", { name: /^上移/ }).click();
   await expect(dialog.getByText("變更已自動儲存於此瀏覽器")).toBeVisible();
   await dialog.getByRole("button", { name: "完成排序" }).click();
-  await expect(cards.last()).toHaveText(lastLabel);
+  await expect(cards.nth(5)).toHaveText(lastLabel);
+  await expect(cards.nth(6)).toHaveText(original[5]);
   await page.reload();
-  await expect(cards.last()).toHaveText(lastLabel);
-  await page
-    .locator("#accounts")
-    .getByRole("button", { name: "檢視全部" })
-    .click();
-  const all = page.getByRole("dialog", { name: "全部帳戶與現金" });
-  await expect(all.locator(".account-card h3").nth(5)).toHaveText(lastLabel);
-  await expect(all.locator(".account-card h3").nth(6)).toHaveText(original[5]);
-  await all.getByRole("button", { name: "關閉全部帳戶與現金視窗" }).click();
+  await expect(cards.nth(5)).toHaveText(lastLabel);
+  await expect(cards.nth(6)).toHaveText(original[5]);
   await page.getByRole("button", { name: "自訂排序", exact: true }).click();
   await dialog.getByRole("button", { name: /^投資持倉/ }).click();
   await expect(dialog.getByText("此類別目前沒有項目")).toBeVisible();
@@ -86,6 +80,7 @@ test("自訂排序套用首頁與全部清單、重新整理保留且可還原",
   await expect(cards).toHaveText(original);
   await page.reload();
   await expect(cards).toHaveText(original);
+  await page.goto("/credit-cards");
   await page
     .locator("#credit-cards")
     .getByRole("button", { name: "排序", exact: true })

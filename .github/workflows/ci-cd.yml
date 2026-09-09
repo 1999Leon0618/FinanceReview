@@ -21,9 +21,9 @@ concurrency:
 
 jobs:
   verify:
-    name: 驗證應用程式與 Workers
+    name: 驗證應用程式、功能流程與 Workers
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: app
@@ -36,6 +36,10 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npm run check
+      - name: 安裝 Chromium 測試環境
+        run: npx playwright install --with-deps chromium
+      - name: 執行端對端功能驗證
+        run: npm run test:e2e
       - run: npm run check:workers
 
   deploy-production:

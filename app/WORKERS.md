@@ -33,7 +33,7 @@ npm run deploy:production
 
 ## GitHub Actions CI/CD
 
-`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置及本機 Workers＋D1 整合測試。只有推送到 `main` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
+`.github/workflows/ci-cd.yml` 會在 pull request 與推送時執行型別檢查、lint、單元測試、Next.js 建置、Playwright 端對端功能驗證及本機 Workers＋D1 整合測試。只有推送到 `main` 且驗證成功後，才會套用正式 D1 migrations 並部署至 `finance.hsun.dev`。
 
 部署工作使用 GitHub Environment `production`，可在 GitHub 設定必要審核者，避免合併後立刻自動改動正式財務系統。請在該 Environment 建立以下 Secrets：
 

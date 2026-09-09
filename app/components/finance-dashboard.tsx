@@ -20,6 +20,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
   Upload,
@@ -31,11 +32,9 @@ import type {
   CreditCardAccountInput,
   DashboardData,
   LoanInput,
-  ParserPatch,
   PositionView,
   SaleView,
   SnapshotCashFlowInput,
-  SnapshotProposal,
 } from "@/lib/types";
 import { sameAccountIdentity, sameLoanIdentity } from "@/lib/account-identity";
 import {
@@ -94,60 +93,6 @@ const hasCompleteQuoteCode = (
   if (position.market === "FUND") return code.length >= 4;
   return /^[A-Z][A-Z0-9.-]{0,14}$/.test(code.toUpperCase());
 };
-
-function latestSnapshotSuggestions(latest: DashboardData["latest"]): string[] {
-  if (!latest) return ["新增一個臺幣帳戶餘額", "新增一筆股票持倉"];
-
-  const balances = latest.accounts.flatMap((account) =>
-    account.cashBalances.map(
-      (balance) =>
-        `${account.name}${balance.currency === "TWD" ? "" : ` ${balance.currency}`} ${number.format(Number(balance.amount))}`,
-    ),
-  );
-  const positions = latest.accounts.flatMap((account) =>
-    account.positions.map(
-      (position) =>
-        `${account.name} ${position.symbol} 有 ${number.format(Number(position.quantity))}${position.securityType === "future" ? "口" : "股"}，平均成本 ${number.format(Number(position.averageCost))}`,
-    ),
-  );
-  const loans = latest.loans.map((loan) => {
-    const details = [
-      `${loan.name}剩餘 ${loan.currency} ${number.format(Number(loan.outstandingPrincipal))}`,
-    ];
-    if (loan.annualInterestRate)
-      details.push(`利率 ${number.format(Number(loan.annualInterestRate))}%`);
-    if (loan.monthlyPayment)
-      details.push(
-        `每月繳 ${loan.currency} ${number.format(Number(loan.monthlyPayment))}`,
-      );
-    return details.join("，");
-  });
-
-  const prioritized = [
-    balances[0],
-    positions[0],
-    loans[0],
-    ...balances.slice(1),
-    ...positions.slice(1),
-    ...loans.slice(1),
-  ].filter((item): item is string => Boolean(item));
-  return [
-    ...new Set([...prioritized, "新增一個臺幣帳戶餘額", "新增一筆股票持倉"]),
-  ].slice(0, 2);
-}
-
-function recentInputSuggestions(recentInputs: string[]): string[] {
-  const suggestions = [
-    ...new Set(recentInputs.map((item) => item.trim())),
-  ].filter((item) => item && !item.startsWith("一鍵更新標的現值"));
-  const fallbacks = ["更新一個帳戶的目前餘額", "更新一筆持倉的數量與平均成本"];
-  return [...suggestions, ...fallbacks]
-    .filter((item, index, items) => items.indexOf(item) === index)
-    .slice(0, 2);
-}
-
-const suggestionLabel = (value: string) =>
-  value.length > 46 ? `${value.slice(0, 46)}…` : value;
 
 const emptyAccount = (): AccountStateInput => ({
   name: "新帳戶",
@@ -309,15 +254,18 @@ function Modal({
   children,
   onClose,
   wide = false,
+  labelledBy,
 }: {
   children: React.ReactNode;
   onClose: () => void;
   wide?: boolean;
+  labelledBy?: string;
 }) {
   return (
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={labelledBy}
       className="fixed inset-0 z-50 grid place-items-center bg-[#07140f]/70 p-4 backdrop-blur-md"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
@@ -332,18 +280,15 @@ function Modal({
 
 export function SnapshotEditor({
   latest,
-  recentInputs = [],
   onClose,
   onSaved,
 }: {
   latest: DashboardData["latest"];
-  recentInputs?: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const rawInputRef = useRef<HTMLTextAreaElement>(null);
-  const [rawInput, setRawInput] = useState("");
   const [processedInput, setProcessedInput] = useState("");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [accounts, setAccounts] = useState<AccountStateInput[]>([]);
   const [preservedAccounts, setPreservedAccounts] = useState<
     AccountStateInput[]
@@ -354,10 +299,9 @@ export function SnapshotEditor({
   const [creditCardAccounts, setCreditCardAccounts] = useState<
     CreditCardAccountInput[]
   >(() => cloneCreditCardAccounts(latest?.creditCardAccounts ?? []));
+  const [includeCreditCards, setIncludeCreditCards] = useState(false);
   const [hasPrepared, setHasPrepared] = useState(false);
-  const [sales, setSales] = useState<ParserPatch["sales"]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
   const [resolvingPosition, setResolvingPosition] = useState<string | null>(
     null,
@@ -365,14 +309,6 @@ export function SnapshotEditor({
   const [error, setError] = useState("");
   const quoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
-  );
-  const personalizedSuggestions = useMemo(
-    () => latestSnapshotSuggestions(latest),
-    [latest],
-  );
-  const recentSuggestions = useMemo(
-    () => recentInputSuggestions(recentInputs),
-    [recentInputs],
   );
   const needsManualPrice = accounts.some((account) =>
     account.positions.some(canEditManualPrice),
@@ -404,11 +340,13 @@ export function SnapshotEditor({
   const validationWarnings = useMemo(() => {
     if (!hasPrepared) return [];
     const result = snapshotCreateSchema.safeParse({
-      rawInput: processedInput || rawInput,
+      rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
       accounts: mergedAccounts,
       loans: mergedLoans,
-      creditCardAccounts: normalizedCreditCardAccounts,
+      creditCardAccounts: includeCreditCards
+        ? normalizedCreditCardAccounts
+        : undefined,
       cashFlows,
     });
     if (result.success) return [];
@@ -416,11 +354,11 @@ export function SnapshotEditor({
   }, [
     hasPrepared,
     processedInput,
-    rawInput,
     latest?.id,
     mergedAccounts,
     mergedLoans,
     normalizedCreditCardAccounts,
+    includeCreditCards,
     cashFlows,
   ]);
   const fxRates = useMemo(() => {
@@ -444,10 +382,6 @@ export function SnapshotEditor({
     for (const loan of loans) add(loan.currency, loan.fxRate);
     return [...rates.entries()];
   }, [accounts, loans]);
-
-  useEffect(() => {
-    rawInputRef.current?.focus();
-  }, []);
 
   useEffect(
     () => () => {
@@ -619,85 +553,86 @@ export function SnapshotEditor({
       void resolvePositionQuote(accountIndex, positionIndex, account, position);
     }, 900);
   };
-  const parse = async () => {
-    setBusy("parse");
+  const toggleSelectedAccount = (accountId: string) =>
+    setSelectedAccountIds((items) =>
+      items.includes(accountId)
+        ? items.filter((item) => item !== accountId)
+        : [...items, accountId],
+    );
+  const startSelectedAccounts = () => {
+    if (!latest || selectedAccountIds.length === 0) return;
+    const selected = latest.accounts.filter((account) =>
+      selectedAccountIds.includes(account.accountId),
+    );
+    const preserved = latest.accounts.filter(
+      (account) => !selectedAccountIds.includes(account.accountId),
+    );
+    const selectedLoans = latest.loans.filter((loan) =>
+      selected.some((account) => loanBelongsToAccount(loan, account)),
+    );
+    const otherLoans = latest.loans.filter(
+      (loan) =>
+        !selected.some((account) => loanBelongsToAccount(loan, account)),
+    );
+    setAccounts(cloneAccounts(selected));
+    setPreservedAccounts(cloneAccounts(preserved));
+    setLoans(cloneLoans(selectedLoans));
+    setPreservedLoans(cloneLoans(otherLoans));
+    setProcessedInput(
+      `更新帳戶：${selected.map((item) => item.name).join("、")}`,
+    );
+    setIncludeCreditCards(false);
+    setWarnings([]);
     setError("");
-    setUnsupported(null);
-    try {
-      const proposal = await request<SnapshotProposal>(
-        "/api/snapshot-proposals",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawInput }),
-        },
-      );
-      if (proposal.unsupportedReason) {
-        setUnsupported(proposal.unsupportedReason);
-        setWarnings(proposal.warnings);
-        setSales(proposal.sales);
-        return;
-      }
-      if (
-        proposal.accounts.length === 0 &&
-        proposal.loans.length === 0 &&
-        proposal.sales.length === 0
-      ) {
-        throw new Error("沒有辨識到可更新的帳戶、持倉、貸款或賣出資料");
-      }
-      let preparedAccounts = proposal.accounts;
-      let preparedLoans = proposal.loans;
-      let preparedWarnings = proposal.warnings;
-      try {
-        const resolved = await resolveOnlineData(
-          proposal.accounts,
-          proposal.loans,
-        );
-        preparedAccounts = resolved.accounts;
-        preparedLoans = resolved.loans;
-        preparedWarnings = [...proposal.warnings, ...resolved.warnings];
-      } catch (cause) {
-        const reason =
-          cause instanceof Error ? cause.message : "行情服務暫時無法使用";
-        preparedAccounts = proposal.accounts.map((account) => ({
-          ...account,
-          positions: account.positions.map((position) => ({
-            ...position,
-            quoteStatus: "manual" as const,
-            quoteSource: "MANUAL" as const,
-            quoteNote: `行情自動取得失敗：${reason}`,
-          })),
-        }));
-        preparedWarnings = [...proposal.warnings, reason];
-      }
-      setAccounts(preparedAccounts);
-      setPreservedAccounts(proposal.preservedAccounts);
-      setLoans(preparedLoans);
-      setPreservedLoans(proposal.preservedLoans);
-      setHasPrepared(true);
-      setSales(proposal.sales);
-      setWarnings(preparedWarnings);
-      setUnsupported(proposal.unsupportedReason);
-      setProcessedInput(rawInput);
-      setRawInput("");
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? `${cause.message}；原輸入已保留，可修改後重試或改用手動新增。`
-          : "解析失敗",
-      );
-    } finally {
-      setBusy("");
-    }
+    setHasPrepared(true);
   };
-  const startManual = () => {
+  const startNewAccount = () => {
+    setAccounts([emptyAccount()]);
+    setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
+    setLoans([]);
+    setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
+    setProcessedInput("新增帳戶");
+    setIncludeCreditCards(false);
+    setWarnings([]);
+    setError("");
+    setHasPrepared(true);
+  };
+  const startCreditCardsOnly = () => {
     setAccounts([]);
     setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
     setLoans([]);
     setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
-    setSales([]);
+    setProcessedInput("更新信用卡繳款狀況");
+    const currentDate = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Taipei",
+    });
+    setCreditCardAccounts(
+      cloneCreditCardAccounts(latest?.creditCardAccounts ?? []).map(
+        (account) => {
+          const cycle = creditCardCycleDates(
+            currentDate,
+            account.statementDayOfMonth,
+            account.paymentDayOfMonth,
+          );
+          if (
+            !cycle ||
+            cycle.dueDate.slice(0, 7) <= account.dueDate.slice(0, 7)
+          )
+            return account;
+          return {
+            ...account,
+            ...cycle,
+            statementAmount: "",
+            paymentAmount: "",
+            paymentDate: null,
+            remainingInstallmentPrincipal: "",
+            overpaymentBalance: "",
+          };
+        },
+      ),
+    );
+    setIncludeCreditCards(true);
     setWarnings([]);
-    setUnsupported(null);
     setError("");
     setHasPrepared(true);
   };
@@ -743,7 +678,7 @@ export function SnapshotEditor({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rawInput: processedInput || rawInput,
+          rawInput: processedInput || "手動更新財務快照",
           baseSnapshotId: latest?.id ?? null,
           capturedAt: new Date(
             Math.max(
@@ -753,7 +688,9 @@ export function SnapshotEditor({
           ).toISOString(),
           accounts: mergedAccounts,
           loans: mergedLoans,
-          creditCardAccounts: normalizedCreditCardAccounts,
+          creditCardAccounts: includeCreditCards
+            ? normalizedCreditCardAccounts
+            : undefined,
           cashFlows,
         }),
       });
@@ -763,61 +700,45 @@ export function SnapshotEditor({
       setBusy("");
     }
   };
-  const confirmSale = async (sale: ParserPatch["sales"][number]) => {
-    const position = latest?.accounts
-      .find((account) => account.name === sale.accountName)
-      ?.positions.find(
-        (item) => item.market === sale.market && item.symbol === sale.symbol,
-      );
-    if (!position) {
-      setError(`最新快照找不到 ${sale.accountName} 的 ${sale.symbol}`);
-      return;
-    }
-    setBusy("sale");
-    try {
-      await request(`/api/positions/${position.positionId}/sell`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          soldAt: sale.soldAt,
-          salePrice: sale.salePrice ?? position.marketPrice,
-          currency: position.quoteCurrency,
-          settlementAccountId: position.accountId,
-          fee: "0",
-          tax: "0",
-          note: sale.note ?? null,
-        }),
-      });
-      onSaved();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "賣出失敗");
-      setBusy("");
-    }
-  };
-
   return (
-    <Modal onClose={onClose} wide>
-      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#dce3dd] bg-white/95 px-8 py-5 backdrop-blur-xl max-sm:px-5">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#153f2f] text-[#d8f77f] shadow-sm">
+    <Modal onClose={onClose} wide labelledBy="snapshot-editor-title">
+      <div className="snapshot-editor-header">
+        <div className="snapshot-editor-title">
+          <div className="snapshot-editor-mark">
             <Sparkles size={20} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-semibold tracking-[-.02em]">
-                新增資產與負債紀錄
-              </h2>
-              <span className="rounded-full bg-[#e8f1e9] px-2 py-1 text-[10px] font-bold tracking-wide text-[#2b674c]">
-                規則式處理
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-[#718078]">
-              每次輸入一筆資料，再確認合併結果
-            </p>
+            <p className="eyebrow">NEW SNAPSHOT</p>
+            <h2 id="snapshot-editor-title">建立財務快照</h2>
+            <p>記下這次變動，確認後再寫入帳本</p>
           </div>
         </div>
+        <ol className="snapshot-steps" aria-label="建立快照進度">
+          {[
+            [1, "選擇帳戶"],
+            [2, "確認明細"],
+            [3, "儲存快照"],
+          ].map(([step, label]) => (
+            <li
+              key={step}
+              aria-current={
+                Number(step) === (hasPrepared ? 2 : 1) ? "step" : undefined
+              }
+              className={
+                Number(step) < (hasPrepared ? 2 : 1)
+                  ? "complete"
+                  : Number(step) === (hasPrepared ? 2 : 1)
+                    ? "active"
+                    : ""
+              }
+            >
+              <span>{Number(step) < (hasPrepared ? 2 : 1) ? "✓" : step}</span>
+              <small>{label}</small>
+            </li>
+          ))}
+        </ol>
         <button
-          className="grid h-10 w-10 place-items-center rounded-full border border-[#dce3dd] bg-white text-[#657269]"
+          className="snapshot-editor-close"
           aria-label="關閉"
           onClick={onClose}
         >
@@ -825,104 +746,170 @@ export function SnapshotEditor({
         </button>
       </div>
       <div className="space-y-6 p-7 max-sm:p-4">
-        <section
-          className={`${hasPrepared ? "hidden" : "overflow-hidden"} rounded-[24px] bg-[#10291f] text-white shadow-[0_18px_50px_rgba(16,41,31,.15)]`}
-        >
-          <div className="grid grid-cols-[300px_minmax(0,1fr)] max-lg:grid-cols-1">
-            <div className="flex flex-col justify-between border-r border-white/10 p-6 max-lg:border-b max-lg:border-r-0">
+        <section className={hasPrepared ? "hidden" : "snapshot-entry-layout"}>
+          <div className="snapshot-composer">
+            <div className="snapshot-composer-heading">
+              <span>第 1 步</span>
               <div>
-                <div className="flex items-center gap-2 text-[#d7f47f]">
-                  <Sparkles size={18} />
-                  <span className="text-xs font-bold tracking-[.12em]">
-                    規則式資料整理
-                  </span>
-                </div>
-                <h3 className="mt-4 text-2xl font-semibold leading-tight tracking-[-.03em]">
-                  一次記一筆即可
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-white/58">
-                  輸入這次要更新的一筆帳戶、持倉或貸款；整理後只顯示本次相關資料。
-                </p>
-              </div>
-              <div className="mt-6 flex items-center gap-2 rounded-xl bg-white/[.07] px-3 py-2.5 text-xs">
-                <span className="h-2 w-2 rounded-full bg-[#c8f16b]" />
-                使用內建規則整理，不連線至 AI 服務
+                <h3>選擇要更新的帳戶</h3>
+                <p>可以一次選取多個帳戶；未選取的帳戶會沿用上一份快照。</p>
               </div>
             </div>
-            <div className="bg-[#f8faf7] p-6 text-[#17251d]">
-              <label
-                htmlFor="snapshot-raw-input"
-                className="text-xs font-bold uppercase tracking-[.12em] text-[#637168]"
-              >
-                這次要更新的資料
-              </label>
-              <textarea
-                ref={rawInputRef}
-                id="snapshot-raw-input"
-                value={rawInput}
-                onChange={(e) => setRawInput(e.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key !== "Enter" ||
-                    event.shiftKey ||
-                    event.nativeEvent.isComposing
-                  )
-                    return;
-
-                  event.preventDefault();
-                  if (!rawInput.trim() || busy) return;
-                  void parse();
-                }}
-                rows={5}
-                placeholder="例如：永豐銀行日幣 60,000"
-                className="mt-3 w-full resize-y rounded-2xl border border-[#d5ded7] bg-white px-4 py-3.5 text-[15px] leading-7 outline-none transition focus:border-[#4d8067] focus:ring-4 focus:ring-[#397456]/10"
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[...personalizedSuggestions, ...recentSuggestions].map(
-                  (example, index) => (
-                    <button
-                      key={`${index}-${example}`}
-                      type="button"
-                      title={example}
-                      onClick={() => setRawInput(example)}
-                      className="max-w-full rounded-full border border-[#d8e0da] bg-white px-3 py-1.5 text-left text-[11px] text-[#536159] hover:border-[#85a18f]"
-                    >
-                      {suggestionLabel(example)}
-                    </button>
-                  ),
-                )}
+            {latest?.accounts.length ? (
+              <>
+                <div className="snapshot-selection-toolbar">
+                  <p>
+                    已選取 <strong>{selectedAccountIds.length}</strong>／
+                    {latest.accounts.length} 個帳戶
+                  </p>
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() =>
+                      setSelectedAccountIds(
+                        selectedAccountIds.length === latest.accounts.length
+                          ? []
+                          : latest.accounts.map((account) => account.accountId),
+                      )
+                    }
+                  >
+                    {selectedAccountIds.length === latest.accounts.length
+                      ? "取消全選"
+                      : "全部選取"}
+                  </button>
+                </div>
+                <div className="snapshot-account-options">
+                  {latest.accounts.map((account) => {
+                    const selected = selectedAccountIds.includes(
+                      account.accountId,
+                    );
+                    const linkedLoans = latest.loans.filter((loan) =>
+                      loanBelongsToAccount(loan, account),
+                    ).length;
+                    return (
+                      <button
+                        key={account.accountId}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        className={`snapshot-account-option ${selected ? "selected" : ""}`}
+                        onClick={() => toggleSelectedAccount(account.accountId)}
+                      >
+                        <span className="snapshot-account-option-icon">
+                          {account.accountType === "bank" ? (
+                            <Landmark size={17} />
+                          ) : (
+                            <Building2 size={17} />
+                          )}
+                        </span>
+                        <span className="snapshot-account-option-copy">
+                          <strong>{account.name}</strong>
+                          <small>
+                            {account.institution || "未設定機構"}・
+                            {account.cashBalances.length} 種幣別・
+                            {account.positions.length} 筆持倉
+                            {linkedLoans > 0 ? `・${linkedLoans} 筆貸款` : ""}
+                          </small>
+                        </span>
+                        <span className="snapshot-account-option-check">
+                          {selected ? "✓" : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="snapshot-no-accounts">
+                <WalletCards size={23} />
+                <h4>目前還沒有帳戶</h4>
+                <p>先建立第一個帳戶，再填入現金、持倉或貸款資料。</p>
               </div>
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <button
-                  disabled={!rawInput.trim() || !!busy}
-                  onClick={parse}
-                  className="primary min-w-48"
-                >
-                  {busy === "parse" ? (
-                    <LoaderCircle className="animate-spin" size={16} />
-                  ) : (
-                    <Sparkles size={16} />
-                  )}
-                  {busy === "parse" ? "正在整理資產資料…" : "整理成確認表"}
-                </button>
+            )}
+            <div className="snapshot-composer-actions">
+              <button
+                disabled={selectedAccountIds.length === 0 || !!busy}
+                onClick={startSelectedAccounts}
+                className="primary"
+              >
+                <CheckCircle2 size={16} />
+                更新所選帳戶
+              </button>
+              <p>選取後會帶入目前資料，確認並修改後才會儲存。</p>
+            </div>
+          </div>
+          <aside className="snapshot-entry-aside">
+            <div className="snapshot-preparation-status">
+              <span>
+                <CheckCircle2 size={17} />
+              </span>
+              <div>
+                <h3>
+                  {selectedAccountIds.length > 0
+                    ? `已選取 ${selectedAccountIds.length} 個帳戶`
+                    : "尚未選取帳戶"}
+                </h3>
+                <p>可複選帳戶，並在下一步一起更新。</p>
+              </div>
+            </div>
+            <div className="snapshot-entry-guide">
+              <p className="eyebrow">HOW IT WORKS</p>
+              <ol>
+                <li>
+                  <span>1</span>
+                  <p>
+                    <strong>選擇更新範圍</strong>
+                    <small>勾選一個或多個既有帳戶</small>
+                  </p>
+                </li>
+                <li>
+                  <span>2</span>
+                  <p>
+                    <strong>確認整理結果</strong>
+                    <small>需要時可直接修改欄位</small>
+                  </p>
+                </li>
+                <li>
+                  <span>3</span>
+                  <p>
+                    <strong>儲存新快照</strong>
+                    <small>其他既有資料會自動保留</small>
+                  </p>
+                </li>
+              </ol>
+            </div>
+            <div className="snapshot-rule-note">
+              <ShieldCheck size={16} />
+              <p>
+                <strong>資料留在本機</strong>
+                <span>直接選擇並編輯，不需要文字辨識或 AI 服務。</span>
+              </p>
+            </div>
+            <div className="snapshot-manual-entry">
+              <p>其他更新</p>
+              <div>
+                {creditCardAccounts.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={startCreditCardsOnly}
+                    className="secondary"
+                  >
+                    只更新信用卡
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={startManual}
+                  onClick={startNewAccount}
                   className="secondary"
                 >
-                  手動新增資料
+                  新增全新帳戶
                 </button>
-                <p className="text-[11px] leading-5 text-[#78857d]">
-                  整理成功會清空輸入；只有按下最下方「保存快照」才會寫入資料庫
-                </p>
               </div>
             </div>
-          </div>
+          </aside>
         </section>
-        {unsupported && (
-          <p className="notice error">無法自動整理：{unsupported}</p>
-        )}
         {error && <p className="notice error">{error}</p>}
         {warnings.length > 0 && (
           <div className="notice">
@@ -939,31 +926,7 @@ export function SnapshotEditor({
             ))}
           </div>
         )}
-        {sales.length > 0 && (
-          <section className="rounded-2xl border border-[#e0cda1] bg-[#fff9e9] p-5">
-            <h3 className="font-semibold">待確認的全部賣出</h3>
-            {sales.map((sale) => (
-              <div
-                key={`${sale.accountName}-${sale.symbol}`}
-                className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4 text-sm"
-              >
-                <span>
-                  {sale.accountName}・{sale.symbol}・
-                  {new Date(sale.soldAt).toLocaleDateString("zh-TW")}
-                  {sale.salePrice ? `・成交 ${sale.salePrice}` : ""}
-                </span>
-                <button
-                  disabled={!!busy}
-                  className="danger"
-                  onClick={() => confirmSale(sale)}
-                >
-                  確認全部賣出
-                </button>
-              </div>
-            ))}
-          </section>
-        )}
-        {hasPrepared ? (
+        {hasPrepared && (
           <>
             <section className="overflow-hidden rounded-[24px] border border-[#d8e2da] bg-white shadow-[0_12px_40px_rgba(31,60,45,.07)]">
               <div className="px-6 py-5">
@@ -986,12 +949,11 @@ export function SnapshotEditor({
                     <button
                       type="button"
                       onClick={() => {
-                        setRawInput(processedInput);
                         setHasPrepared(false);
                       }}
                       className="inline-flex items-center rounded-xl border border-[#d8e2da] bg-white px-4 py-2.5 text-xs font-semibold text-[#456353] transition hover:bg-[#f6f9f6]"
                     >
-                      修改原始輸入
+                      重新選擇帳戶
                     </button>
                     <button
                       disabled={
@@ -1014,7 +976,7 @@ export function SnapshotEditor({
                 {processedInput && (
                   <div className="mt-5 rounded-xl border border-[#e3e9e4] bg-[#f7f9f7] px-4 py-3">
                     <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#829087]">
-                      原始輸入
+                      本次更新範圍
                     </p>
                     <p className="mt-1 text-xs leading-5 text-[#526158]">
                       {processedInput}
@@ -1039,7 +1001,9 @@ export function SnapshotEditor({
                       ),
                     ],
                     ["貸款", loans.length],
-                    ["信用卡", creditCardAccounts.length],
+                    ...(includeCreditCards
+                      ? [["信用卡", creditCardAccounts.length] as const]
+                      : []),
                   ].map(([label, count]) => (
                     <span
                       className="rounded-full bg-[#edf3ee] px-3 py-1.5 text-[11px] font-semibold text-[#476251]"
@@ -1051,7 +1015,7 @@ export function SnapshotEditor({
                 </div>
               </div>
             </section>
-            {creditCardAccounts.length > 0 && (
+            {includeCreditCards && creditCardAccounts.length > 0 && (
               <section className="overflow-hidden rounded-[24px] border border-[#d8e2da] bg-white shadow-[0_12px_40px_rgba(31,60,45,.07)]">
                 <div className="border-b border-[#e7ece8] bg-[#f8faf7] px-6 py-5">
                   <div className="flex items-center gap-2 text-[#397259]">
@@ -1120,7 +1084,7 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label>
-                            總應繳金額
+                            總應繳金額（{account.currency}）
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1133,7 +1097,7 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label>
-                            實際繳款金額
+                            實際繳款金額（{account.currency}）
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1146,7 +1110,7 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label>
-                            剩餘分期本金（選填）
+                            剩餘分期本金（{account.currency}，選填）
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1160,7 +1124,7 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label>
-                            銀行顯示的溢繳餘額（選填）
+                            銀行顯示的溢繳餘額（{account.currency}，選填）
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1674,8 +1638,8 @@ export function SnapshotEditor({
                                 ],
                                 [
                                   position.securityType === "future"
-                                    ? "均價"
-                                    : "平均成本",
+                                    ? `均價（${position.quoteCurrency}）`
+                                    : `平均成本（${position.quoteCurrency}）`,
                                   "averageCost",
                                 ],
                               ].map(([placeholder, key]) => (
@@ -1738,10 +1702,10 @@ export function SnapshotEditor({
                               ))}
                               <label>
                                 {canEditManualPrice(position)
-                                  ? "手動市價（網路查詢失敗）"
+                                  ? `手動市價（${position.quoteCurrency}，網路查詢失敗）`
                                   : position.securityType === "fund"
-                                    ? "網路淨值"
-                                    : "網路市價"}
+                                    ? `網路淨值（${position.quoteCurrency}）`
+                                    : `網路市價（${position.quoteCurrency}）`}
                                 <input
                                   aria-label={
                                     canEditManualPrice(position)
@@ -2048,7 +2012,7 @@ export function SnapshotEditor({
                                 />
                               </label>
                               <label>
-                                目前未償本金
+                                目前未償本金（{loan.currency}）
                                 <input
                                   className="field"
                                   inputMode="decimal"
@@ -2061,7 +2025,7 @@ export function SnapshotEditor({
                                 />
                               </label>
                               <label>
-                                原始貸款金額
+                                原始貸款金額（{loan.currency}）
                                 <input
                                   className="field"
                                   inputMode="decimal"
@@ -2089,7 +2053,7 @@ export function SnapshotEditor({
                                 />
                               </label>
                               <label>
-                                每月還款金額
+                                每月還款金額（{loan.currency}）
                                 <input
                                   className="field"
                                   inputMode="decimal"
@@ -2393,6 +2357,9 @@ export function SnapshotEditor({
                         ].map(([label, key]) => (
                           <label key={key}>
                             {label}
+                            {key === "annualInterestRate"
+                              ? ""
+                              : `（${loan.currency}）`}
                             <input
                               aria-label={label}
                               className="field"
@@ -2540,14 +2507,6 @@ export function SnapshotEditor({
               新增貸款
             </button>
           </>
-        ) : (
-          <section className="rounded-[22px] border border-dashed border-[#cdd8cf] bg-white/55 px-6 py-10 text-center">
-            <WalletCards className="mx-auto text-[#8b9990]" size={24} />
-            <h3 className="mt-3 font-semibold">尚未建立確認表</h3>
-            <p className="mt-2 text-xs leading-6 text-[#748178]">
-              輸入本次更新內容並按「整理成確認表」，或選擇手動新增資料。
-            </p>
-          </section>
         )}
         {hasPrepared && (
           <section className="rounded-[22px] border border-[#dce4dd] bg-white p-5">
@@ -2671,11 +2630,9 @@ export function SnapshotEditor({
               !hasPrepared ||
               (accounts.length === 0 &&
                 loans.length === 0 &&
-                creditCardAccounts.length === 0) ||
+                (!includeCreditCards || creditCardAccounts.length === 0)) ||
               !!busy ||
-              !!unsupported ||
-              validationWarnings.length > 0 ||
-              sales.length > 0
+              validationWarnings.length > 0
             }
             onClick={save}
           >
@@ -2796,7 +2753,8 @@ export function SaleDialog({
             />
           </label>
           <label>
-            {position.securityType === "future" ? "結算單價" : "成交單價"}
+            {position.securityType === "future" ? "結算單價" : "成交單價"}（
+            {position.quoteCurrency}）
             <input
               className="field"
               inputMode="decimal"
@@ -2823,7 +2781,7 @@ export function SaleDialog({
           </label>
           <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <label>
-              手續費
+              手續費（{position.quoteCurrency}）
               <input
                 className="field"
                 inputMode="decimal"
@@ -2832,7 +2790,7 @@ export function SaleDialog({
               />
             </label>
             <label>
-              交易稅
+              交易稅（{position.quoteCurrency}）
               <input
                 className="field"
                 inputMode="decimal"
@@ -3499,7 +3457,6 @@ export default function FinanceDashboard() {
           {editor && (
             <SnapshotEditor
               latest={latest ?? null}
-              recentInputs={data?.history.map((item) => item.rawInput) ?? []}
               onClose={() => setEditor(false)}
               onSaved={saved}
             />

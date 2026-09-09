@@ -969,14 +969,14 @@ describe("快照與全部賣出", () => {
     expect(overpaid.creditCardAccounts[0].paymentStatus).toBe("overpaid");
     expect((await getCreditCardTrend("all")).slice(-2)).toEqual([
       {
-        capturedAt: "2026-08-01T00:00:00.000Z",
-        statementPeriod: "2026-08",
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        paymentPeriod: "2026-09",
         totalDueTwd: "30000",
         paymentAmountTwd: "30000",
       },
       {
-        capturedAt: "2026-09-01T00:00:00.000Z",
-        statementPeriod: "2026-09",
+        capturedAt: "2026-10-01T00:00:00.000Z",
+        paymentPeriod: "2026-10",
         totalDueTwd: "10000",
         paymentAmountTwd: "15000",
       },
@@ -991,13 +991,13 @@ describe("快照與全部賣出", () => {
         {
           ...overpaid.creditCardAccounts[0],
           statementPeriod: "2026-10",
-          dueDate: "2026-10-18",
+          dueDate: "2026-11-18",
         },
       ],
     });
     expect(
       (await getCreditCardTrend("all")).some(
-        (item) => item.statementPeriod === "2026-10",
+        (item) => item.paymentPeriod === "2026-11",
       ),
     ).toBe(false);
   });

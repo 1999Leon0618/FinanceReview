@@ -1,4 +1,58 @@
+import type { CreditCardPaymentStatus } from "./types";
+
 export const inputDate = (value?: string | null) => value?.slice(0, 10) ?? "";
+
+export function creditCardPaymentPeriod(value: string) {
+  return inputDate(value).slice(0, 7);
+}
+
+export function creditCardPaymentMonthLabel(value: string) {
+  const [year, month] = creditCardPaymentPeriod(value).split("-").map(Number);
+  return year && month ? `${year} 年 ${month} 月` : "月份待確認";
+}
+
+export function creditCardPaymentLabel(status: CreditCardPaymentStatus) {
+  switch (status) {
+    case "paid":
+    case "overpaid":
+      return "已繳";
+    case "partially_paid":
+      return "部分繳";
+    case "unpaid":
+    case "overdue":
+      return "未繳";
+    default:
+      return "待更新";
+  }
+}
+
+export function creditCardDisplayPayment(
+  dueDate: string,
+  paymentDayOfMonth: number | null | undefined,
+  status: CreditCardPaymentStatus,
+  now = new Date(),
+) {
+  const label = creditCardPaymentLabel(status);
+  if (label !== "已繳" || !paymentDayOfMonth)
+    return { dueDate: inputDate(dueDate), label, awaitingUpdate: false };
+
+  const currentPeriod = now
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" })
+    .slice(0, 7);
+  let nextDueDate = followingCreditCardDueDate(dueDate, paymentDayOfMonth);
+  if (!nextDueDate || creditCardPaymentPeriod(nextDueDate) > currentPeriod)
+    return { dueDate: inputDate(dueDate), label, awaitingUpdate: false };
+
+  while (creditCardPaymentPeriod(nextDueDate) < currentPeriod) {
+    const following = followingCreditCardDueDate(
+      nextDueDate,
+      paymentDayOfMonth,
+    );
+    if (!following) break;
+    nextDueDate = following;
+  }
+  return { dueDate: nextDueDate, label: "待更新", awaitingUpdate: true };
+}
 
 export function normalizeCreditCardAccountStatus(
   status: "active" | "inactive" | "closed",

@@ -1826,7 +1826,7 @@ export async function getCreditCardTrend(
   const since = dateFromRange(range);
   const rows = (await db
     .prepare(
-      `SELECT s.captured_at, sc.credit_card_account_id, sc.statement_period,
+      `SELECT s.captured_at, sc.credit_card_account_id, sc.due_date,
       sc.statement_amount, sc.payment_amount, COALESCE(fx.rate, '1') AS fx_rate
       FROM snapshot_credit_card_accounts sc
       JOIN snapshots s ON s.id = sc.snapshot_id
@@ -1839,8 +1839,9 @@ export async function getCreditCardTrend(
 
   const latestByAccountAndPeriod = new Map<string, Row>();
   for (const row of rows) {
+    const paymentPeriod = text(row.due_date).slice(0, 7);
     latestByAccountAndPeriod.set(
-      `${text(row.credit_card_account_id)}:${text(row.statement_period)}`,
+      `${text(row.credit_card_account_id)}:${paymentPeriod}`,
       row,
     );
   }
@@ -1853,7 +1854,7 @@ export async function getCreditCardTrend(
     }
   >();
   for (const row of latestByAccountAndPeriod.values()) {
-    const period = text(row.statement_period);
+    const period = text(row.due_date).slice(0, 7);
     const current = totalsByPeriod.get(period) ?? {
       totalDueTwd: zero,
       paymentAmountTwd: zero,
@@ -1871,9 +1872,9 @@ export async function getCreditCardTrend(
 
   return [...totalsByPeriod.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([statementPeriod, totals]) => ({
-      capturedAt: `${statementPeriod}-01T00:00:00.000Z`,
-      statementPeriod,
+    .map(([paymentPeriod, totals]) => ({
+      capturedAt: `${paymentPeriod}-01T00:00:00.000Z`,
+      paymentPeriod,
       totalDueTwd: money(totals.totalDueTwd),
       paymentAmountTwd: money(totals.paymentAmountTwd),
     }));

@@ -125,6 +125,12 @@ try {
     assert.equal(dashboard.headers.get("cache-control"), "private, no-store");
     const home = await worker.fetch("http://localhost/");
     assert.equal(home.status, 200, await home.clone().text());
+    const homeHtml = await home.text();
+    assert.match(homeHtml, /id="theme-init"/);
+    assert.ok(
+      homeHtml.indexOf('id="theme-init"') < homeHtml.indexOf("<body"),
+      "主題初始化程式必須在 body 繪製前執行",
+    );
     const proposal = await post("/api/snapshot-proposals", {
       rawInput: "測試銀行餘額100",
     });

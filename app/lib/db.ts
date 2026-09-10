@@ -198,6 +198,7 @@ const migrationNames = [
   "add_snapshot_commits",
   "add_data_owners",
   "add_app_users",
+  "add_user_application_details",
 ] as const;
 
 function migrate(db: DatabaseSync) {

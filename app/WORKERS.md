@@ -84,9 +84,10 @@ npm run deploy:production
 Cloudflare Access 負責確認登入者確實能收取該 Email 的 One-time PIN；FinanceReview 的 `app_users` 則負責永久授權。完整流程如下：
 
 1. 新使用者輸入自己的 Email 並通過 Cloudflare OTP 驗證。
-2. FinanceReview 第一次看見該 Email 時建立 `pending` 記錄，禁止所有真實財務頁面與 API，只允許 `/pending`、`/demo` 及必要的靜態資源。
-3. 管理員在 `/admin/users` 按「核准」後，該帳號永久成為 `approved`；也可稍後按「停用」撤銷權限。
-4. 每個 Email 會轉成不同的不可逆 owner key，所有快照、帳戶、持倉、貸款與信用卡查詢都依 owner key 隔離。管理員後台只顯示帳號與審核狀態，不顯示其他人的財務內容。
+2. FinanceReview 第一次看見該 Email 時先建立尚未送出的記錄；使用者必須填寫至少 10 個字、最多 500 個字的申請理由，送出後才會出現在管理員的待審核名單。
+3. 未核准帳號禁止所有真實財務頁面與 API，只允許 `/pending`、使用正式儀表板元件搭配固定假資料的 `/demo`，以及必要的靜態資源。
+4. 管理員可在 `/admin/users` 查看申請理由、填寫僅管理員可見的內部備註，並按「核准」讓帳號永久成為 `approved`；也可稍後按「停用」撤銷權限。
+5. 每個 Email 會轉成不同的不可逆 owner key，所有快照、帳戶、持倉、貸款與信用卡查詢都依 owner key 隔離。管理員後台只顯示帳號、申請理由、內部備註與審核狀態，不顯示其他人的財務內容。
 
 首次上線務必依這個順序操作：
 
@@ -94,9 +95,9 @@ Cloudflare Access 負責確認登入者確實能收取該 Email 的 One-time PIN
 2. 合併並部署包含 `0003_add_app_users.sql` 的版本。
 3. 管理員登入正式站並開啟 `/admin/users`，確認自己的角色是「管理員」。`app_users` 尚無管理員時，第一個成功登入者會自動成為管理員，因此這一步完成前絕對不可先放寬 Access policy。
 4. 再到 Cloudflare Zero Trust 將 Allow policy 的 Include 條件改成 `Login Methods` → `One-time PIN`，並移除只限單一 Email 的 Include 條件。
-5. 用另一個 Email 或無痕視窗驗證：通過 OTP 後只會看到待審核頁；管理員核准後，重新整理即可進入獨立帳本。
+5. 用另一個 Email 或無痕視窗驗證：通過 OTP 後先填寫申請理由，送出後才顯示等待審核；管理員核准後，重新整理即可進入獨立帳本。
 
-不要只放寬 Cloudflare Access 而部署舊版程式，否則登入者不會經過 FinanceReview 的待審核閘門。`/demo` 使用寫死的虛構資料，不會讀取或寫入 D1，因此不需要建立共用範例帳號。
+不要只放寬 Cloudflare Access 而部署舊版程式，否則登入者不會經過 FinanceReview 的申請與待審核閘門。`/demo` 重用正式儀表板介面，但資料完全來自程式內固定的虛構資料，不會讀取或寫入 D1，因此不需要建立共用範例帳號。
 
 不要將 `.db`、JSON 備份、`.dev.vars` 或 Cloudflare 權杖放到 `public/` 或 Git。
 

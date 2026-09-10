@@ -95,7 +95,9 @@ try {
     assert.match(await admin.text(), /使用者審核/);
     const demo = await worker.fetch("http://localhost/demo");
     assert.equal(demo.status, 200, await demo.clone().text());
-    assert.match(await demo.text(), /FinanceReview 範例帳本/);
+    const demoHtml = await demo.text();
+    assert.match(demoHtml, /唯讀範例帳本/);
+    assert.match(demoHtml, /1,286,000/);
   });
   await check("Next.js 找不到頁面可產生 HTML", async () => {
     const response = await worker.fetch(

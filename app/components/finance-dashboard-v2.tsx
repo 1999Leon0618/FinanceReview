@@ -45,6 +45,7 @@ import {
   Sun,
   TrendingUp,
   Upload,
+  UserCog,
   WalletCards,
   X,
 } from "lucide-react";
@@ -160,9 +161,11 @@ const privateValue = (hidden: boolean, value: string) =>
 export default function FinanceDashboard({
   initialData,
   page = "overview",
+  isAdmin = false,
 }: {
   initialData: DashboardData;
   page?: FinancePage;
+  isAdmin?: boolean;
 }) {
   const [data, setData] = useState<DashboardData | null>(initialData);
   const [range, setRange] = useState("6m");
@@ -618,6 +621,12 @@ export default function FinanceDashboard({
             <History size={17} />
             歷史紀錄
           </Link>
+          {isAdmin && (
+            <Link href="/admin/users">
+              <UserCog size={17} />
+              使用者審核
+            </Link>
+          )}
         </nav>
 
         <div className="mt-auto">
@@ -676,6 +685,16 @@ export default function FinanceDashboard({
             <p className="topbar-location">{pageMeta.location}</p>
           </div>
           <div className="flex items-center gap-2.5">
+            {isAdmin && (
+              <Link
+                aria-label="使用者審核"
+                title="使用者審核"
+                className="icon-button"
+                href="/admin/users"
+              >
+                <UserCog size={16} />
+              </Link>
+            )}
             <button
               className="secondary display-order-entry"
               aria-label="自訂排序"

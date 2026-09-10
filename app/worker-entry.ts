@@ -1,4 +1,5 @@
 import handler from "vinext/server/fetch-handler";
+import { appAccessDecision, ensureCurrentAppUser } from "./lib/app-users";
 import { authenticateDataOwner } from "./lib/cloudflare-access";
 import { runWithDataOwner } from "./lib/data-owner";
 import { runWithD1Database, type D1DatabaseBinding } from "./lib/db";
@@ -31,9 +32,23 @@ const worker = {
       return new Response("未通過 Cloudflare Access 身分驗證", { status: 403 });
     }
     const response = (await runWithDataOwner(owner, () =>
-      runWithD1Database(environment.DB, () =>
-        handler.fetch(request, environment, context),
-      ),
+      runWithD1Database(environment.DB, async () => {
+        const user = await ensureCurrentAppUser();
+        const url = new URL(request.url);
+        const decision = appAccessDecision(
+          user,
+          url.pathname,
+          request.headers.get("accept")?.includes("text/html") ?? false,
+        );
+        if (decision.action === "redirect")
+          return Response.redirect(new URL(decision.location, url), 302);
+        if (decision.action === "deny")
+          return Response.json(
+            { error: decision.message, accessStatus: user.status },
+            { status: decision.status },
+          );
+        return handler.fetch(request, environment, context);
+      }),
     )) as Response;
     const secured = new Response(response.body, response);
     secured.headers.set("Cache-Control", "private, no-store");

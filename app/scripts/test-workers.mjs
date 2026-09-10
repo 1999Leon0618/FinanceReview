@@ -82,6 +82,21 @@ try {
     assert.equal(response.status, 200);
     assert.match(await response.text(), /<svg/);
   });
+  await check("開發登入會成為管理員並可開啟審核與範例頁", async () => {
+    const identity = await worker.fetch("http://localhost/api/access/me");
+    assert.equal(identity.status, 200, await identity.clone().text());
+    assert.deepEqual(await identity.json(), {
+      email: "developer@localhost.invalid",
+      status: "approved",
+      role: "admin",
+    });
+    const admin = await worker.fetch("http://localhost/admin/users");
+    assert.equal(admin.status, 200, await admin.clone().text());
+    assert.match(await admin.text(), /使用者審核/);
+    const demo = await worker.fetch("http://localhost/demo");
+    assert.equal(demo.status, 200, await demo.clone().text());
+    assert.match(await demo.text(), /FinanceReview 範例帳本/);
+  });
   await check("Next.js 找不到頁面可產生 HTML", async () => {
     const response = await worker.fetch(
       "http://localhost/worker-compatibility-missing",

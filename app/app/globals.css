@@ -2853,6 +2853,10 @@ html.dark .recharts-default-tooltip {
   margin-top: 1.5rem;
 }
 
+.access-actions.compact {
+  margin-top: 0.85rem;
+}
+
 .access-actions a,
 .demo-header-actions a,
 .admin-header a {
@@ -2864,6 +2868,58 @@ html.dark .recharts-default-tooltip {
 
 .access-note {
   margin-top: 1rem;
+}
+
+.access-application {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.access-application label,
+.approval-review label {
+  color: #53645a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.access-application textarea,
+.approval-review textarea {
+  width: 100%;
+  margin-top: 0.45rem;
+  padding: 0.8rem;
+  color: #203029;
+  border: 1px solid #d7e0d9;
+  border-radius: 0.8rem;
+  outline: none;
+  background: #fff;
+  resize: vertical;
+}
+
+.access-application textarea {
+  min-height: 8rem;
+}
+
+.access-application textarea:focus,
+.approval-review textarea:focus {
+  border-color: #5b8d6b;
+  box-shadow: 0 0 0 3px rgba(74, 128, 91, 0.12);
+}
+
+.access-application-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #7b877f;
+  font-size: 0.72rem;
+}
+
+.access-application button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
 }
 
 .admin-shell,
@@ -2992,6 +3048,17 @@ html.dark .recharts-default-tooltip {
   font-size: 0.8rem;
 }
 
+.approval-reason {
+  margin-top: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  color: #44564c;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  border-radius: 0.7rem;
+  background: #f3f6f3;
+  white-space: pre-wrap;
+}
+
 .approval-empty {
   padding: 2rem 0 1rem;
   text-align: center;
@@ -3022,6 +3089,17 @@ html.dark .recharts-default-tooltip {
 .approval-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.approval-review {
+  display: grid;
+  min-width: min(100%, 24rem);
+  gap: 0.6rem;
+}
+
+.approval-review textarea {
+  min-height: 4.5rem;
+  font-weight: 400;
 }
 
 .approval-actions button {
@@ -3156,6 +3234,59 @@ html.dark .recharts-default-tooltip {
   text-align: center;
 }
 
+.demo-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.9rem 1rem;
+  color: #275d3e;
+  border: 1px solid #bcd8c4;
+  border-radius: 0.9rem;
+  background: #eaf5ed;
+}
+
+.demo-notice > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.demo-notice span {
+  font-size: 0.78rem;
+}
+
+.demo-sidebar-return {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  padding: 0.7rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.75rem;
+}
+
+.demo-top-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+html.dark .access-application textarea,
+html.dark .approval-review textarea {
+  color: #e8f0ea;
+  border-color: #394b40;
+  background: #17231c;
+}
+
+html.dark .demo-notice {
+  color: #bce3c8;
+  border-color: #365c43;
+  background: #183021;
+}
+
 @media (max-width: 760px) {
   .admin-header,
   .demo-header,
@@ -3180,6 +3311,16 @@ html.dark .recharts-default-tooltip {
 
   .approval-actions {
     grid-column: 1 / -1;
+  }
+
+  .approval-review {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .access-application-meta {
+    flex-direction: column;
+    gap: 0.25rem;
   }
 }
 

@@ -31,13 +31,10 @@ test("管理員可開啟使用者審核與唯讀範例頁", async ({ page }) => 
   await expect(page.getByText("legacy@local")).toBeVisible();
 
   await page.goto("/demo");
-  await expect(
-    page.getByRole("heading", { name: "FinanceReview 範例帳本" }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("以下全是虛構資料", { exact: false }),
-  ).toBeVisible();
-  await expect(page.getByText("唯讀範例")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "財務總覽" })).toBeVisible();
+  await expect(page.getByText("唯讀範例帳本")).toBeVisible();
+  await expect(page.getByText("NT$1,286,000").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "新增快照" })).toHaveCount(0);
 });
 
 test("深色模式可切換並保留使用者偏好", async ({ page }) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, LoaderCircle, RotateCcw, X } from "lucide-react";
+import { Check, LoaderCircle, Save, X } from "lucide-react";
 import type { AppUser, AppUserStatus } from "@/lib/app-users";
 import { requestJson } from "@/lib/client-request";
 
@@ -22,7 +22,10 @@ export default function UserApprovalList({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
-  const review = async (ownerKey: string, status: "approved" | "rejected") => {
+  const review = async (
+    ownerKey: string,
+    update: { status?: "approved" | "rejected"; adminNote?: string | null },
+  ) => {
     setBusy(ownerKey);
     setError("");
     try {
@@ -31,7 +34,7 @@ export default function UserApprovalList({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
+          body: JSON.stringify(update),
         },
       );
       setUsers((items) =>
@@ -67,8 +70,13 @@ export default function UserApprovalList({
                 key={user.ownerKey}
                 user={user}
                 busy={busy === user.ownerKey}
-                onApprove={() => review(user.ownerKey, "approved")}
-                onReject={() => review(user.ownerKey, "rejected")}
+                onApprove={(adminNote) =>
+                  review(user.ownerKey, { status: "approved", adminNote })
+                }
+                onReject={(adminNote) =>
+                  review(user.ownerKey, { status: "rejected", adminNote })
+                }
+                onSaveNote={(adminNote) => review(user.ownerKey, { adminNote })}
               />
             ))}
           </div>
@@ -90,8 +98,13 @@ export default function UserApprovalList({
               user={user}
               busy={busy === user.ownerKey}
               current={user.ownerKey === currentOwnerKey}
-              onApprove={() => review(user.ownerKey, "approved")}
-              onReject={() => review(user.ownerKey, "rejected")}
+              onApprove={(adminNote) =>
+                review(user.ownerKey, { status: "approved", adminNote })
+              }
+              onReject={(adminNote) =>
+                review(user.ownerKey, { status: "rejected", adminNote })
+              }
+              onSaveNote={(adminNote) => review(user.ownerKey, { adminNote })}
             />
           ))}
         </div>
@@ -106,13 +119,17 @@ function UserRow({
   current = false,
   onApprove,
   onReject,
+  onSaveNote,
 }: {
   user: AppUser;
   busy: boolean;
   current?: boolean;
-  onApprove: () => void;
-  onReject: () => void;
+  onApprove: (adminNote: string) => void;
+  onReject: (adminNote: string) => void;
+  onSaveNote: (adminNote: string) => void;
 }) {
+  const [adminNote, setAdminNote] = useState(user.adminNote ?? "");
+  const noteChanged = adminNote.trim() !== (user.adminNote ?? "");
   const requested = new Date(user.requestedAt).toLocaleString("zh-TW", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -128,42 +145,65 @@ function UserRow({
           {user.role === "admin" ? "管理員" : statusLabels[user.status]}・申請於{" "}
           {requested}
         </span>
+        {user.applicationReason && (
+          <p className="approval-reason">
+            <b>申請理由：</b>
+            {user.applicationReason}
+          </p>
+        )}
       </div>
       <span className={`approval-status ${user.status}`}>
         {user.role === "admin" ? "管理員" : statusLabels[user.status]}
       </span>
       {!current && user.role !== "admin" && (
-        <div className="approval-actions">
-          {user.status !== "approved" && (
-            <button
-              type="button"
-              className="primary"
-              disabled={busy}
-              onClick={onApprove}
-            >
-              {busy ? (
-                <LoaderCircle className="animate-spin" size={14} />
-              ) : (
-                <Check size={14} />
-              )}
-              核准
-            </button>
-          )}
-          {user.status !== "rejected" && (
-            <button
-              type="button"
-              className="danger"
-              disabled={busy}
-              onClick={onReject}
-            >
-              {user.status === "approved" ? (
+        <div className="approval-review">
+          <label>
+            管理員備註（僅管理員可見）
+            <textarea
+              value={adminNote}
+              maxLength={500}
+              placeholder="例如：朋友介紹、測試帳號、已確認身分…"
+              onChange={(event) => setAdminNote(event.target.value)}
+            />
+          </label>
+          <div className="approval-actions">
+            {noteChanged && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => onSaveNote(adminNote)}
+              >
+                <Save size={14} /> 儲存備註
+              </button>
+            )}
+            {user.status !== "approved" && (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => onApprove(adminNote)}
+              >
+                {busy ? (
+                  <LoaderCircle className="animate-spin" size={14} />
+                ) : (
+                  <Check size={14} />
+                )}
+                核准
+              </button>
+            )}
+            {user.status !== "rejected" && (
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => onReject(adminNote)}
+              >
                 <X size={14} />
-              ) : (
-                <RotateCcw size={14} />
-              )}
-              {user.status === "approved" ? "停用" : "拒絕"}
-            </button>
-          )}
+                {user.status === "approved" ? "停用" : "拒絕"}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </article>

@@ -8,7 +8,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 
 ## 主要功能
 
-- 使用者以 Email OTP 自行登入後進入待審核狀態；管理員可在後台核准、拒絕或停用，未核准者只能查看不含真實資料的唯讀範例頁。
+- 使用者以 Email OTP 自行登入後須填寫申請理由，送出後才進入待審核名單；管理員可記錄內部備註、核准、拒絕或停用，未核准者只能查看使用固定假資料的唯讀正式介面。
 - 以時間快照追蹤現金、股票、ETF、基金、期貨、貸款、總資產與淨值。
 - 以銀行共用額度群組追蹤信用卡總應繳金額、繳款狀態、額度使用比例、剩餘分期與溢繳，並呈現每月總應繳及實際繳款走勢。
 - 使用內建規則將常見的自然語言輸入整理成可編輯的確認表，並提供完整手動輸入。
@@ -161,7 +161,7 @@ sequenceDiagram
 
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 13。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 14。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 

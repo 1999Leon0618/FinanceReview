@@ -7,6 +7,7 @@ import {
   ensureCurrentAppUser,
   listAppUsers,
   reviewAppUser,
+  submitCurrentApplication,
 } from "@/lib/app-users";
 import { closeDatabaseForTests } from "@/lib/db";
 import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
@@ -48,11 +49,14 @@ describe("使用者永久審核", () => {
     });
   });
 
-  it("新信箱只可查看等待與唯讀範例頁", async () => {
+  it("新信箱填寫理由前不會進入管理員審核名單", async () => {
     const user = await runWithDataOwner(applicant, () =>
       ensureCurrentAppUser(),
     );
     expect(user.status).toBe("pending");
+    expect(user.submittedAt).toBeNull();
+    const before = await runWithDataOwner(admin, () => listAppUsers());
+    expect(before.some((item) => item.ownerKey === applicant.key)).toBe(false);
     expect(appAccessDecision(user, "/demo", true)).toEqual({
       action: "allow",
     });
@@ -68,6 +72,22 @@ describe("使用者永久審核", () => {
       action: "redirect",
       location: "/pending",
     });
+    await expect(
+      runWithDataOwner(applicant, () => submitCurrentApplication("太短")),
+    ).rejects.toThrow("至少需要 10 個字");
+
+    const submitted = await runWithDataOwner(applicant, () =>
+      submitCurrentApplication("希望用來整理個人的長期資產配置"),
+    );
+    expect(submitted.applicationReason).toBe("希望用來整理個人的長期資產配置");
+    expect(submitted.submittedAt).not.toBeNull();
+    const after = await runWithDataOwner(admin, () => listAppUsers());
+    expect(after.find((item) => item.ownerKey === applicant.key)).toMatchObject(
+      {
+        status: "pending",
+        applicationReason: "希望用來整理個人的長期資產配置",
+      },
+    );
   });
 
   it("管理員可永久核准及停用一般帳號", async () => {
@@ -77,15 +97,26 @@ describe("使用者永久審核", () => {
     );
 
     const approved = await runWithDataOwner(admin, () =>
-      reviewAppUser(applicant.key, "approved"),
+      reviewAppUser(applicant.key, {
+        status: "approved",
+        adminNote: "已確認為受邀測試者",
+      }),
     );
     expect(approved.status).toBe("approved");
+    expect(approved.adminNote).toBe("已確認為受邀測試者");
+    const approvedUsers = await runWithDataOwner(admin, () => listAppUsers());
+    expect(
+      approvedUsers.find((user) => user.ownerKey === applicant.key)?.adminNote,
+    ).toBe("已確認為受邀測試者");
     expect(appAccessDecision(approved, "/", true)).toEqual({
       action: "allow",
     });
 
     const rejected = await runWithDataOwner(admin, () =>
-      reviewAppUser(applicant.key, "rejected"),
+      reviewAppUser(applicant.key, {
+        status: "rejected",
+        adminNote: "暫停測試權限",
+      }),
     );
     expect(rejected.status).toBe("rejected");
     expect(appAccessDecision(rejected, "/api/dashboard", false)).toMatchObject({
@@ -96,7 +127,9 @@ describe("使用者永久審核", () => {
 
   it("管理員不能停用自己", async () => {
     await expect(
-      runWithDataOwner(admin, () => reviewAppUser(admin.key, "rejected")),
+      runWithDataOwner(admin, () =>
+        reviewAppUser(admin.key, { status: "rejected" }),
+      ),
     ).rejects.toThrow("不能變更目前管理員自己的存取狀態");
   });
 });

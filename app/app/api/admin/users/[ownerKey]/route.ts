@@ -5,9 +5,14 @@ import { apiError } from "@/lib/http";
 
 export const runtime = "nodejs";
 
-const reviewSchema = z.object({
-  status: z.enum(["approved", "rejected"]),
-});
+const reviewSchema = z
+  .object({
+    status: z.enum(["approved", "rejected"]).optional(),
+    adminNote: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine(
+    (value) => value.status !== undefined || value.adminNote !== undefined,
+  );
 
 export async function PATCH(
   request: NextRequest,
@@ -15,8 +20,8 @@ export async function PATCH(
 ) {
   try {
     const { ownerKey } = await context.params;
-    const { status } = reviewSchema.parse(await request.json());
-    return NextResponse.json(await reviewAppUser(ownerKey, status));
+    const update = reviewSchema.parse(await request.json());
+    return NextResponse.json(await reviewAppUser(ownerKey, update));
   } catch (error) {
     return apiError(error, 403);
   }

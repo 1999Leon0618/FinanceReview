@@ -162,10 +162,14 @@ export default function FinanceDashboard({
   initialData,
   page = "overview",
   isAdmin = false,
+  demoMode = false,
+  demoReturnHref = "/pending",
 }: {
   initialData: DashboardData;
   page?: FinancePage;
   isAdmin?: boolean;
+  demoMode?: boolean;
+  demoReturnHref?: string;
 }) {
   const [data, setData] = useState<DashboardData | null>(initialData);
   const [range, setRange] = useState("6m");
@@ -279,15 +283,17 @@ export default function FinanceDashboard({
   };
 
   const load = useCallback(async () => {
+    if (demoMode) return;
     try {
       setData(await request<DashboardData>(`/api/dashboard?range=${range}`));
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "無法讀取資料");
     }
-  }, [range]);
+  }, [demoMode, range]);
 
   useEffect(() => {
+    if (demoMode) return;
     if (loadedDashboardRange.current === range) return;
     loadedDashboardRange.current = range;
     let cancelled = false;
@@ -305,10 +311,10 @@ export default function FinanceDashboard({
     return () => {
       cancelled = true;
     };
-  }, [range]);
+  }, [demoMode, range]);
 
   useEffect(() => {
-    if (page !== "investments") return;
+    if (demoMode || page !== "investments") return;
     let cancelled = false;
     const loadingTimer = window.setTimeout(() => {
       if (!cancelled) setPerformanceLoading(true);
@@ -330,7 +336,7 @@ export default function FinanceDashboard({
       cancelled = true;
       window.clearTimeout(loadingTimer);
     };
-  }, [benchmark, range, data?.latest?.id, page]);
+  }, [benchmark, demoMode, range, data?.latest?.id, page]);
 
   useEffect(() => {
     if (!data?.health.shouldWarnOnOpen || !data.health.lastUpdatedAt) return;
@@ -574,7 +580,7 @@ export default function FinanceDashboard({
 
   return (
     <main
-      className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""}`}
+      className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""} ${demoMode ? "dashboard-demo" : ""}`}
     >
       <aside className="dashboard-sidebar">
         <div className="brand-lockup">
@@ -592,36 +598,39 @@ export default function FinanceDashboard({
         </div>
 
         <nav className="sidebar-nav" aria-label="主要導覽">
-          <Link className={page === "overview" ? "active" : ""} href="/">
+          <Link
+            className={page === "overview" ? "active" : ""}
+            href={demoMode ? "/demo" : "/"}
+          >
             <LayoutDashboard size={17} />
             財務總覽
           </Link>
           <Link
             className={page === "accounts" ? "active" : ""}
-            href="/accounts"
+            href={demoMode ? "/demo" : "/accounts"}
           >
             <WalletCards size={17} />
             帳戶
           </Link>
           <Link
             className={page === "investments" ? "active" : ""}
-            href="/investments"
+            href={demoMode ? "/demo" : "/investments"}
           >
             <TrendingUp size={17} />
             投資
           </Link>
           <Link
             className={page === "credit-cards" ? "active" : ""}
-            href="/credit-cards"
+            href={demoMode ? "/demo" : "/credit-cards"}
           >
             <CreditCard size={17} />
             信用卡
           </Link>
-          <Link href="/#history">
+          <Link href={demoMode ? "/demo#history" : "/#history"}>
             <History size={17} />
             歷史紀錄
           </Link>
-          {isAdmin && (
+          {isAdmin && !demoMode && (
             <Link href="/admin/users">
               <UserCog size={17} />
               使用者審核
@@ -639,24 +648,30 @@ export default function FinanceDashboard({
               </p>
             </div>
           </div>
-          <div
-            className="sidebar-tools"
-            style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-          >
-            <a
-              href="/api/backup"
-              download
-              style={{ minHeight: "2.35rem", minWidth: 0 }}
+          {demoMode ? (
+            <Link className="demo-sidebar-return" href={demoReturnHref}>
+              <ArrowLeft size={15} /> 離開範例
+            </Link>
+          ) : (
+            <div
+              className="sidebar-tools"
+              style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
             >
-              <Download size={15} /> 匯出資料
-            </a>
-            <button
-              onClick={() => upload.current?.click()}
-              style={{ minHeight: "2.35rem", minWidth: 0 }}
-            >
-              <Upload size={15} /> 匯入資料
-            </button>
-          </div>
+              <a
+                href="/api/backup"
+                download
+                style={{ minHeight: "2.35rem", minWidth: 0 }}
+              >
+                <Download size={15} /> 匯出資料
+              </a>
+              <button
+                onClick={() => upload.current?.click()}
+                style={{ minHeight: "2.35rem", minWidth: 0 }}
+              >
+                <Upload size={15} /> 匯入資料
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -685,7 +700,7 @@ export default function FinanceDashboard({
             <p className="topbar-location">{pageMeta.location}</p>
           </div>
           <div className="flex items-center gap-2.5">
-            {isAdmin && (
+            {isAdmin && !demoMode && (
               <Link
                 aria-label="使用者審核"
                 title="使用者審核"
@@ -695,16 +710,18 @@ export default function FinanceDashboard({
                 <UserCog size={16} />
               </Link>
             )}
-            <button
-              className="secondary display-order-entry"
-              aria-label="自訂排序"
-              title="自訂排序"
-              disabled={!latest || !displayOrder.ready}
-              onClick={() => setSortingSection(primarySortSection)}
-            >
-              <ArrowUpDown size={16} />
-              <span>自訂排序</span>
-            </button>
+            {!demoMode && (
+              <button
+                className="secondary display-order-entry"
+                aria-label="自訂排序"
+                title="自訂排序"
+                disabled={!latest || !displayOrder.ready}
+                onClick={() => setSortingSection(primarySortSection)}
+              >
+                <ArrowUpDown size={16} />
+                <span>自訂排序</span>
+              </button>
+            )}
             <button
               aria-label={darkMode ? "切換為淺色模式" : "切換為深色模式"}
               aria-pressed={darkMode}
@@ -723,23 +740,27 @@ export default function FinanceDashboard({
             >
               {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
             </button>
-            <a
-              aria-label="匯出資料"
-              title="匯出資料"
-              className="icon-button mobile-tool"
-              href="/api/backup"
-              download
-            >
-              <Download size={16} />
-            </a>
-            <button
-              aria-label="匯入資料"
-              title="匯入資料"
-              className="icon-button mobile-tool"
-              onClick={() => upload.current?.click()}
-            >
-              <Upload size={16} />
-            </button>
+            {!demoMode && (
+              <>
+                <a
+                  aria-label="匯出資料"
+                  title="匯出資料"
+                  className="icon-button mobile-tool"
+                  href="/api/backup"
+                  download
+                >
+                  <Download size={16} />
+                </a>
+                <button
+                  aria-label="匯入資料"
+                  title="匯入資料"
+                  className="icon-button mobile-tool"
+                  onClick={() => upload.current?.click()}
+                >
+                  <Upload size={16} />
+                </button>
+              </>
+            )}
             <input
               ref={upload}
               type="file"
@@ -747,35 +768,44 @@ export default function FinanceDashboard({
               className="hidden"
               onChange={selectImportFile}
             />
-            <button className="primary" onClick={() => setEditor(true)}>
-              <Plus size={16} />
-              新增快照
-            </button>
+            {demoMode ? (
+              <Link className="primary demo-top-return" href={demoReturnHref}>
+                <ArrowLeft size={15} /> 返回申請
+              </Link>
+            ) : (
+              <button className="primary" onClick={() => setEditor(true)}>
+                <Plus size={16} />
+                新增快照
+              </button>
+            )}
           </div>
         </header>
 
         <nav className="mobile-page-nav" aria-label="手機主要導覽">
-          <Link className={page === "overview" ? "active" : ""} href="/">
+          <Link
+            className={page === "overview" ? "active" : ""}
+            href={demoMode ? "/demo" : "/"}
+          >
             <LayoutDashboard size={16} />
             總覽
           </Link>
           <Link
             className={page === "accounts" ? "active" : ""}
-            href="/accounts"
+            href={demoMode ? "/demo" : "/accounts"}
           >
             <WalletCards size={16} />
             帳戶
           </Link>
           <Link
             className={page === "investments" ? "active" : ""}
-            href="/investments"
+            href={demoMode ? "/demo" : "/investments"}
           >
             <TrendingUp size={16} />
             投資
           </Link>
           <Link
             className={page === "credit-cards" ? "active" : ""}
-            href="/credit-cards"
+            href={demoMode ? "/demo" : "/credit-cards"}
           >
             <CreditCard size={16} />
             信用卡
@@ -783,6 +813,15 @@ export default function FinanceDashboard({
         </nav>
 
         <section id="top" className="dashboard-content">
+          {demoMode && (
+            <div className="demo-notice" role="status">
+              <Eye size={17} />
+              <div>
+                <strong>唯讀範例帳本</strong>
+                <span>畫面與正式帳本相同，所有數字都是固定假資料。</span>
+              </div>
+            </div>
+          )}
           <div className="page-intro">
             <div>
               <p className="eyebrow">{pageMeta.eyebrow}</p>
@@ -862,17 +901,19 @@ export default function FinanceDashboard({
                   <HealthCenter
                     health={data.health}
                     valuesHidden={valuesHidden}
-                    onUpdate={() => setEditor(true)}
+                    onUpdate={demoMode ? undefined : () => setEditor(true)}
                   />
 
                   <LoanPanel
                     loans={latest.loans}
                     onViewAll={() => setViewAll("loans")}
                     sortAction={
-                      <SortButton
-                        onClick={() => setSortingSection("loans")}
-                        disabled={!displayOrder.ready}
-                      />
+                      demoMode ? undefined : (
+                        <SortButton
+                          onClick={() => setSortingSection("loans")}
+                          disabled={!displayOrder.ready}
+                        />
+                      )
                     }
                   />
 
@@ -1940,7 +1981,7 @@ function HealthCenter({
 }: {
   health: DashboardData["health"];
   valuesHidden: boolean;
-  onUpdate: () => void;
+  onUpdate?: () => void;
 }) {
   const completeness = health.findings.filter(
     (item) => item.category === "completeness",
@@ -1968,10 +2009,12 @@ function HealthCenter({
           <p className="text-xs text-[#748178]">
             依最新快照、行情、匯率、貸款與期貨資料即時計算。
           </p>
-          <button className="secondary" onClick={onUpdate}>
-            <RefreshCw size={14} />
-            更新財務資料
-          </button>
+          {onUpdate && (
+            <button className="secondary" onClick={onUpdate}>
+              <RefreshCw size={14} />
+              更新財務資料
+            </button>
+          )}
         </div>
         {health.findings.length === 0 ? (
           <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#edf7ef] px-4 py-4 text-sm text-[#34704f]">

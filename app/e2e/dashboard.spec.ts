@@ -37,6 +37,22 @@ test("管理員可開啟使用者審核與唯讀範例頁", async ({ page }) => 
   await expect(page.getByRole("button", { name: "新增快照" })).toHaveCount(0);
 });
 
+test("使用者審核頁會沿用主畫面的深色模式", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "切換為深色模式" }).click();
+  await page.goto("/admin/users");
+
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator(".admin-shell")).toHaveCSS(
+    "background-color",
+    "rgb(14, 21, 17)",
+  );
+  await expect(page.locator(".approval-panel").first()).toHaveCSS(
+    "background-color",
+    "rgb(23, 33, 27)",
+  );
+});
+
 test("深色模式可切換並保留使用者偏好", async ({ page }) => {
   await page.goto("/");
 

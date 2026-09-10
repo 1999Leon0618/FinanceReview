@@ -3281,6 +3281,65 @@ html.dark .approval-review textarea {
   background: #17231c;
 }
 
+html.dark .admin-shell {
+  color: var(--foreground);
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(89, 143, 105, 0.16),
+      transparent 32rem
+    ),
+    var(--background);
+}
+
+html.dark .admin-title p:last-child,
+html.dark .approval-identity span,
+html.dark .approval-empty {
+  color: var(--muted);
+}
+
+html.dark .approval-panel {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: 0 0.75rem 2.5rem rgba(0, 0, 0, 0.2);
+}
+
+html.dark .approval-heading > span {
+  color: #b7c8bd;
+  background: #223229;
+}
+
+html.dark .approval-row {
+  border-color: var(--line);
+  background: #141e18;
+}
+
+html.dark .approval-reason {
+  color: #c5d2ca;
+  background: #1c2a22;
+}
+
+html.dark .approval-status.pending {
+  color: #f0c97b;
+  background: #3a2d16;
+}
+
+html.dark .approval-status.approved {
+  color: #9cddb3;
+  background: #183524;
+}
+
+html.dark .approval-status.rejected {
+  color: #efaaaa;
+  background: #3a1d1d;
+}
+
+html.dark .approval-actions .danger {
+  color: #efaaaa;
+  border-color: #683c3c;
+  background: #2b1b1b;
+}
+
 html.dark .demo-notice {
   color: #bce3c8;
   border-color: #365c43;

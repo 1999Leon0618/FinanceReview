@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -155,8 +162,19 @@ const shortDate = (value: string) =>
 const hiddenValue = "••••••";
 const dashboardRangeStorageKey = "finance-review-dashboard-range";
 const sidebarHiddenStorageKey = "finance-review-sidebar-hidden";
+const themeStorageKey = "finance-review-theme";
 const privateValue = (hidden: boolean, value: string) =>
   hidden ? hiddenValue : value;
+
+const applySavedTheme = () => {
+  const savedTheme = localStorage.getItem(themeStorageKey);
+  const nextDarkMode =
+    savedTheme === "dark" ||
+    (!savedTheme && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", nextDarkMode);
+  document.documentElement.style.colorScheme = nextDarkMode ? "dark" : "light";
+  return nextDarkMode;
+};
 
 export default function FinanceDashboard({
   initialData,
@@ -261,11 +279,14 @@ export default function FinanceDashboard({
     });
   };
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDarkMode(document.documentElement.classList.contains("dark")),
-      0,
-    );
+  useLayoutEffect(() => {
+    let nextDarkMode: boolean;
+    try {
+      nextDarkMode = applySavedTheme();
+    } catch {
+      nextDarkMode = document.documentElement.classList.contains("dark");
+    }
+    const timer = window.setTimeout(() => setDarkMode(nextDarkMode), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -275,10 +296,7 @@ export default function FinanceDashboard({
     document.documentElement.style.colorScheme = nextDarkMode
       ? "dark"
       : "light";
-    localStorage.setItem(
-      "finance-review-theme",
-      nextDarkMode ? "dark" : "light",
-    );
+    localStorage.setItem(themeStorageKey, nextDarkMode ? "dark" : "light");
     setDarkMode(nextDarkMode);
   };
 

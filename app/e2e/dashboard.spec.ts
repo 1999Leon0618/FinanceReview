@@ -60,6 +60,29 @@ test("深色模式可切換並保留使用者偏好", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("頁首初始化未還原偏好時仍會恢復深色模式", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "切換為深色模式" }).click();
+
+  await page.addInitScript(() => {
+    const originalGetItem = Storage.prototype.getItem;
+    let skippedThemeRead = false;
+    Storage.prototype.getItem = function (key) {
+      if (key === "finance-review-theme" && !skippedThemeRead) {
+        skippedThemeRead = true;
+        return "light";
+      }
+      return originalGetItem.call(this, key);
+    };
+  });
+  await page.reload();
+
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(
+    page.getByRole("button", { name: "切換為淺色模式" }),
+  ).toBeVisible();
+});
+
 test("電腦版左側欄可隱藏並保留偏好", async ({ page }) => {
   await page.goto("/");
 

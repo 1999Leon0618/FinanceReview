@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
+
+const themeInitScript = `(function(){try{var t=localStorage.getItem('finance-review-theme');var d=t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}})()`;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://finance.hsun.dev"),
@@ -21,12 +22,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-Hant-TW" suppressHydrationWarning>
-      <body>
-        {children}
-        <Script id="theme-init" strategy="beforeInteractive">
-          {`(function(){try{var t=localStorage.getItem('finance-review-theme');var d=t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}})()`}
-        </Script>
-      </body>
+      <head>
+        <script
+          id="theme-init"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }

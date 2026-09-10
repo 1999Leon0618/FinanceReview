@@ -573,19 +573,6 @@ export default function FinanceDashboard({
     <main
       className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""}`}
     >
-      <button
-        aria-label={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
-        aria-pressed={sidebarHidden}
-        title={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
-        className="sidebar-toggle"
-        onClick={toggleSidebar}
-      >
-        {sidebarHidden ? (
-          <PanelLeftOpen size={16} />
-        ) : (
-          <PanelLeftClose size={16} />
-        )}
-      </button>
       <aside className="dashboard-sidebar">
         <div className="brand-lockup">
           <div className="brand-mark">
@@ -666,13 +653,28 @@ export default function FinanceDashboard({
 
       <div className="dashboard-main">
         <header className="topbar">
-          <div className="mobile-brand">
-            <div className="brand-mark">
-              <CircleDollarSign size={19} />
+          <div className="topbar-leading">
+            <button
+              aria-label={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
+              aria-pressed={sidebarHidden}
+              title={sidebarHidden ? "顯示左側欄" : "隱藏左側欄"}
+              className="sidebar-toggle"
+              onClick={toggleSidebar}
+            >
+              {sidebarHidden ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
+            </button>
+            <div className="mobile-brand">
+              <div className="brand-mark">
+                <CircleDollarSign size={19} />
+              </div>
+              <span>FinanceReview</span>
             </div>
-            <span>FinanceReview</span>
+            <p className="topbar-location">{pageMeta.location}</p>
           </div>
-          <p className="topbar-location">{pageMeta.location}</p>
           <div className="flex items-center gap-2.5">
             <button
               className="secondary display-order-entry"

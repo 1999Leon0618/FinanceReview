@@ -52,19 +52,46 @@ test("電腦版左側欄可隱藏並保留偏好", async ({ page }) => {
   await page.goto("/");
 
   const sidebar = page.locator(".dashboard-sidebar");
-  const toggle = page.getByRole("button", { name: "隱藏左側欄" });
+  const topbar = page.locator(".topbar");
+  const toggle = topbar.getByRole("button", { name: "隱藏左側欄" });
   await expect(sidebar).toBeVisible();
-  await expect(toggle).toHaveCSS("left", "16px");
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveCSS("position", "static");
   await toggle.click();
   await expect(sidebar).toBeHidden();
-  const reopen = page.getByRole("button", { name: "顯示左側欄" });
+  const reopen = topbar.getByRole("button", { name: "顯示左側欄" });
   await expect(reopen).toBeVisible();
-  await expect(reopen).toHaveCSS("left", "16px");
+  await expect(reopen).toHaveCSS("position", "static");
 
   await page.reload();
   await expect(sidebar).toBeHidden();
   await reopen.click();
   await expect(sidebar).toBeVisible();
+});
+
+test("手機橫向模式的匯入與匯出圖示維持置中", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+
+  for (const accessibleName of ["匯出資料", "匯入資料"]) {
+    const control = page.getByRole(
+      accessibleName === "匯出資料" ? "link" : "button",
+      { name: accessibleName },
+    );
+    const icon = control.locator("svg");
+    const controlBox = await control.boundingBox();
+    const iconBox = await icon.boundingBox();
+
+    expect(controlBox).not.toBeNull();
+    expect(iconBox).not.toBeNull();
+    expect(
+      Math.abs(
+        controlBox!.x +
+          controlBox!.width / 2 -
+          (iconBox!.x + iconBox!.width / 2),
+      ),
+    ).toBeLessThan(1);
+  }
 });
 
 test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) => {

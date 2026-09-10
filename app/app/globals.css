@@ -1023,42 +1023,37 @@ label {
 }
 
 .sidebar-toggle {
-  position: fixed;
-  z-index: 50;
-  top: 4.75rem;
-  left: 1rem;
   display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0.7rem;
-  background: #263a30;
-  color: rgba(255, 255, 255, 0.68);
-  box-shadow: 0 8px 24px rgba(7, 22, 14, 0.18);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  color: var(--muted);
   transition:
-    top 180ms ease,
+    border-color 150ms ease,
     background 150ms ease,
     color 150ms ease;
 }
 
 .sidebar-toggle:hover {
-  background: #31483b;
-  color: #e8f8b4;
+  border-color: #bfcac2;
+  background: #f4f7f4;
+  color: var(--brand);
 }
 
 .sidebar-toggle:focus-visible {
-  outline: 3px solid rgba(216, 244, 124, 0.2);
+  outline: 3px solid rgba(82, 113, 95, 0.18);
   outline-offset: 2px;
 }
 
-.dashboard-shell.sidebar-hidden .sidebar-toggle {
-  left: 1rem;
-  top: 1.15rem;
-}
-
-.dashboard-shell.sidebar-hidden .topbar {
-  padding-left: 4.25rem;
+.topbar-leading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .dashboard-sidebar {
@@ -2260,9 +2255,12 @@ label {
     display: none;
   }
 
-  .mobile-brand,
-  .mobile-tool {
+  .mobile-brand {
     display: flex;
+  }
+
+  .mobile-tool {
+    display: grid;
   }
 
   .mobile-page-nav {
@@ -2410,7 +2408,8 @@ html.dark .account-detail-list > div {
 }
 
 html.dark .secondary:hover,
-html.dark .icon-button:hover {
+html.dark .icon-button:hover,
+html.dark .sidebar-toggle:hover {
   border-color: #52685a;
   background: #223128;
 }

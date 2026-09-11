@@ -34,7 +34,7 @@ test("可建立三種研究報告並以有效報告完成待辦", async ({ page 
   await expect(page.getByRole("heading", { name: title })).toBeVisible();
   await expect(page.getByText("今日無相關內容")).toBeVisible();
 
-  await page.getByRole("button", { name: "待辦", exact: true }).click();
+  await page.getByRole("button", { name: /研究待辦/ }).click();
   await page.getByPlaceholder("要查證的事件或研究事項").fill(todoTitle);
   await page.getByRole("button", { name: "新增待辦" }).click();
   const todo = page.getByRole("article").filter({ hasText: todoTitle });

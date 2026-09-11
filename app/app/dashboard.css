@@ -197,6 +197,556 @@ html.dark .sidebar-nav a.active {
   color: #1b382b;
 }
 
+.research-workspace {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.research-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.research-tabs > button {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 0.9rem 1rem;
+  color: var(--foreground);
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.research-tabs > button:hover {
+  border-color: #91a68e;
+  transform: translateY(-1px);
+}
+
+.research-tabs > button > svg {
+  flex: 0 0 auto;
+  color: #6d7c73;
+}
+
+.research-tabs > button > span {
+  display: grid;
+  min-width: 0;
+}
+
+.research-tabs strong {
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.research-tabs small {
+  overflow: hidden;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-tabs > button.active {
+  border-color: #7c9a62;
+  background: #e8f2cf;
+  color: #1d392c;
+}
+
+.research-tabs > button.active > svg,
+.research-tabs > button.active small {
+  color: #45623e;
+}
+
+.research-market-workspace {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.research-market-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 2rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.research-market-overview h2 {
+  margin-top: 0.35rem;
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  font-weight: 780;
+  letter-spacing: -0.025em;
+}
+
+.research-market-overview > div:first-child > p:last-child {
+  max-width: 36rem;
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.research-market-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 0.6rem;
+}
+
+.research-market-metrics > div {
+  min-width: 96px;
+  border-left: 1px solid var(--line);
+  padding: 0.15rem 1rem;
+}
+
+.research-market-metrics span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.research-market-metrics strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.research-add-panel {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.6fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 1rem;
+}
+
+.research-add-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.research-add-copy strong {
+  font-size: 0.8rem;
+}
+
+.research-add-copy span {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.research-add-form {
+  display: grid;
+  grid-template-columns: 110px minmax(150px, 1fr) auto auto;
+  gap: 0.6rem;
+}
+
+.research-add-form .field,
+.research-add-form button {
+  height: 42px;
+}
+
+.research-symbol-input {
+  min-width: 0;
+}
+
+.research-chart-panel {
+  overflow: hidden;
+  border: 1px solid #9aae93;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 16px 36px rgba(28, 54, 42, 0.08);
+}
+
+.research-chart-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 1rem 1.2rem;
+}
+
+.research-chart-panel > header p {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.research-chart-panel > header h3 {
+  margin-top: 0.2rem;
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.research-chart-panel .research-kline {
+  padding: 0.9rem 1rem 0.6rem;
+}
+
+.research-chart-actions,
+.research-chart-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.research-chart-actions > div {
+  border-radius: 10px;
+  background: #eef2ed;
+  padding: 0.25rem;
+}
+
+.research-chart-actions > div button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0.42rem 0.6rem;
+  color: #647169;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.research-chart-actions > div button.active {
+  background: #fff;
+  color: #234535;
+  box-shadow: 0 2px 8px rgba(20, 43, 32, 0.1);
+}
+
+.research-chart-loading {
+  display: flex;
+  min-height: 350px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.research-list-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.research-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.research-filter-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.research-filter-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 0.55rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.research-filter-tabs button.active {
+  background: #e8f2cf;
+  color: #2e513e;
+}
+
+.research-filter-tabs span {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(80, 102, 91, 0.1);
+  font-size: 0.62rem;
+}
+
+.research-watch-search {
+  display: flex;
+  width: min(100%, 260px);
+  height: 42px;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0 0.75rem;
+  color: var(--muted);
+}
+
+.research-watch-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0.65rem 0;
+  color: var(--foreground);
+  font-size: 0.75rem;
+}
+
+.research-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.research-quote-card {
+  display: flex;
+  min-width: 0;
+  min-height: 210px;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+  padding: 1rem;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.research-quote-card:hover {
+  border-color: #9bad9e;
+  box-shadow: 0 10px 24px rgba(24, 48, 37, 0.08);
+  transform: translateY(-1px);
+}
+
+.research-quote-card.selected {
+  border-color: #779765;
+  box-shadow: inset 0 0 0 1px #779765;
+}
+
+.research-quote-card.disabled {
+  opacity: 0.58;
+}
+
+.research-quote-market {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.research-quote-market span {
+  border-radius: 999px;
+  background: #eef2ed;
+  padding: 0.15rem 0.4rem;
+  letter-spacing: 0;
+}
+
+.research-quote-card h3 {
+  margin-top: 0.45rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.research-quote-name {
+  overflow: hidden;
+  max-width: 190px;
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-quote-status {
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.research-quote-status.fresh {
+  background: #e2f4e8;
+  color: #257147;
+}
+
+.research-quote-status.stale,
+.research-quote-status.missing {
+  background: #fff0d8;
+  color: #9a5b19;
+}
+
+.research-quote-value {
+  margin-top: 1rem;
+}
+
+.research-quote-value > p {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.research-quote-value small {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.research-quote-value > span {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.research-quote-value > span b {
+  border-radius: 5px;
+  padding: 0.15rem 0.35rem;
+  color: #fff;
+  font-size: 0.62rem;
+}
+
+.research-quote-positive {
+  color: #bc3d35;
+}
+
+.research-quote-positive b {
+  background: #bc3d35;
+}
+
+.research-quote-negative {
+  color: #16815f;
+}
+
+.research-quote-negative b {
+  background: #16815f;
+}
+
+.research-quote-flat {
+  color: var(--muted);
+}
+
+.research-quote-flat b {
+  background: #6f7e75;
+}
+
+.research-quote-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 0.7rem;
+}
+
+.research-quote-footer time {
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.research-quote-footer > div {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.research-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0.38rem 0.45rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.research-card-action:hover,
+.research-card-action.active {
+  background: #edf3e5;
+  color: #365a43;
+}
+
+.research-empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  padding: 3rem;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+html.dark .research-tabs > button,
+html.dark .research-add-panel,
+html.dark .research-chart-panel,
+html.dark .research-watch-search,
+html.dark .research-quote-card {
+  background: #12231c;
+}
+
+html.dark .research-tabs > button.active {
+  border-color: #9eba78;
+  background: #263b2b;
+  color: #f0f7e9;
+}
+
+html.dark .research-tabs > button.active > svg,
+html.dark .research-tabs > button.active small {
+  color: #cce39c;
+}
+
+html.dark .research-chart-actions > div,
+html.dark .research-quote-market span {
+  background: #1c3027;
+}
+
+html.dark .research-chart-actions > div button.active {
+  background: #36513f;
+  color: #f3f8f4;
+}
+
+html.dark .research-filter-tabs button.active,
+html.dark .research-card-action:hover,
+html.dark .research-card-action.active {
+  background: #294232;
+  color: #dff1bd;
+}
+
+html.dark .research-quote-card:hover,
+html.dark .research-quote-card.selected {
+  border-color: #8ca875;
+  box-shadow: inset 0 0 0 1px #8ca875;
+}
+
+html.dark .research-quote-status.fresh {
+  background: #254634;
+  color: #a8e1ba;
+}
+
+html.dark .research-quote-status.stale,
+html.dark .research-quote-status.missing {
+  background: #4a3822;
+  color: #f1c98b;
+}
+
 .research-kline .recharts-cartesian-axis-tick-value {
   fill: #526159;
   font-weight: 600;
@@ -326,6 +876,12 @@ html.dark .page-intro .page-description {
   .workspace-shortcuts a {
     padding: 1rem;
   }
+  .research-quote-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .research-add-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
@@ -356,6 +912,51 @@ html.dark .page-intro .page-description {
   }
   .page-intro .page-description {
     font-size: 0.8rem;
+  }
+  .research-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .research-tabs > button {
+    padding: 0.75rem;
+  }
+  .research-market-overview {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 1rem;
+  }
+  .research-market-metrics {
+    width: 100%;
+  }
+  .research-market-metrics > div {
+    border: 0;
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 0.75rem;
+  }
+  .research-add-form {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .research-add-form > button {
+    justify-content: center;
+  }
+  .research-list-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .research-watch-search {
+    width: 100%;
+  }
+  .research-chart-panel > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .research-chart-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  html.dark .research-market-metrics > div {
+    background: #12231c;
   }
   .summary-grid {
     margin-top: 1.5rem;
@@ -394,6 +995,27 @@ html.dark .page-intro .page-description {
     padding-inline: 0.4rem;
     font-size: 0.73rem;
     border-radius: 0.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .research-quote-grid {
+    grid-template-columns: 1fr;
+  }
+  .research-add-form {
+    grid-template-columns: 1fr;
+  }
+  .research-symbol-input {
+    grid-column: auto;
+  }
+  .research-market-metrics > div {
+    min-width: 0;
+  }
+  .research-market-metrics > div {
+    padding: 0.6rem;
+  }
+  .research-market-metrics strong {
+    font-size: 1.15rem;
   }
 }
 

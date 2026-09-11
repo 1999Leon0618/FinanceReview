@@ -5,6 +5,7 @@ import {
   pickSitcaFundQuote,
   resolveAccountQuotes,
   resolveSnapshotFxRates,
+  yahooCandleSymbol,
   yahooProviderSymbol,
 } from "@/lib/quotes";
 
@@ -17,6 +18,19 @@ describe("Yahoo 美股代碼", () => {
 
   it("優先採用明確設定的供應商代碼", () => {
     expect(yahooProviderSymbol("BRK.B", "BRK-B")).toBe("BRK-B");
+  });
+});
+
+describe("Yahoo K 線代碼", () => {
+  it("為上市與上櫃代碼補上正確市場後綴", () => {
+    expect(yahooCandleSymbol("TWSE", "0050", "0050")).toBe("0050.TW");
+    expect(yahooCandleSymbol("TPEX", "6488", "6488")).toBe("6488.TWO");
+  });
+
+  it("避免重複後綴並保留美股代碼正規化", () => {
+    expect(yahooCandleSymbol("TWSE", "0050", "0050.TW")).toBe("0050.TW");
+    expect(yahooCandleSymbol("TPEX", "6488", "6488.TW")).toBe("6488.TWO");
+    expect(yahooCandleSymbol("US", "BRK.B", "BRK.B")).toBe("BRK-B");
   });
 });
 

@@ -435,6 +435,17 @@ export function yahooProviderSymbol(symbol: string, providerSymbol?: string) {
   return normalizedSymbol.replaceAll(".", "-");
 }
 
+export function yahooCandleSymbol(
+  market: Extract<Market, "TWSE" | "TPEX" | "US">,
+  symbol: string,
+  providerSymbol?: string,
+) {
+  if (market === "US") return yahooProviderSymbol(symbol, providerSymbol);
+  const raw = (providerSymbol?.trim() || symbol.trim()).toUpperCase();
+  const base = raw.replace(/\.(?:TW|TWO)$/i, "");
+  return `${base}.${market === "TWSE" ? "TW" : "TWO"}`;
+}
+
 async function saveQuote(market: Market, symbol: string, quote: Quote) {
   const db = await getDatabase();
   await db
@@ -626,10 +637,7 @@ export async function fetchMarketCandles(
   providerSymbol: string,
   months: 1 | 3 | 6 | 12,
 ) {
-  const target =
-    market === "US"
-      ? yahooProviderSymbol(symbol, providerSymbol)
-      : providerSymbol || `${symbol}.${market === "TWSE" ? "TW" : "TWO"}`;
+  const target = yahooCandleSymbol(market, symbol, providerSymbol);
   const period1 = new Date();
   period1.setUTCMonth(period1.getUTCMonth() - months);
   const result = await yahoo.chart(target, {

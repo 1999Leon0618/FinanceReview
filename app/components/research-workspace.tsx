@@ -322,6 +322,7 @@ function WatchlistPanel({
 
   const showKline = async (item: WatchlistItem) => {
     if (expanded === item.id) return setExpanded(null);
+    setError("");
     setExpanded(item.id);
     if (candles[item.id]) return;
     try {
@@ -330,6 +331,7 @@ function WatchlistPanel({
       );
       setCandles((current) => ({ ...current, [item.id]: result.candles }));
     } catch (cause) {
+      setExpanded(null);
       setError(cause instanceof Error ? cause.message : "K 線取得失敗");
     }
   };

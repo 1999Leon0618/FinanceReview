@@ -36,6 +36,16 @@
   background: var(--background);
   border-bottom-color: var(--line);
 }
+.topbar-leading {
+  flex: 1;
+}
+.topbar-actions {
+  flex-shrink: 0;
+}
+.topbar > .primary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .dashboard-content {
   width: min(100%, 1440px);
   padding: 2.5rem clamp(1.25rem, 3.2vw, 3.5rem) 5rem;
@@ -205,6 +215,45 @@ html.dark .page-intro .page-description {
 }
 
 @media (max-width: 700px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 40px 44px;
+    height: 116px;
+    gap: 8px;
+    padding: 12px;
+  }
+  .topbar-leading {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .mobile-brand > span {
+    display: inline;
+  }
+  .topbar > .primary {
+    grid-column: 2;
+    grid-row: 1;
+    height: 40px;
+  }
+  .topbar-actions {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+    min-width: 0;
+  }
+  .topbar-actions > .icon-button,
+  .topbar-actions > .display-order-entry {
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    padding: 0;
+  }
+  .topbar-actions > .display-order-entry span {
+    display: none;
+  }
   .dashboard-content {
     padding: 1.75rem 1rem 3rem;
   }
@@ -245,6 +294,7 @@ html.dark .page-intro .page-description {
     border-top: 1px solid var(--line);
   }
   .mobile-page-nav {
+    top: 116px;
     gap: 0.15rem;
     padding-inline: 0.6rem;
   }

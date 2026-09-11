@@ -724,7 +724,7 @@ export default function FinanceDashboard({
             </div>
             <p className="topbar-location">{pageMeta.location}</p>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="topbar-actions flex items-center gap-2.5">
             {isAdmin && !demoMode && (
               <Link
                 aria-label="使用者審核"
@@ -793,17 +793,17 @@ export default function FinanceDashboard({
               className="hidden"
               onChange={selectImportFile}
             />
-            {demoMode ? (
-              <Link className="primary demo-top-return" href={demoReturnHref}>
-                <ArrowLeft size={15} /> 返回申請
-              </Link>
-            ) : (
-              <button className="primary" onClick={() => setEditor(true)}>
-                <Plus size={16} />
-                新增快照
-              </button>
-            )}
           </div>
+          {demoMode ? (
+            <Link className="primary demo-top-return" href={demoReturnHref}>
+              <ArrowLeft size={15} /> 返回申請
+            </Link>
+          ) : (
+            <button className="primary" onClick={() => setEditor(true)}>
+              <Plus size={16} />
+              新增快照
+            </button>
+          )}
         </header>
 
         <nav className="mobile-page-nav" aria-label="手機主要導覽">

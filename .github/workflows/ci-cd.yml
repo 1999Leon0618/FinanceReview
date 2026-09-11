@@ -36,8 +36,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npm run check
-      - name: 安裝 Chromium 測試環境
-        run: npx playwright install --with-deps chromium
+      - name: 安裝 Chromium 與手機 WebKit 測試環境
+        run: npx playwright install --with-deps chromium webkit
       - name: 執行端對端功能驗證
         run: npm run test:e2e
       - name: 保存失敗的介面測試追蹤

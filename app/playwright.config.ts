@@ -13,7 +13,15 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   use: { baseURL: "http://127.0.0.1:3100", trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "mobile-webkit",
+      testMatch: "responsive-ui.spec.ts",
+      grep: /完整管理員工具列/,
+      use: { ...devices["iPhone 13"] },
+    },
+  ],
   webServer: {
     command: "npm run dev -- --port 3100",
     url: "http://127.0.0.1:3100",

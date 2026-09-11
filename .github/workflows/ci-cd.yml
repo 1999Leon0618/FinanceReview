@@ -40,6 +40,13 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: 執行端對端功能驗證
         run: npm run test:e2e
+      - name: 保存失敗的介面測試追蹤
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-traces
+          path: app/test-results/
+          retention-days: 7
       - run: npm run check:workers
 
   deploy-production:

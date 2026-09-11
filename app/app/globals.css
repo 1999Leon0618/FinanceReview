@@ -169,11 +169,11 @@
 }
 
 :root {
-  --background: #f3f4f1;
+  --background: #f7f7f2;
   --foreground: #18231d;
   --surface: #ffffff;
-  --line: #e2e6e1;
-  --muted: #748078;
+  --line: #e3e5dc;
+  --muted: #647369;
   --brand: #1b382b;
   --accent: #d8f07a;
   color-scheme: light;

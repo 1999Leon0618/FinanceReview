@@ -1,0 +1,269 @@
+/* Shared dashboard visual system. Loaded after the base and theme styles. */
+.dashboard-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+
+.dashboard-sidebar {
+  padding: 2rem 1rem 1.25rem;
+  background: #152c24;
+  border-right: 1px solid #ffffff0d;
+}
+
+.brand-lockup {
+  padding-inline: 0.5rem;
+}
+.brand-mark {
+  border-radius: 50%;
+}
+.sidebar-nav {
+  gap: 0.5rem;
+  margin-top: 3.5rem;
+}
+.sidebar-nav a {
+  padding: 0.9rem 1rem;
+  color: #bdccc3;
+  border-radius: 0.6rem;
+}
+.sidebar-nav a.active {
+  background: #d8f07a;
+  color: #1b382b;
+  border-color: #d8f07a;
+}
+.privacy-note {
+  line-height: 1.7;
+}
+.topbar {
+  background: var(--background);
+  border-bottom-color: var(--line);
+}
+.dashboard-content {
+  width: min(100%, 1440px);
+  padding: 2.5rem clamp(1.25rem, 3.2vw, 3.5rem) 5rem;
+}
+.page-intro {
+  align-items: center;
+}
+.page-intro .eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+.page-intro h1 {
+  margin-top: 0.6rem;
+  font-size: clamp(2rem, 3vw, 2.75rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+}
+.page-intro .page-description {
+  margin-top: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.page-intro > div > p:last-child {
+  margin-top: 0.75rem;
+  font-size: 0.68rem;
+}
+.summary-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+.net-worth-card {
+  min-height: 390px;
+  padding: 2rem 2rem 1rem;
+  background: #173c30;
+  border-radius: 1.25rem;
+  box-shadow: none;
+}
+.net-worth-orb {
+  width: 26rem;
+  height: 26rem;
+  border-width: 1px;
+  right: -3rem;
+  top: -13rem;
+}
+.net-worth-chart {
+  min-height: 170px;
+}
+.overview-stack {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: none;
+  gap: 1.25rem;
+}
+.overview-card {
+  padding: 1.4rem;
+  border-radius: 1rem;
+  box-shadow: none;
+}
+.overview-card:nth-child(2) {
+  border-top: 3px solid #c9b58d;
+}
+.overview-card:nth-child(1) {
+  border-top: 3px solid #789c85;
+}
+.overview-card:nth-child(3) {
+  border-top: 3px solid #bbc88e;
+}
+.account-card,
+.holdings-panel,
+.history-panel {
+  border-radius: 1rem;
+  box-shadow: none;
+}
+.account-card-button:hover {
+  border-color: #91a68e;
+  box-shadow: 0 6px 20px #19392c09;
+}
+.section-heading h2 {
+  font-size: 1.3rem;
+  font-weight: 750;
+}
+.section-heading .eyebrow {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+}
+.content-section {
+  margin-top: 2.5rem;
+}
+.workspace-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+.workspace-shortcuts a {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 1rem 1.25rem;
+  color: var(--foreground);
+}
+.workspace-shortcuts a:hover {
+  background: var(--surface);
+  border-color: #91a68e;
+}
+.workspace-shortcuts a > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.workspace-shortcuts a > svg:last-child {
+  margin-left: auto;
+}
+.workspace-shortcuts span {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+.workspace-shortcuts small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.skip-to-content {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--foreground);
+  transform: translateY(-200%);
+}
+.skip-to-content:focus {
+  transform: translateY(0);
+}
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #76994c;
+  outline-offset: 4px;
+}
+html.dark .net-worth-card {
+  background: #17382c;
+}
+html.dark .sidebar-nav a.active {
+  background: #d8f07a;
+  color: #1b382b;
+}
+html.dark .page-intro .page-description {
+  color: var(--muted);
+}
+
+@media (max-width: 1100px) {
+  .overview-stack,
+  .workspace-shortcuts {
+    gap: 0.75rem;
+  }
+  .overview-card,
+  .workspace-shortcuts a {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .dashboard-content {
+    padding: 1.75rem 1rem 3rem;
+  }
+  .page-intro {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .page-intro h1 {
+    font-size: 2rem;
+  }
+  .page-intro .page-description {
+    font-size: 0.8rem;
+  }
+  .summary-grid {
+    margin-top: 1.5rem;
+  }
+  .net-worth-card {
+    min-height: 370px;
+    padding: 1.25rem 1rem 0.75rem;
+  }
+  .overview-stack {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .workspace-shortcuts {
+    grid-template-columns: 1fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+  .workspace-shortcuts a {
+    border: 0;
+    border-radius: 0;
+    padding: 1rem;
+  }
+  .workspace-shortcuts a + a {
+    border-top: 1px solid var(--line);
+  }
+  .mobile-page-nav {
+    gap: 0.15rem;
+    padding-inline: 0.6rem;
+  }
+  .mobile-page-nav a {
+    justify-content: center;
+    flex: 1;
+    padding-inline: 0.4rem;
+    font-size: 0.73rem;
+    border-radius: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}

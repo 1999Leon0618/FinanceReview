@@ -570,21 +570,25 @@ export default function FinanceDashboard({
       eyebrow: "OVERVIEW",
       title: "財務總覽",
       location: "個人資產中心",
+      description: "看見每一次累積，掌握資產的下一步。",
     },
     accounts: {
       eyebrow: "ACCOUNTS",
       title: "帳戶",
       location: "帳戶與現金",
+      description: "整理分散的帳戶，讓每一筆現金都有全貌。",
     },
     investments: {
       eyebrow: "INVESTMENTS",
       title: "投資",
       location: "投資持倉與績效",
+      description: "從持倉到績效，理解你的投資變化。",
     },
     "credit-cards": {
       eyebrow: "CREDIT CARDS",
       title: "信用卡",
       location: "信用卡帳單",
+      description: "集中管理帳單、繳款與額度，安心安排每個月。",
     },
   }[page];
   const primarySortSection: DisplaySection =
@@ -600,6 +604,9 @@ export default function FinanceDashboard({
     <main
       className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""} ${demoMode ? "dashboard-demo" : ""}`}
     >
+      <a className="skip-to-content" href="#top">
+        跳至主要內容
+      </a>
       <aside className="dashboard-sidebar">
         <div className="brand-lockup">
           <div className="brand-mark">
@@ -844,6 +851,7 @@ export default function FinanceDashboard({
             <div>
               <p className="eyebrow">{pageMeta.eyebrow}</p>
               <h1>{pageMeta.title}</h1>
+              <p className="page-description">{pageMeta.description}</p>
               <p>
                 {new Date().toLocaleDateString("zh-TW", { dateStyle: "full" })}
                 {latest && (
@@ -908,6 +916,35 @@ export default function FinanceDashboard({
                       />
                     </div>
                   </section>
+
+                  {!demoMode && (
+                    <nav
+                      className="workspace-shortcuts"
+                      aria-label="資產快捷導覽"
+                    >
+                      <Link href="/accounts">
+                        <Landmark size={19} />
+                        <span>
+                          帳戶與現金<small>查看各帳戶餘額</small>
+                        </span>
+                        <ChevronRight size={16} />
+                      </Link>
+                      <Link href="/investments">
+                        <TrendingUp size={19} />
+                        <span>
+                          投資持倉<small>追蹤標的與績效</small>
+                        </span>
+                        <ChevronRight size={16} />
+                      </Link>
+                      <Link href="/credit-cards">
+                        <CreditCard size={19} />
+                        <span>
+                          信用卡帳單<small>掌握繳款與額度</small>
+                        </span>
+                        <ChevronRight size={16} />
+                      </Link>
+                    </nav>
+                  )}
 
                   {latest.changeBreakdown.netWorthChangeTwd !== null && (
                     <ChangeBreakdownCard

@@ -199,6 +199,7 @@ const migrationNames = [
   "add_data_owners",
   "add_app_users",
   "add_user_application_details",
+  "add_investment_research",
 ] as const;
 
 function migrate(db: DatabaseSync) {

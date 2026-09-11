@@ -19,6 +19,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 - 排除外部投入與提領後估算投資績效、年化報酬與最大回撤，並和臺灣加權指數、SPY 或 VT 比較。
 - 啟動時顯示資料更新時效，並檢查總額、行情、匯率、貸款還款與期貨契約月份。
 - 透過 JSON 匯出／匯入備份，並可在畫面上暫時隱藏財務數字。
+- 提供私人「研究」工作區：追蹤台美股自選標的與 K 線，人工建立盤前簡報、盤中快報、盤後研究，保存來源、研究當下行情、修訂紀錄與關聯待辦。
 
 ## 啟動
 
@@ -161,7 +162,7 @@ sequenceDiagram
 
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 14。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 15。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 
@@ -203,24 +204,38 @@ erDiagram
 | `position_sales`                | 全部賣出的日期、數量、成交價、入帳帳戶、費稅、成本、淨入帳與已實現損益 |
 | `quote_cache`                   | 可重新取得的行情快取，不列入備份                                       |
 | `app_settings`                  | 基準幣別、預設圖表區間與行情提供者等設定                               |
+| `watchlist_items`               | 台美股自選標的、持有狀態、加入來源與追蹤開關                           |
+| `research_notes`                | 盤前簡報、盤中快報、盤後研究的目前版本與封存狀態                       |
+| `research_note_revisions`       | 每次儲存的研究內容、來源與行情證據版本                                 |
+| `research_note_sources`         | 來源標題、媒體、網址、發布／查閱時間與關聯標的                         |
+| `research_quote_snapshots`      | 研究儲存當下引用的 card／kline 行情快照                                |
+| `research_todos`                | 台美股研究事項、預定時間、完成狀態與關聯研究報告                       |
 
 刪除快照會受外鍵關係保護；快照內容使用 `ON DELETE CASCADE` 清理，主檔與持倉生命週期則多採 `RESTRICT`，避免歷史參照失效。建立快照、全部賣出與匯入備份等重要寫入在兩種資料庫都會原子提交，失敗時整批 rollback。
 
 ### API 一覽
 
-| Method          | Route                        | 用途                                 |
-| --------------- | ---------------------------- | ------------------------------------ |
-| `GET`           | `/api/dashboard`             | 最新快照、歷史、淨值趨勢與已售出部位 |
-| `GET`／`POST`   | `/api/snapshots`             | 列出或建立快照                       |
-| `GET`／`DELETE` | `/api/snapshots/:id`         | 讀取或刪除單一快照                   |
-| `POST`          | `/api/snapshot-proposals`    | 將自然語言轉成待確認提案             |
-| `POST`          | `/api/quotes/resolve`        | 解析確認表中的行情與匯率             |
-| `POST`／`PUT`   | `/api/quotes/refresh`        | 預覽全部行情更新／確認建立新快照     |
-| `POST`          | `/api/positions/:id/sell`    | 全部賣出並建立結果快照               |
-| `GET`           | `/api/trends/accounts/:id`   | 帳戶歷史走勢                         |
-| `GET`           | `/api/trends/securities/:id` | 標的數量、成本與市值走勢             |
-| `GET`           | `/api/performance`           | 投資績效、最大回撤與基準比較         |
-| `GET`／`POST`   | `/api/backup`                | 匯出或合併匯入 JSON 備份             |
+| Method                | Route                        | 用途                                 |
+| --------------------- | ---------------------------- | ------------------------------------ |
+| `GET`                 | `/api/dashboard`             | 最新快照、歷史、淨值趨勢與已售出部位 |
+| `GET`／`POST`         | `/api/snapshots`             | 列出或建立快照                       |
+| `GET`／`DELETE`       | `/api/snapshots/:id`         | 讀取或刪除單一快照                   |
+| `POST`                | `/api/snapshot-proposals`    | 將自然語言轉成待確認提案             |
+| `POST`                | `/api/quotes/resolve`        | 解析確認表中的行情與匯率             |
+| `POST`／`PUT`         | `/api/quotes/refresh`        | 預覽全部行情更新／確認建立新快照     |
+| `POST`                | `/api/positions/:id/sell`    | 全部賣出並建立結果快照               |
+| `GET`                 | `/api/trends/accounts/:id`   | 帳戶歷史走勢                         |
+| `GET`                 | `/api/trends/securities/:id` | 標的數量、成本與市值走勢             |
+| `GET`                 | `/api/performance`           | 投資績效、最大回撤與基準比較         |
+| `GET`／`POST`         | `/api/backup`                | 匯出或合併匯入 JSON 備份             |
+| `GET`／`POST`         | `/api/watchlist`             | 查詢或新增自選標的                   |
+| `PATCH`               | `/api/watchlist/:id`         | 啟用或停用自選追蹤                   |
+| `GET`                 | `/api/watchlist/:id/candles` | 取得自選標的 K 線                    |
+| `POST`                | `/api/watchlist/refresh`     | 更新自選行情快取                     |
+| `GET`／`POST`         | `/api/research-notes`        | 查詢或建立研究報告                   |
+| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`    | 讀取、修訂、封存或還原研究報告       |
+| `GET`／`POST`         | `/api/research-todos`        | 查詢或建立研究待辦                   |
+| `PATCH`               | `/api/research-todos/:id`    | 關聯報告、完成或重開研究待辦         |
 
 ## 資料位置與環境變數
 
@@ -288,13 +303,13 @@ npx playwright install chromium firefox webkit
 
 `npm run test:e2e` 會依序驗證以下環境，每組都使用獨立測試資料庫：
 
-| 測試環境 | 驗證範圍 |
-| --- | --- |
-| `chromium` | Chromium 引擎（Chrome、Edge 同系），完整功能流程與響應式版面 |
-| `firefox` | Firefox，完整功能流程與響應式版面 |
-| `webkit` | WebKit 引擎（Safari 同系），完整功能流程與響應式版面 |
-| `mobile-chromium` | Android Chrome 模擬，頁首、圖表、設定、備份與管理員入口 |
-| `mobile-webkit` | iPhone Safari 模擬，頁首、圖表、設定、備份與管理員入口 |
+| 測試環境          | 驗證範圍                                                     |
+| ----------------- | ------------------------------------------------------------ |
+| `chromium`        | Chromium 引擎（Chrome、Edge 同系），完整功能流程與響應式版面 |
+| `firefox`         | Firefox，完整功能流程與響應式版面                            |
+| `webkit`          | WebKit 引擎（Safari 同系），完整功能流程與響應式版面         |
+| `mobile-chromium` | Android Chrome 模擬，頁首、圖表、設定、備份與管理員入口      |
+| `mobile-webkit`   | iPhone Safari 模擬，頁首、圖表、設定、備份與管理員入口       |
 
 僅驗證指定環境可執行 `npm run test:e2e -- firefox`，也可一次指定多組。
 CI 會分開執行五組測試，全部通過後才允許正式部署，失敗追蹤依環境保存。

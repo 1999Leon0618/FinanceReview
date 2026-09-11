@@ -27,6 +27,7 @@ import {
   ArrowUpDown,
   Banknote,
   BellRing,
+  BookOpenText,
   Building2,
   Check,
   CheckCircle2,
@@ -57,6 +58,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import ResearchWorkspace from "@/components/research-workspace";
 import type { QuoteRefreshPreview } from "@/lib/quote-refresh";
 import {
   DisplayOrderEditor,
@@ -105,7 +107,12 @@ const SoldHistoryDialog = dynamic(() =>
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
 export type FinancePage =
-  "overview" | "accounts" | "investments" | "credit-cards" | "settings";
+  | "overview"
+  | "accounts"
+  | "investments"
+  | "credit-cards"
+  | "research"
+  | "settings";
 type DashboardNotification = {
   title: string;
   message: string;
@@ -597,6 +604,12 @@ export default function FinanceDashboard({
       location: "信用卡帳單",
       description: "集中管理帳單、繳款與額度，安心安排每個月。",
     },
+    research: {
+      eyebrow: "RESEARCH",
+      title: "投資研究",
+      location: "台美股研究工作區",
+      description: "以自選標的為核心，保存盤前、盤中與盤後研究。",
+    },
     settings: {
       eyebrow: "SETTINGS",
       title: "設定",
@@ -663,6 +676,13 @@ export default function FinanceDashboard({
           >
             <CreditCard size={17} />
             信用卡
+          </Link>
+          <Link
+            className={page === "research" ? "active" : ""}
+            href={demoMode ? "/demo" : "/research"}
+          >
+            <BookOpenText size={17} />
+            研究
           </Link>
           <Link href={demoMode ? "/demo#history" : "/#history"}>
             <History size={17} />
@@ -731,12 +751,12 @@ export default function FinanceDashboard({
             <Link className="primary demo-top-return" href={demoReturnHref}>
               <ArrowLeft size={15} /> 返回申請
             </Link>
-          ) : (
+          ) : page !== "research" ? (
             <button className="primary" onClick={() => setEditor(true)}>
               <Plus size={16} />
               新增快照
             </button>
-          )}
+          ) : null}
         </header>
 
         <nav className="mobile-page-nav" aria-label="手機主要導覽">
@@ -768,6 +788,13 @@ export default function FinanceDashboard({
             <CreditCard size={16} />
             信用卡
           </Link>
+          <Link
+            className={page === "research" ? "active" : ""}
+            href={demoMode ? "/demo" : "/research"}
+          >
+            <BookOpenText size={16} />
+            研究
+          </Link>
         </nav>
 
         <section id="top" className="dashboard-content" tabIndex={-1}>
@@ -796,10 +823,10 @@ export default function FinanceDashboard({
               </p>
             </div>
             <div className="page-intro-actions">
-              {page !== "settings" && latest && data && (
+              {page !== "settings" && page !== "research" && latest && data && (
                 <FreshnessBadge health={data.health} />
               )}
-              {page !== "settings" && !demoMode && (
+              {page !== "settings" && page !== "research" && !demoMode && (
                 <button
                   className="secondary"
                   aria-label="自訂排序"
@@ -813,7 +840,9 @@ export default function FinanceDashboard({
           </div>
 
           {error && <p className="notice error mt-6">{error}</p>}
-          {page === "settings" ? (
+          {page === "research" ? (
+            <ResearchWorkspace />
+          ) : page === "settings" ? (
             <div className="settings-sections">
               <section
                 className="settings-panel"

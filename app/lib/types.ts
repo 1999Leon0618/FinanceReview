@@ -385,3 +385,141 @@ export interface SnapshotProposal {
   warnings: string[];
   unsupportedReason: string | null;
 }
+
+export type ResearchMarketScope = "TW" | "US";
+export type ResearchNoteType = "premarket" | "intraday" | "postmarket";
+export type WatchlistOrigin = "holding" | "manual" | "report";
+export type WatchstockView = "card" | "kline";
+
+export interface MarketQuoteView {
+  price: string | null;
+  previousClose: string | null;
+  changeValue: string | null;
+  changePercent: string | null;
+  volume: string | null;
+  currency: string;
+  quoteAsOf: string | null;
+  source: QuoteSource | null;
+  status: QuoteStatus | "missing";
+  marketSession: string | null;
+  note: string | null;
+}
+
+export interface WatchlistItem {
+  id: string;
+  securityId: string;
+  market: Extract<Market, "TWSE" | "TPEX" | "US">;
+  symbol: string;
+  providerSymbol: string;
+  name: string;
+  securityType: Extract<SecurityType, "stock" | "etf">;
+  quoteCurrency: string;
+  origin: WatchlistOrigin;
+  enabled: boolean;
+  held: boolean;
+  quote: MarketQuoteView;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandlePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export type ResearchNoteBlock =
+  | {
+      id: string;
+      type: "metric-grid";
+      items: Array<{
+        label: string;
+        value: string;
+        detail?: string;
+        tone?: "neutral" | "positive" | "negative";
+      }>;
+    }
+  | {
+      id: string;
+      type: "callout";
+      label: string;
+      markdown: string;
+      tone?: "neutral" | "positive" | "negative";
+    }
+  | { id: string; type: "markdown"; markdown: string }
+  | {
+      id: string;
+      type: "watchstock";
+      watchlistItemId: string;
+      view?: WatchstockView;
+      noRelevantContent?: boolean;
+    };
+
+export interface ResearchNoteDocumentV1 {
+  schemaVersion: 1;
+  blocks: ResearchNoteBlock[];
+}
+
+export interface ResearchSource {
+  id: string;
+  noteId: string;
+  blockId: string | null;
+  watchlistItemId: string | null;
+  title: string;
+  publisher: string;
+  url: string;
+  publishedAt: string;
+  accessedAt: string;
+}
+
+export interface ResearchQuoteSnapshot extends MarketQuoteView {
+  id: string;
+  noteId: string;
+  blockId: string;
+  watchlistItemId: string;
+  view: WatchstockView;
+  market: Extract<Market, "TWSE" | "TPEX" | "US">;
+  symbol: string;
+  name: string;
+  candles: CandlePoint[];
+}
+
+export interface ResearchNote {
+  id: string;
+  marketScope: ResearchMarketScope;
+  noteType: ResearchNoteType;
+  reportDate: string;
+  tradingDate: string;
+  asOf: string;
+  title: string;
+  subtitle: string | null;
+  summary: string | null;
+  noRelevantContent: boolean;
+  document: ResearchNoteDocumentV1;
+  contentSchemaVersion: 1;
+  revision: number;
+  archivedAt: string | null;
+  sources: ResearchSource[];
+  quoteSnapshots: ResearchQuoteSnapshot[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResearchTodo {
+  id: string;
+  marketScope: ResearchMarketScope;
+  title: string;
+  details: string | null;
+  scheduledFor: string | null;
+  status: "open" | "completed";
+  requiresNote: boolean;
+  noteId: string | null;
+  watchlistItemIds: string[];
+  failureReason: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

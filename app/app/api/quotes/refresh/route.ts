@@ -3,6 +3,7 @@ import { apiError } from "@/lib/http";
 import { prepareQuoteRefresh } from "@/lib/quote-refresh";
 import { createSnapshot, getLatestSnapshot } from "@/lib/repository";
 import { snapshotCreateSchema } from "@/lib/validation";
+import { refreshWatchlist } from "@/lib/research-repository";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,18 @@ export async function POST() {
   try {
     const latest = await getLatestSnapshot();
     if (!latest) throw new Error("找不到可更新的最新快照");
-    return NextResponse.json(await prepareQuoteRefresh(latest));
+    const preview = await prepareQuoteRefresh(latest);
+    const held = new Set(
+      preview.accounts.flatMap((account) =>
+        account.positions.map(
+          (position) => `${position.market}:${position.symbol}`,
+        ),
+      ),
+    );
+    return NextResponse.json({
+      ...preview,
+      watchlist: await refreshWatchlist(held),
+    });
   } catch (error) {
     return apiError(error, 502);
   }

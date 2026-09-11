@@ -30,6 +30,13 @@ export interface QuoteRefreshPreview extends QuoteRefreshSummary {
   loans: LoanInput[];
   failures: QuoteRefreshFailure[];
   warnings: string[];
+  watchlist?: {
+    total: number;
+    fresh: number;
+    stale: number;
+    failures: Array<{ itemId: string; symbol: string; reason: string }>;
+    refreshedAt: string;
+  };
 }
 
 type QuoteRefreshDependencies = {

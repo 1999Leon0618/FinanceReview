@@ -196,6 +196,51 @@ html.dark .sidebar-nav a.active {
   background: #d8f07a;
   color: #1b382b;
 }
+
+.research-markdown {
+  line-height: 1.85;
+}
+
+.research-markdown h2 {
+  margin-top: 1.75rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.6rem;
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+
+.research-markdown p,
+.research-markdown ul,
+.research-markdown ol,
+.research-markdown table {
+  margin-top: 1rem;
+}
+
+.research-markdown ul,
+.research-markdown ol {
+  padding-left: 1.4rem;
+}
+
+.research-markdown ul {
+  list-style: disc;
+}
+.research-markdown ol {
+  list-style: decimal;
+}
+.research-markdown a {
+  color: #426f5c;
+  text-decoration: underline;
+}
+.research-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.research-markdown th,
+.research-markdown td {
+  border: 1px solid var(--line);
+  padding: 0.55rem;
+  text-align: left;
+}
 html.dark .page-intro .page-description {
   color: var(--muted);
 }

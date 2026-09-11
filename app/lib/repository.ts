@@ -1896,6 +1896,13 @@ const backupTables = [
   "snapshot_credit_card_accounts",
   "snapshot_cash_flows",
   "position_sales",
+  "watchlist_items",
+  "research_notes",
+  "research_note_revisions",
+  "research_note_sources",
+  "research_quote_snapshots",
+  "research_todos",
+  "research_todo_watchlist_items",
   "app_settings",
 ] as const;
 
@@ -2134,6 +2141,96 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "note",
       "created_at",
     ],
+    watchlist_items: [
+      "id",
+      "security_id",
+      "origin",
+      "is_enabled",
+      "first_seen_at",
+      "created_at",
+      "updated_at",
+    ],
+    research_notes: [
+      "id",
+      "market_scope",
+      "note_type",
+      "report_date",
+      "trading_date",
+      "as_of",
+      "title",
+      "subtitle",
+      "summary",
+      "no_relevant_content",
+      "content_json",
+      "content_schema_version",
+      "revision",
+      "archived_at",
+      "created_at",
+      "updated_at",
+    ],
+    research_note_revisions: [
+      "id",
+      "note_id",
+      "revision",
+      "title",
+      "subtitle",
+      "summary",
+      "no_relevant_content",
+      "content_json",
+      "content_schema_version",
+      "saved_at",
+    ],
+    research_note_sources: [
+      "id",
+      "note_id",
+      "revision",
+      "block_id",
+      "watchlist_item_id",
+      "title",
+      "publisher",
+      "url",
+      "published_at",
+      "accessed_at",
+      "created_at",
+    ],
+    research_quote_snapshots: [
+      "id",
+      "note_id",
+      "revision",
+      "block_id",
+      "watchlist_item_id",
+      "view_name",
+      "market",
+      "symbol",
+      "security_name",
+      "currency",
+      "price",
+      "previous_close",
+      "change_value",
+      "change_percent",
+      "volume",
+      "quote_as_of",
+      "quote_source",
+      "quote_status",
+      "market_session",
+      "candles_json",
+      "created_at",
+    ],
+    research_todos: [
+      "id",
+      "market_scope",
+      "title",
+      "details",
+      "scheduled_for",
+      "status",
+      "requires_note",
+      "note_id",
+      "failure_reason",
+      "completed_at",
+      "created_at",
+      "updated_at",
+    ],
+    research_todo_watchlist_items: ["id", "todo_id", "watchlist_item_id"],
     app_settings: ["key", "value_json", "updated_at"],
   };
 
@@ -2142,7 +2239,10 @@ const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
   securities: `securities item WHERE EXISTS (
     SELECT 1 FROM account_positions position
     JOIN accounts account ON account.id = position.account_id
-    WHERE position.security_id = item.id AND account.owner_key = ?
+    WHERE position.security_id = item.id AND account.owner_key = ?1
+  ) OR EXISTS (
+    SELECT 1 FROM watchlist_items watch
+    WHERE watch.security_id = item.id AND watch.owner_key = ?1
   )`,
   account_positions: `account_positions item JOIN accounts account ON account.id = item.account_id
     WHERE account.owner_key = ?`,
@@ -2178,6 +2278,17 @@ const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
   position_sales: `position_sales item
     JOIN snapshots snapshot ON snapshot.id = item.result_snapshot_id
     WHERE snapshot.owner_key = ?`,
+  watchlist_items: "watchlist_items item WHERE item.owner_key = ?",
+  research_notes: "research_notes item WHERE item.owner_key = ?",
+  research_note_revisions:
+    "research_note_revisions item WHERE item.owner_key = ?",
+  research_note_sources: "research_note_sources item WHERE item.owner_key = ?",
+  research_quote_snapshots:
+    "research_quote_snapshots item WHERE item.owner_key = ?",
+  research_todos: "research_todos item WHERE item.owner_key = ?",
+  research_todo_watchlist_items: `research_todo_watchlist_items item
+    JOIN research_todos todo ON todo.id = item.todo_id
+    WHERE todo.owner_key = ?`,
   app_settings: "app_settings item WHERE ? IS NOT NULL",
 };
 
@@ -2229,13 +2340,28 @@ const backupParents: Partial<
     ["result_snapshot_id", "snapshots"],
     ["settlement_account_id", "accounts", true],
   ],
+  watchlist_items: [["security_id", "securities"]],
+  research_note_revisions: [["note_id", "research_notes"]],
+  research_note_sources: [
+    ["note_id", "research_notes"],
+    ["watchlist_item_id", "watchlist_items", true],
+  ],
+  research_quote_snapshots: [
+    ["note_id", "research_notes"],
+    ["watchlist_item_id", "watchlist_items"],
+  ],
+  research_todos: [["note_id", "research_notes", true]],
+  research_todo_watchlist_items: [
+    ["todo_id", "research_todos"],
+    ["watchlist_item_id", "watchlist_items"],
+  ],
 };
 
 export async function exportBackup() {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     data: Object.fromEntries(
       await Promise.all(
@@ -2257,7 +2383,7 @@ export async function importBackup(payload: unknown) {
     schemaVersion?: number;
     data?: Record<string, Row[]>;
   };
-  if (![1, 2].includes(backup.schemaVersion ?? 0) || !backup.data)
+  if (![1, 2, 3].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
   const backupData = backup.data;
   return withTransaction(async (db) => {
@@ -2271,6 +2397,12 @@ export async function importBackup(payload: unknown) {
       "loans",
       "credit_card_accounts",
       "snapshots",
+      "watchlist_items",
+      "research_notes",
+      "research_note_revisions",
+      "research_note_sources",
+      "research_quote_snapshots",
+      "research_todos",
     ]);
     const existingIds = new Map<string, Set<string>>();
 

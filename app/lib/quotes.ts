@@ -12,12 +12,27 @@ import type {
 } from "./types";
 
 type JsonRow = Record<string, unknown>;
-type Quote = {
+export type Quote = {
   price: string;
   currency: string;
   quoteAsOf: string;
   source: QuoteSource;
   note?: string | null;
+  previousClose?: string | null;
+  changeValue?: string | null;
+  changePercent?: string | null;
+  volume?: string | null;
+  marketSession?: string | null;
+};
+
+export type ResolvedSecurityIdentity = {
+  market: Extract<Market, "TWSE" | "TPEX" | "US">;
+  symbol: string;
+  providerSymbol: string;
+  name: string;
+  securityType: "stock" | "etf";
+  quoteCurrency: string;
+  quote: Quote;
 };
 
 export type SitcaFundQuote = {
@@ -352,7 +367,31 @@ async function taiwanQuote(
   if (!price || Number(price) <= 0)
     throw new Error(`${market} 的 ${symbol} 沒有有效收盤價`);
   const date = value(row, ["Date", "TradeDate", "資料日期"]);
-  return { price, currency: "TWD", quoteAsOf: dateIso(date), source: market };
+  const previousClose = value(row, [
+    "PreviousClosingPrice",
+    "PreviousClose",
+    "昨日收盤價",
+  ]);
+  const changeValue = previousClose
+    ? String(Number(price) - Number(previousClose))
+    : value(row, ["Change", "ChangeAmount", "漲跌價差"]);
+  const changePercent =
+    previousClose && Number(previousClose) !== 0
+      ? String((Number(changeValue) / Number(previousClose)) * 100)
+      : value(row, ["ChangePercent", "漲跌幅"]);
+  return {
+    price,
+    currency: "TWD",
+    quoteAsOf: dateIso(date),
+    source: market,
+    previousClose: previousClose || null,
+    changeValue: changeValue || null,
+    changePercent: changePercent || null,
+    volume:
+      value(row, ["TradeVolume", "TradingShares", "成交股數", "成交量"]) ||
+      null,
+    marketSession: "regular",
+  };
 }
 
 async function yahooQuote(symbol: string): Promise<Quote> {
@@ -368,6 +407,23 @@ async function yahooQuote(symbol: string): Promise<Quote> {
     currency: quote.currency ?? "USD",
     quoteAsOf: dateIso(quote.regularMarketTime),
     source: "YAHOO",
+    previousClose:
+      quote.regularMarketPreviousClose == null
+        ? null
+        : String(quote.regularMarketPreviousClose),
+    changeValue:
+      quote.regularMarketChange == null
+        ? null
+        : String(quote.regularMarketChange),
+    changePercent:
+      quote.regularMarketChangePercent == null
+        ? null
+        : String(quote.regularMarketChangePercent),
+    volume:
+      quote.regularMarketVolume == null
+        ? null
+        : String(quote.regularMarketVolume),
+    marketSession: quote.marketState ?? null,
   };
 }
 
@@ -384,8 +440,9 @@ async function saveQuote(market: Market, symbol: string, quote: Quote) {
   await db
     .prepare(
       `INSERT OR IGNORE INTO quote_cache(
-    id, market, symbol, price, currency, quote_as_of, source, fetched_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, market, symbol, price, currency, quote_as_of, source, fetched_at,
+    previous_close, change_value, change_percent, volume, market_session
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       randomUUID(),
@@ -396,6 +453,11 @@ async function saveQuote(market: Market, symbol: string, quote: Quote) {
       quote.quoteAsOf,
       quote.source,
       new Date().toISOString(),
+      quote.previousClose ?? null,
+      quote.changeValue ?? null,
+      quote.changePercent ?? null,
+      quote.volume ?? null,
+      quote.marketSession ?? null,
     );
 }
 
@@ -407,7 +469,8 @@ async function lastQuote(
   const ownerKey = getDataOwner().key;
   const row = (await db
     .prepare(
-      `SELECT price, currency, quote_as_of, source FROM quote_cache
+      `SELECT price, currency, quote_as_of, source, previous_close,
+      change_value, change_percent, volume, market_session FROM quote_cache
     WHERE market = ? AND symbol = ? ORDER BY quote_as_of DESC, fetched_at DESC LIMIT 1`,
     )
     .get(market, symbol)) as JsonRow | undefined;
@@ -417,6 +480,14 @@ async function lastQuote(
       currency: String(row.currency),
       quoteAsOf: String(row.quote_as_of),
       source: String(row.source) as QuoteSource,
+      previousClose:
+        row.previous_close == null ? null : String(row.previous_close),
+      changeValue: row.change_value == null ? null : String(row.change_value),
+      changePercent:
+        row.change_percent == null ? null : String(row.change_percent),
+      volume: row.volume == null ? null : String(row.volume),
+      marketSession:
+        row.market_session == null ? null : String(row.market_session),
     };
   const snapshot = (await db
     .prepare(
@@ -494,6 +565,95 @@ export async function resolveQuote(
       note: `行情取得失敗，沿用 ${cached.quoteAsOf.slice(0, 10)} 的價格`,
     };
   }
+}
+
+export async function resolveSecurityIdentity(
+  market: Extract<Market, "TWSE" | "TPEX" | "US">,
+  symbol: string,
+  providerSymbol?: string,
+): Promise<ResolvedSecurityIdentity> {
+  const normalized = symbol.trim().toUpperCase();
+  if (!normalized) throw new Error("請輸入標的代碼");
+  if (market === "US") {
+    const resolvedProvider = yahooProviderSymbol(normalized, providerSymbol);
+    const result = await yahoo.quote(resolvedProvider);
+    if (!result?.regularMarketPrice) throw new Error(`US 找不到 ${normalized}`);
+    const quote = await yahooQuote(resolvedProvider);
+    const quoteType = String(result.quoteType ?? "").toUpperCase();
+    return {
+      market,
+      symbol: normalized,
+      providerSymbol: resolvedProvider,
+      name: result.longName ?? result.shortName ?? normalized,
+      securityType: quoteType === "ETF" ? "etf" : "stock",
+      quoteCurrency: quote.currency,
+      quote,
+    };
+  }
+
+  const rows = await taiwanMarketRows(market);
+  const row = rows.find(
+    (item) =>
+      value(item, ["Code", "SecuritiesCompanyCode", "證券代號", "股票代號"]) ===
+      normalized,
+  );
+  if (!row) throw new Error(`${market} 找不到 ${normalized}`);
+  const name = value(row, [
+    "Name",
+    "CompanyName",
+    "SecuritiesCompanyName",
+    "SecuritiesName",
+    "證券名稱",
+    "股票名稱",
+  ]);
+  const quote = await taiwanQuote(market, normalized);
+  return {
+    market,
+    symbol: normalized,
+    providerSymbol:
+      providerSymbol?.trim() ||
+      `${normalized}.${market === "TWSE" ? "TW" : "TWO"}`,
+    name: name || normalized,
+    securityType: /ETF|指數|債券|收益/i.test(name) ? "etf" : "stock",
+    quoteCurrency: "TWD",
+    quote,
+  };
+}
+
+export async function fetchMarketCandles(
+  market: Extract<Market, "TWSE" | "TPEX" | "US">,
+  symbol: string,
+  providerSymbol: string,
+  months: 1 | 3 | 6 | 12,
+) {
+  const target =
+    market === "US"
+      ? yahooProviderSymbol(symbol, providerSymbol)
+      : providerSymbol || `${symbol}.${market === "TWSE" ? "TW" : "TWO"}`;
+  const period1 = new Date();
+  period1.setUTCMonth(period1.getUTCMonth() - months);
+  const result = await yahoo.chart(target, {
+    period1,
+    period2: new Date(),
+    interval: "1d",
+    return: "array",
+  });
+  return result.quotes
+    .filter(
+      (item) =>
+        item.open != null &&
+        item.high != null &&
+        item.low != null &&
+        item.close != null,
+    )
+    .map((item) => ({
+      date: item.date.toISOString(),
+      open: Number(item.open),
+      high: Number(item.high),
+      low: Number(item.low),
+      close: Number(item.close),
+      volume: Number(item.volume ?? 0),
+    }));
 }
 
 export async function resolveFx(baseCurrency: string): Promise<FxRateInput> {

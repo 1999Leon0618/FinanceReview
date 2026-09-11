@@ -91,6 +91,22 @@ for (const width of [390, 768, 1440]) {
   });
 }
 
+test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) => {
+  await page.goto("/research");
+  await expect(
+    page.getByRole("heading", { name: "投資研究", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "行情面板" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "台股研究" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "美股研究" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "待辦", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+});
+
 test("鍵盤可跳過導覽，範例帳本不顯示正式帳本快捷入口", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab");

@@ -18,7 +18,7 @@ export default defineConfig({
     {
       name: "mobile-webkit",
       testMatch: "responsive-ui.spec.ts",
-      grep: /完整管理員工具列/,
+      grep: /手機頁首與設定/,
       use: { ...devices["iPhone 13"] },
     },
   ],

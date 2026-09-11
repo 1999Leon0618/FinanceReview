@@ -38,7 +38,7 @@ test("管理員可開啟使用者審核與唯讀範例頁", async ({ page }) => 
 });
 
 test("使用者審核頁會沿用主畫面的深色模式", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/settings");
   await page.getByRole("button", { name: "切換為深色模式" }).click();
   await page.goto("/admin/users");
 
@@ -54,7 +54,7 @@ test("使用者審核頁會沿用主畫面的深色模式", async ({ page }) => 
 });
 
 test("深色模式可切換並保留使用者偏好", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/settings");
 
   await expect(page).toHaveTitle("FinanceReview｜個人資產紀錄");
   await expect(page.getByText("受保護的個人帳本")).toBeVisible();
@@ -77,7 +77,7 @@ test("深色模式可切換並保留使用者偏好", async ({ page }) => {
 });
 
 test("頁首初始化未還原偏好時仍會恢復深色模式", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/settings");
   await page.getByRole("button", { name: "切換為深色模式" }).click();
 
   await page.addInitScript(() => {
@@ -120,29 +120,13 @@ test("電腦版左側欄可隱藏並保留偏好", async ({ page }) => {
   await expect(sidebar).toBeVisible();
 });
 
-test("手機橫向模式的匯入與匯出圖示維持置中", async ({ page }) => {
+test("手機橫向模式可從設定管理備份", async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/");
-
-  for (const accessibleName of ["匯出資料", "匯入資料"]) {
-    const control = page.getByRole(
-      accessibleName === "匯出資料" ? "link" : "button",
-      { name: accessibleName },
-    );
-    const icon = control.locator("svg");
-    const controlBox = await control.boundingBox();
-    const iconBox = await icon.boundingBox();
-
-    expect(controlBox).not.toBeNull();
-    expect(iconBox).not.toBeNull();
-    expect(
-      Math.abs(
-        controlBox!.x +
-          controlBox!.width / 2 -
-          (iconBox!.x + iconBox!.width / 2),
-      ),
-    ).toBeLessThan(1);
-  }
+  await page.locator(".settings-entry").click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("link", { name: "匯出資料" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "匯入資料" })).toBeVisible();
 });
 
 test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) => {
@@ -514,8 +498,9 @@ test("隱藏金額時歷史快照仍顯示日期與更新內容", async ({ page,
   });
   expect(created.ok()).toBeTruthy();
 
-  await page.goto("/");
+  await page.goto("/settings");
   await page.getByRole("button", { name: "隱藏財務數字" }).click();
+  await page.getByRole("link", { name: "返回財務總覽" }).click();
   const history = page.locator("#history");
   await expect(history).toContainText(rawInput);
   await expect(history).toContainText("最新快照");

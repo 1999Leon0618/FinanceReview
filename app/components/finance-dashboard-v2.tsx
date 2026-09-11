@@ -47,6 +47,7 @@ import {
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  Settings,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -104,7 +105,7 @@ const SoldHistoryDialog = dynamic(() =>
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
 export type FinancePage =
-  "overview" | "accounts" | "investments" | "credit-cards";
+  "overview" | "accounts" | "investments" | "credit-cards" | "settings";
 type DashboardNotification = {
   title: string;
   message: string;
@@ -163,6 +164,7 @@ const hiddenValue = "••••••";
 const dashboardRangeStorageKey = "finance-review-dashboard-range";
 const sidebarHiddenStorageKey = "finance-review-sidebar-hidden";
 const themeStorageKey = "finance-review-theme";
+const valuesHiddenStorageKey = "finance-review-values-hidden";
 const privateValue = (hidden: boolean, value: string) =>
   hidden ? hiddenValue : value;
 
@@ -252,7 +254,11 @@ export default function FinanceDashboard({
     [],
   );
 
-  const toggleValues = () => setValuesHidden((current) => !current);
+  const toggleValues = () => {
+    const next = !valuesHidden;
+    localStorage.setItem(valuesHiddenStorageKey, String(next));
+    setValuesHidden(next);
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -262,6 +268,7 @@ export default function FinanceDashboard({
       setSidebarHidden(
         localStorage.getItem(sidebarHiddenStorageKey) === "true",
       );
+      setValuesHidden(localStorage.getItem(valuesHiddenStorageKey) === "true");
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -590,6 +597,12 @@ export default function FinanceDashboard({
       location: "信用卡帳單",
       description: "集中管理帳單、繳款與額度，安心安排每個月。",
     },
+    settings: {
+      eyebrow: "SETTINGS",
+      title: "設定",
+      location: "帳本設定",
+      description: "調整顯示偏好，管理備份與帳本存取。",
+    },
   }[page];
   const primarySortSection: DisplaySection =
     page === "investments"
@@ -655,12 +668,12 @@ export default function FinanceDashboard({
             <History size={17} />
             歷史紀錄
           </Link>
-          {isAdmin && !demoMode && (
-            <Link href="/admin/users">
-              <UserCog size={17} />
-              使用者審核
-            </Link>
-          )}
+          <Link
+            className={page === "settings" ? "active" : ""}
+            href={demoMode ? "/demo?view=settings" : "/settings"}
+          >
+            <Settings size={17} /> 設定
+          </Link>
         </nav>
 
         <div className="mt-auto">
@@ -677,26 +690,7 @@ export default function FinanceDashboard({
             <Link className="demo-sidebar-return" href={demoReturnHref}>
               <ArrowLeft size={15} /> 離開範例
             </Link>
-          ) : (
-            <div
-              className="sidebar-tools"
-              style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-            >
-              <a
-                href="/api/backup"
-                download
-                style={{ minHeight: "2.35rem", minWidth: 0 }}
-              >
-                <Download size={15} /> 匯出資料
-              </a>
-              <button
-                onClick={() => upload.current?.click()}
-                style={{ minHeight: "2.35rem", minWidth: 0 }}
-              >
-                <Upload size={15} /> 匯入資料
-              </button>
-            </div>
-          )}
+          ) : null}
         </div>
       </aside>
 
@@ -724,76 +718,15 @@ export default function FinanceDashboard({
             </div>
             <p className="topbar-location">{pageMeta.location}</p>
           </div>
-          <div className="topbar-actions flex items-center gap-2.5">
-            {isAdmin && !demoMode && (
-              <Link
-                aria-label="使用者審核"
-                title="使用者審核"
-                className="icon-button"
-                href="/admin/users"
-              >
-                <UserCog size={16} />
-              </Link>
-            )}
-            {!demoMode && (
-              <button
-                className="secondary display-order-entry"
-                aria-label="自訂排序"
-                title="自訂排序"
-                disabled={!latest || !displayOrder.ready}
-                onClick={() => setSortingSection(primarySortSection)}
-              >
-                <ArrowUpDown size={16} />
-                <span>自訂排序</span>
-              </button>
-            )}
-            <button
-              aria-label={darkMode ? "切換為淺色模式" : "切換為深色模式"}
-              aria-pressed={darkMode}
-              title={darkMode ? "切換為淺色模式" : "切換為深色模式"}
-              className="icon-button"
-              onClick={toggleDarkMode}
-            >
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button
-              aria-label={valuesHidden ? "顯示財務數字" : "隱藏財務數字"}
-              aria-pressed={valuesHidden}
-              title={valuesHidden ? "顯示財務數字" : "隱藏財務數字"}
-              className="icon-button"
-              onClick={toggleValues}
-            >
-              {valuesHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-            </button>
-            {!demoMode && (
-              <>
-                <a
-                  aria-label="匯出資料"
-                  title="匯出資料"
-                  className="icon-button mobile-tool"
-                  href="/api/backup"
-                  download
-                >
-                  <Download size={16} />
-                </a>
-                <button
-                  aria-label="匯入資料"
-                  title="匯入資料"
-                  className="icon-button mobile-tool"
-                  onClick={() => upload.current?.click()}
-                >
-                  <Upload size={16} />
-                </button>
-              </>
-            )}
-            <input
-              ref={upload}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={selectImportFile}
-            />
-          </div>
+          <Link
+            className="icon-button settings-entry"
+            href={demoMode ? "/demo?view=settings" : "/settings"}
+            aria-label="設定"
+            title="設定"
+            aria-current={page === "settings" ? "page" : undefined}
+          >
+            <Settings size={18} />
+          </Link>
           {demoMode ? (
             <Link className="primary demo-top-return" href={demoReturnHref}>
               <ArrowLeft size={15} /> 返回申請
@@ -862,11 +795,126 @@ export default function FinanceDashboard({
                 )}
               </p>
             </div>
-            {latest && data && <FreshnessBadge health={data.health} />}
+            <div className="page-intro-actions">
+              {page !== "settings" && latest && data && (
+                <FreshnessBadge health={data.health} />
+              )}
+              {page !== "settings" && !demoMode && (
+                <button
+                  className="secondary"
+                  aria-label="自訂排序"
+                  disabled={!latest || !displayOrder.ready}
+                  onClick={() => setSortingSection(primarySortSection)}
+                >
+                  <ArrowUpDown size={16} /> 自訂排序
+                </button>
+              )}
+            </div>
           </div>
 
           {error && <p className="notice error mt-6">{error}</p>}
-          {!data ? (
+          {page === "settings" ? (
+            <div className="settings-sections">
+              <section
+                className="settings-panel"
+                aria-labelledby="display-settings-title"
+              >
+                <h2 id="display-settings-title">顯示偏好</h2>
+                <p>偏好會儲存在此瀏覽器，並套用到所有帳本頁面。</p>
+                <div className="settings-row">
+                  <div>
+                    <h3>深色模式</h3>
+                    <p>依照閱讀環境調整畫面明暗。</p>
+                  </div>
+                  <button
+                    className="secondary"
+                    aria-label={darkMode ? "切換為淺色模式" : "切換為深色模式"}
+                    aria-pressed={darkMode}
+                    onClick={toggleDarkMode}
+                  >
+                    {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+                    {darkMode ? "改用淺色" : "改用深色"}
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <h3>隱藏財務數字</h3>
+                    <p>將金額改為圓點，保留日期與紀錄內容。</p>
+                  </div>
+                  <button
+                    className="secondary"
+                    aria-label={valuesHidden ? "顯示財務數字" : "隱藏財務數字"}
+                    aria-pressed={valuesHidden}
+                    onClick={toggleValues}
+                  >
+                    {valuesHidden ? <Eye size={17} /> : <EyeOff size={17} />}
+                    {valuesHidden ? "顯示金額" : "隱藏金額"}
+                  </button>
+                </div>
+              </section>
+              {!demoMode && (
+                <section
+                  className="settings-panel"
+                  aria-labelledby="backup-settings-title"
+                >
+                  <h2 id="backup-settings-title">資料備份</h2>
+                  <p>備份檔包含財務資料，請下載後妥善保存。</p>
+                  <div className="settings-row">
+                    <div>
+                      <h3>匯出帳本</h3>
+                      <p>下載 JSON 備份，保存目前的帳本紀錄。</p>
+                    </div>
+                    <a className="secondary" href="/api/backup" download>
+                      <Download size={17} /> 匯出資料
+                    </a>
+                  </div>
+                  <div className="settings-row">
+                    <div>
+                      <h3>匯入備份</h3>
+                      <p>加入備份中的紀錄，已存在的紀錄會略過。</p>
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={() => upload.current?.click()}
+                    >
+                      <Upload size={17} /> 匯入資料
+                    </button>
+                    <input
+                      ref={upload}
+                      type="file"
+                      accept="application/json"
+                      className="hidden"
+                      aria-label="選擇備份檔"
+                      onChange={selectImportFile}
+                    />
+                  </div>
+                </section>
+              )}
+              {isAdmin && !demoMode && (
+                <section
+                  className="settings-panel"
+                  aria-labelledby="admin-settings-title"
+                >
+                  <h2 id="admin-settings-title">管理員</h2>
+                  <div className="settings-row">
+                    <div>
+                      <h3>帳本存取權限</h3>
+                      <p>查看申請並管理使用者的存取資格。</p>
+                    </div>
+                    <Link className="secondary" href="/admin/users">
+                      <UserCog size={17} /> 使用者審核
+                    </Link>
+                  </div>
+                </section>
+              )}
+              <Link
+                className="settings-return secondary"
+                href={demoMode ? "/demo" : "/"}
+              >
+                <ArrowLeft size={17} /> 返回財務總覽
+              </Link>
+            </div>
+          ) : !data ? (
             <div className="mt-16 grid place-items-center py-20 text-sm text-[#748178]">
               <LoaderCircle className="mb-3 animate-spin" />
               正在整理資產資料…

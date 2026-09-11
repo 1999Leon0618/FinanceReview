@@ -197,6 +197,78 @@ html.dark .sidebar-nav a.active {
   color: #1b382b;
 }
 
+.research-kline .recharts-cartesian-axis-tick-value {
+  fill: #526159;
+  font-weight: 600;
+}
+
+.research-kline .recharts-cartesian-grid line {
+  stroke: #9aa89f;
+  stroke-opacity: 0.6;
+}
+
+.research-chart-tooltip {
+  min-width: 172px;
+  border: 1px solid #ccd7d0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  padding: 10px 12px;
+  color: #17231d;
+  box-shadow: 0 12px 32px rgba(21, 37, 31, 0.18);
+  font-size: 12px;
+}
+
+.research-chart-tooltip strong {
+  display: block;
+  margin-bottom: 7px;
+  color: #17231d;
+  font-size: 13px;
+}
+
+.research-chart-tooltip p {
+  margin: 0;
+}
+
+.research-chart-tooltip-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+}
+
+.research-chart-tooltip-grid span {
+  color: #66756d;
+}
+
+.research-chart-tooltip-grid b {
+  color: #17231d;
+  text-align: right;
+}
+
+html.dark .research-kline .recharts-cartesian-axis-tick-value {
+  fill: #c7d3cc;
+}
+
+html.dark .research-kline .recharts-cartesian-grid line {
+  stroke: #829087;
+  stroke-opacity: 0.75;
+}
+
+html.dark .research-chart-tooltip {
+  border-color: #53655b;
+  background: rgba(20, 36, 30, 0.98);
+  color: #eef5f0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .research-chart-tooltip strong,
+html.dark .research-chart-tooltip-grid b {
+  color: #f7fbf8;
+}
+
+html.dark .research-chart-tooltip-grid span {
+  color: #b6c5bc;
+}
+
 .research-markdown {
   line-height: 1.85;
 }

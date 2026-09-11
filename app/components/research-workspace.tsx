@@ -214,6 +214,48 @@ function CandleShape(props: Record<string, unknown>) {
   );
 }
 
+type CandleChartPoint = CandlePoint & { range: [number, number] };
+type ChartTooltipProps = {
+  active?: boolean;
+  label?: string | number;
+  payload?: Array<{ payload: CandleChartPoint }>;
+};
+
+const chartNumber = new Intl.NumberFormat("zh-TW", {
+  maximumFractionDigits: 2,
+});
+
+function CandleTooltip({ active, payload }: ChartTooltipProps) {
+  const candle = payload?.[0]?.payload;
+  if (!active || !candle) return null;
+  return (
+    <div className="research-chart-tooltip">
+      <strong>{candle.date.slice(0, 10)}</strong>
+      <div className="research-chart-tooltip-grid">
+        <span>開盤</span>
+        <b>{chartNumber.format(candle.open)}</b>
+        <span>最高</span>
+        <b>{chartNumber.format(candle.high)}</b>
+        <span>最低</span>
+        <b>{chartNumber.format(candle.low)}</b>
+        <span>收盤</span>
+        <b>{chartNumber.format(candle.close)}</b>
+      </div>
+    </div>
+  );
+}
+
+function VolumeTooltip({ active, payload }: ChartTooltipProps) {
+  const candle = payload?.[0]?.payload;
+  if (!active || !candle) return null;
+  return (
+    <div className="research-chart-tooltip">
+      <strong>{candle.date.slice(0, 10)}</strong>
+      <p>成交量：{chartNumber.format(candle.volume)}</p>
+    </div>
+  );
+}
+
 function Kline({ candles }: { candles: CandlePoint[] }) {
   const data = candles.map((item) => ({
     ...item,
@@ -226,7 +268,7 @@ function Kline({ candles }: { candles: CandlePoint[] }) {
       </p>
     );
   return (
-    <div className="space-y-2">
+    <div className="research-kline space-y-2">
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
@@ -238,9 +280,14 @@ function Kline({ candles }: { candles: CandlePoint[] }) {
               dataKey="date"
               tickFormatter={(value) => String(value).slice(5, 10)}
               minTickGap={24}
+              tick={{ fontSize: 12 }}
             />
-            <YAxis domain={["auto", "auto"]} width={56} />
-            <Tooltip labelFormatter={(value) => String(value).slice(0, 10)} />
+            <YAxis
+              domain={["auto", "auto"]}
+              width={56}
+              tick={{ fontSize: 12 }}
+            />
+            <Tooltip content={<CandleTooltip />} />
             <Bar
               dataKey="range"
               shape={<CandleShape />}
@@ -257,7 +304,7 @@ function Kline({ candles }: { candles: CandlePoint[] }) {
           >
             <XAxis dataKey="date" hide />
             <YAxis hide />
-            <Tooltip />
+            <Tooltip content={<VolumeTooltip />} />
             <Bar dataKey="volume" fill="#8aa59a" isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>

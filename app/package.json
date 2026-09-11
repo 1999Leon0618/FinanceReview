@@ -16,7 +16,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/test-browsers.mjs",
     "db:init": "tsx scripts/init-db.ts",
     "db:d1:generate": "node scripts/generate-d1-migration.mjs",
     "db:d1:migrate:local": "node scripts/workers.mjs migrate:local",

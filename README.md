@@ -280,11 +280,25 @@ npm run check:workers
 
 備份可從介面的「匯出資料」下載 JSON；備份刻意排除可重新取得的 `quote_cache`。
 
-端對端測試首次執行前若尚未安裝 Playwright Chromium，可執行：
+端對端測試首次執行前，安裝三種瀏覽器引擎：
 
 ```powershell
-npx playwright install chromium
+npx playwright install chromium firefox webkit
 ```
+
+`npm run test:e2e` 會依序驗證以下環境，每組都使用獨立測試資料庫：
+
+| 測試環境 | 驗證範圍 |
+| --- | --- |
+| `chromium` | Chromium 引擎（Chrome、Edge 同系），完整功能流程與響應式版面 |
+| `firefox` | Firefox，完整功能流程與響應式版面 |
+| `webkit` | WebKit 引擎（Safari 同系），完整功能流程與響應式版面 |
+| `mobile-chromium` | Android Chrome 模擬，頁首、圖表、設定、備份與管理員入口 |
+| `mobile-webkit` | iPhone Safari 模擬，頁首、圖表、設定、備份與管理員入口 |
+
+僅驗證指定環境可執行 `npm run test:e2e -- firefox`，也可一次指定多組。
+CI 會分開執行五組測試，全部通過後才允許正式部署，失敗追蹤依環境保存。
+上述為 Playwright 的瀏覽器引擎與裝置模擬測試，不代表已驗證所有版本的品牌瀏覽器、內嵌 WebView 或實體手機；測試能力詳見 [Playwright 官方說明](https://playwright.dev/docs/browsers)。
 
 ## 已知限制
 

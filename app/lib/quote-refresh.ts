@@ -14,7 +14,7 @@ export interface QuoteRefreshSummary {
   manual: number;
 }
 
-export interface QuoteRefreshFailure {
+interface QuoteRefreshFailure {
   positionId: string;
   accountName: string;
   symbol: string;

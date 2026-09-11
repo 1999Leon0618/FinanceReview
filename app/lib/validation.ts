@@ -27,7 +27,7 @@ const currency = z
   .length(3)
   .transform((value) => value.toUpperCase());
 
-export const fxRateSchema = z.object({
+const fxRateSchema = z.object({
   baseCurrency: currency,
   quoteCurrency: z.literal("TWD"),
   rate: positiveDecimalString,
@@ -37,7 +37,7 @@ export const fxRateSchema = z.object({
   overriddenByUser: z.boolean(),
 });
 
-export const positionInputSchema = z
+const positionInputSchema = z
   .object({
     positionId: z.string().uuid().optional(),
     securityId: z.string().uuid().optional(),
@@ -461,6 +461,3 @@ export const quoteResolveSchema = z
     creditCardAccounts: z.array(creditCardAccountInputSchema).optional(),
   })
   .superRefine(addDuplicateIssues);
-
-export type SnapshotCreatePayload = z.infer<typeof snapshotCreateSchema>;
-export type SaleCreatePayload = z.infer<typeof saleCreateSchema>;

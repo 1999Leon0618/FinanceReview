@@ -37,22 +37,6 @@ const headings: Record<
   },
 };
 
-const label: Record<ResearchNoteType, string> = {
-  premarket: "盤前簡報",
-  intraday: "盤中快報",
-  postmarket: "盤後研究",
-};
-
-export function researchNoteTitle(
-  market: ResearchMarketScope,
-  type: ResearchNoteType,
-  reportDate: string,
-) {
-  return type === "intraday"
-    ? `盤中快報：${market === "TW" ? "台股" : "美股"} ${reportDate}`
-    : `${reportDate} ${market === "TW" ? "台股" : "美股"}${label[type]}`;
-}
-
 export function createResearchTemplate(
   market: ResearchMarketScope,
   type: ResearchNoteType,

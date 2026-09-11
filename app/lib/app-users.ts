@@ -2,7 +2,7 @@ import { getDataOwner } from "./data-owner";
 import { getDatabase, withTransaction, type FinanceDatabase } from "./db";
 
 export type AppUserStatus = "pending" | "approved" | "rejected";
-export type AppUserRole = "user" | "admin";
+type AppUserRole = "user" | "admin";
 
 export type AppUser = {
   ownerKey: string;
@@ -170,11 +170,11 @@ export async function submitCurrentApplication(reason: string) {
   });
 }
 
-export function isApprovedAppUser(user: AppUser) {
+function isApprovedAppUser(user: AppUser) {
   return user.status === "approved";
 }
 
-export async function requireAdmin(database?: FinanceDatabase) {
+async function requireAdmin(database?: FinanceDatabase) {
   const user = await ensureCurrentAppUser(database);
   if (user.status !== "approved" || user.role !== "admin")
     throw new Error("僅管理員可以管理使用者");

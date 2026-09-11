@@ -175,7 +175,7 @@ export function extractLoans(rawInput: string): ParserPatch["loanUpdates"] {
   ];
 }
 
-export function extractSecurityPositions(
+function extractSecurityPositions(
   rawInput: string,
   fallbackAccountName?: string | null,
 ): ParserPatch["positionUpdates"] {
@@ -203,7 +203,7 @@ export function extractSecurityPositions(
   return positions;
 }
 
-export function extractAccountReference(rawInput: string): string | null {
+function extractAccountReference(rawInput: string): string | null {
   return (
     rawInput.match(
       /(?:帳戶識別碼|帳戶代號|帳號末四碼|帳號後四碼)\s*(?:為|是|[:：])?\s*([A-Za-z0-9_-]{2,50})/iu,

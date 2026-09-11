@@ -4,7 +4,7 @@
 
 FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機模式只監聽 `127.0.0.1`，資料保存在 `data/finance-review.db`；Workers 模式將相同資料模型保存在 D1。每個登入信箱各自擁有私人帳本，新帳號必須經管理員永久核准後才能存取。
 
-![FinanceReview 財務總覽](preview-assets/financereview-social-preview.png)
+![FinanceReview 財務總覽](app/public/og.png)
 
 ## 主要功能
 
@@ -266,7 +266,6 @@ FinanceReview/
 │  ├─ scripts/                # 資料庫初始化、D1 產生與 Workers 驗證
 │  └─ tests/                  # Vitest 單元／整合測試
 ├─ data/                      # 本機 SQLite 資料
-├─ preview-assets/            # README 與社群預覽素材
 └─ Start-FinanceReview.ps1    # Windows 一鍵啟動腳本
 ```
 

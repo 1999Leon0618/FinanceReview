@@ -16,6 +16,9 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
     page.getByRole("button", { name: "顯示財務數字" }),
   ).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("link", { name: "返回財務總覽" }).click();
+  await expect(
+    page.getByRole("heading", { name: "財務總覽", exact: true }),
+  ).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect(page.locator(".topbar").getByRole("button")).toHaveCount(1);
   await page.goto("/demo");
@@ -52,13 +55,11 @@ test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, re
   const dialog = await dialogEvent;
   expect(dialog.message()).toContain("匯入完成");
   await dialog.accept();
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({
-      name: "invalid.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{}"),
-    });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "invalid.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{}"),
+  });
   await expect(page.locator(".notice.error")).toBeVisible();
 });
 

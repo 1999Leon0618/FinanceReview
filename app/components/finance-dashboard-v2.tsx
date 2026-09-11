@@ -617,7 +617,7 @@ export default function FinanceDashboard({
     <main
       className={`dashboard-shell min-h-screen text-[#18231d] ${sidebarHidden ? "sidebar-hidden" : ""} ${demoMode ? "dashboard-demo" : ""}`}
     >
-      <a className="skip-to-content" href="#top">
+      <a className="skip-to-content" href="#top" tabIndex={0}>
         跳至主要內容
       </a>
       <aside className="dashboard-sidebar">
@@ -770,7 +770,7 @@ export default function FinanceDashboard({
           </Link>
         </nav>
 
-        <section id="top" className="dashboard-content">
+        <section id="top" className="dashboard-content" tabIndex={-1}>
           {demoMode && (
             <div className="demo-notice" role="status">
               <Eye size={17} />

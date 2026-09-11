@@ -95,6 +95,8 @@ test("鍵盤可跳過導覽，範例帳本不顯示正式帳本快捷入口", as
   await page.goto("/");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "跳至主要內容" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#top")).toBeFocused();
   await page.goto("/demo");
   await expect(page.locator(".workspace-shortcuts")).toHaveCount(0);
 });

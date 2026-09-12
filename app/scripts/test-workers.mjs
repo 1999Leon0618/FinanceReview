@@ -294,6 +294,31 @@ try {
     assert.equal(restoredBody.imported, 0);
     assert.ok(restoredBody.skipped > 0);
 
+    const preview = await post("/api/backup", {
+      operation: "preview",
+      backup: backupBody,
+    });
+    assert.equal(preview.status, 200, await preview.clone().text());
+    const previewBody = await preview.json();
+    assert.equal(previewBody.cloud.snapshots, 3);
+    assert.equal(previewBody.backup.snapshots, 3);
+    assert.equal(previewBody.duplicateSnapshots, 3);
+
+    const replaced = await post("/api/backup", {
+      operation: "import",
+      mode: "replace",
+      backup: backupBody,
+    });
+    assert.equal(replaced.status, 200, await replaced.clone().text());
+    assert.ok((await replaced.json()).imported > 0);
+    const afterReplace = await worker.fetch(
+      "http://localhost/api/dashboard?range=all",
+    );
+    assert.equal(afterReplace.status, 200);
+    const afterReplaceBody = await afterReplace.json();
+    assert.equal(afterReplaceBody.latest.id, sharedSnapshot.id);
+    assert.equal(afterReplaceBody.history.length, 3);
+
     const bulkSnapshotCount = 60;
     const bulkAccountId = "workers-bulk-import-account";
     const bulkData = Object.fromEntries(

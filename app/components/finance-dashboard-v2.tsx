@@ -119,8 +119,24 @@ type DashboardNotification = {
   detail?: string;
 };
 type BackupImportStatus = {
-  phase: "reading" | "uploading" | "reloading" | "success" | "error";
+  phase:
+    | "reading"
+    | "previewing"
+    | "ready"
+    | "uploading"
+    | "reloading"
+    | "success"
+    | "error";
   message: string;
+};
+type BackupImportMode = "history" | "merge" | "replace";
+type BackupImportPreview = {
+  backup: { snapshots: number; earliest: string | null; latest: string | null };
+  cloud: { snapshots: number; earliest: string | null; latest: string | null };
+  historicalSnapshots: number;
+  duplicateSnapshots: number;
+  mergeWillChangeCurrent: boolean;
+  recommendedMode: BackupImportMode;
 };
 
 const twd = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 });
@@ -239,6 +255,9 @@ export default function FinanceDashboard({
   const [error, setError] = useState("");
   const [backupImportStatus, setBackupImportStatus] =
     useState<BackupImportStatus | null>(null);
+  const [backupImportPreview, setBackupImportPreview] =
+    useState<BackupImportPreview | null>(null);
+  const [pendingBackup, setPendingBackup] = useState<unknown>(null);
   const [refreshingQuotes, setRefreshingQuotes] = useState(false);
   const [notification, setNotification] =
     useState<DashboardNotification | null>(null);
@@ -434,16 +453,62 @@ export default function FinanceDashboard({
         message: `正在讀取 ${file.name}…`,
       });
       const body = await file.text();
+      const backup = JSON.parse(body) as unknown;
+      setBackupImportStatus({
+        phase: "previewing",
+        message: "正在比較備份與雲端帳本…",
+      });
+      const preview = await request<BackupImportPreview>("/api/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operation: "preview", backup }),
+      });
+      setPendingBackup(backup);
+      setBackupImportPreview(preview);
+      setBackupImportStatus({
+        phase: "ready",
+        message: "分析完成，請確認下方的匯入方式。",
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "匯入失敗";
+      setError(message);
+      setPendingBackup(null);
+      setBackupImportPreview(null);
+      setBackupImportStatus({
+        phase: "error",
+        message: `無法分析備份：${message}`,
+      });
+    }
+  };
+
+  const importWithMode = async (mode: BackupImportMode) => {
+    if (!pendingBackup) return;
+    if (
+      mode === "replace" &&
+      !window.confirm(
+        "這會刪除目前雲端帳本，並以備份完整取代。若匯入失敗會自動回滾。確定繼續嗎？",
+      )
+    )
+      return;
+    try {
+      setError("");
       setBackupImportStatus({
         phase: "uploading",
-        message: "正在將備份寫入雲端，請勿關閉頁面…",
+        message:
+          mode === "replace"
+            ? "正在安全取代雲端帳本，請勿關閉頁面…"
+            : "正在將備份寫入雲端，請勿關閉頁面…",
       });
       const result = await request<{ imported: number; skipped: number }>(
         "/api/backup",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body,
+          body: JSON.stringify({
+            operation: "import",
+            mode,
+            backup: pendingBackup,
+          }),
         },
       );
       setBackupImportStatus({
@@ -451,6 +516,8 @@ export default function FinanceDashboard({
         message: "資料已寫入，正在重新載入帳本…",
       });
       if (!(await load())) throw new Error("資料已匯入，但重新載入帳本失敗");
+      setPendingBackup(null);
+      setBackupImportPreview(null);
       setBackupImportStatus({
         phase: "success",
         message: `匯入成功：新增 ${result.imported} 筆，略過 ${result.skipped} 筆。`,
@@ -463,6 +530,17 @@ export default function FinanceDashboard({
         message: `匯入失敗：${message}`,
       });
     }
+  };
+
+  const backupImporting =
+    backupImportStatus?.phase === "reading" ||
+    backupImportStatus?.phase === "previewing" ||
+    backupImportStatus?.phase === "uploading" ||
+    backupImportStatus?.phase === "reloading";
+
+  const backupRangeText = (range: BackupImportPreview["backup"]) => {
+    if (!range.latest) return `${range.snapshots} 份快照`;
+    return `${range.snapshots} 份快照，最新 ${dateFormatter.format(new Date(range.latest))}`;
   };
 
   const selectImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -932,25 +1010,15 @@ export default function FinanceDashboard({
                     </div>
                     <button
                       className="secondary"
-                      disabled={
-                        backupImportStatus?.phase === "reading" ||
-                        backupImportStatus?.phase === "uploading" ||
-                        backupImportStatus?.phase === "reloading"
-                      }
+                      disabled={backupImporting}
                       onClick={() => upload.current?.click()}
                     >
-                      {backupImportStatus?.phase === "reading" ||
-                      backupImportStatus?.phase === "uploading" ||
-                      backupImportStatus?.phase === "reloading" ? (
+                      {backupImporting ? (
                         <LoaderCircle className="animate-spin" size={17} />
                       ) : (
                         <Upload size={17} />
                       )}
-                      {backupImportStatus?.phase === "reading" ||
-                      backupImportStatus?.phase === "uploading" ||
-                      backupImportStatus?.phase === "reloading"
-                        ? "匯入中…"
-                        : "匯入資料"}
+                      {backupImporting ? "處理中…" : "選擇備份"}
                     </button>
                     <input
                       ref={upload}
@@ -974,6 +1042,61 @@ export default function FinanceDashboard({
                     >
                       {backupImportStatus.message}
                     </p>
+                  )}
+                  {backupImportPreview && (
+                    <div className="notice" aria-label="備份匯入預覽">
+                      <p>
+                        <strong>目前雲端：</strong>
+                        {backupRangeText(backupImportPreview.cloud)}
+                      </p>
+                      <p>
+                        <strong>選取備份：</strong>
+                        {backupRangeText(backupImportPreview.backup)}
+                      </p>
+                      <p>
+                        可加入 {backupImportPreview.historicalSnapshots}{" "}
+                        份較舊歷史；
+                        {backupImportPreview.duplicateSnapshots}{" "}
+                        份相同快照會略過。
+                      </p>
+                      {backupImportPreview.mergeWillChangeCurrent && (
+                        <p className="danger-text">
+                          合併全部後，備份中較新的快照會成為目前顯示狀態。
+                        </p>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          className="primary"
+                          disabled={
+                            backupImporting ||
+                            backupImportPreview.historicalSnapshots === 0
+                          }
+                          onClick={() => void importWithMode("history")}
+                        >
+                          只加入較舊歷史
+                          {backupImportPreview.recommendedMode === "history"
+                            ? "（建議）"
+                            : ""}
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={backupImporting}
+                          onClick={() => void importWithMode("merge")}
+                        >
+                          合併全部
+                        </button>
+                        <button
+                          className="danger"
+                          disabled={backupImporting}
+                          onClick={() => void importWithMode("replace")}
+                        >
+                          取代雲端帳本
+                          {backupImportPreview.recommendedMode === "replace"
+                            ? "（建議）"
+                            : ""}
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </section>
               )}

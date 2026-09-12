@@ -126,7 +126,7 @@ test("手機橫向模式可從設定管理備份", async ({ page }) => {
   await page.locator(".settings-entry").click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("link", { name: "匯出資料" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "匯入資料" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "選擇備份" })).toBeVisible();
 });
 
 test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) => {

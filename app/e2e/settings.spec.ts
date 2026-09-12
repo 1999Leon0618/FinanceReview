@@ -48,22 +48,35 @@ test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, re
     await route.continue();
   });
   const chooserEvent = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "匯入資料" }).click();
+  await page.getByRole("button", { name: "選擇備份" }).click();
   const upload = (await chooserEvent).setFiles({
     name: "backup.json",
     mimeType: "application/json",
     buffer: Buffer.from(await backup.text()),
   });
-  await expect(page.getByRole("button", { name: "匯入中…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "處理中…" })).toBeDisabled();
   await upload;
+  await expect(page.getByLabel("備份匯入預覽")).toBeVisible();
+  const confirmEvent = page.waitForEvent("dialog");
+  const replaceClick = page
+    .getByRole("button", { name: /取代雲端帳本/ })
+    .click();
+  const confirmDialog = await confirmEvent;
+  expect(confirmDialog.message()).toContain("完整取代");
+  await confirmDialog.dismiss();
+  await replaceClick;
+  await expect(page.getByLabel("備份匯入預覽")).toBeVisible();
+  await page.getByRole("button", { name: "合併全部" }).click();
   await expect(page.getByRole("status")).toContainText("匯入成功");
-  await expect(page.getByRole("button", { name: "匯入資料" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "選擇備份" })).toBeEnabled();
   await page.locator('input[type="file"]').setInputFiles({
     name: "invalid.json",
     mimeType: "application/json",
     buffer: Buffer.from("{}"),
   });
-  await expect(page.locator("#backup-import-status")).toContainText("匯入失敗");
+  await expect(page.locator("#backup-import-status")).toContainText(
+    "無法分析備份",
+  );
 });
 
 test("範例設定不提供備份或審核，管理員可由正式設定前往審核", async ({
@@ -74,7 +87,7 @@ test("範例設定不提供備份或審核，管理員可由正式設定前往�
     page.getByRole("heading", { name: "設定", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "匯出資料" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "匯入資料" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "選擇備份" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "使用者審核" })).toHaveCount(0);
   await page.goto("/settings");
   await page.getByRole("link", { name: "使用者審核" }).click();

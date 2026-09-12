@@ -118,6 +118,10 @@ type DashboardNotification = {
   message: string;
   detail?: string;
 };
+type BackupImportStatus = {
+  phase: "reading" | "uploading" | "reloading" | "success" | "error";
+  message: string;
+};
 
 const twd = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("zh-TW", { maximumFractionDigits: 4 });
@@ -233,6 +237,8 @@ export default function FinanceDashboard({
     }>
   >([]);
   const [error, setError] = useState("");
+  const [backupImportStatus, setBackupImportStatus] =
+    useState<BackupImportStatus | null>(null);
   const [refreshingQuotes, setRefreshingQuotes] = useState(false);
   const [notification, setNotification] =
     useState<DashboardNotification | null>(null);
@@ -315,12 +321,14 @@ export default function FinanceDashboard({
   };
 
   const load = useCallback(async () => {
-    if (demoMode) return;
+    if (demoMode) return true;
     try {
       setData(await request<DashboardData>(`/api/dashboard?range=${range}`));
       setError("");
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "無法讀取資料");
+      return false;
     }
   }, [demoMode, range]);
 
@@ -420,20 +428,40 @@ export default function FinanceDashboard({
   const importFile = async (file?: File) => {
     if (!file) return;
     try {
+      setError("");
+      setBackupImportStatus({
+        phase: "reading",
+        message: `正在讀取 ${file.name}…`,
+      });
+      const body = await file.text();
+      setBackupImportStatus({
+        phase: "uploading",
+        message: "正在將備份寫入雲端，請勿關閉頁面…",
+      });
       const result = await request<{ imported: number; skipped: number }>(
         "/api/backup",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: await file.text(),
+          body,
         },
       );
-      alert(
-        `匯入完成：新增 ${result.imported} 筆，略過 ${result.skipped} 筆。`,
-      );
-      load();
+      setBackupImportStatus({
+        phase: "reloading",
+        message: "資料已寫入，正在重新載入帳本…",
+      });
+      if (!(await load())) throw new Error("資料已匯入，但重新載入帳本失敗");
+      setBackupImportStatus({
+        phase: "success",
+        message: `匯入成功：新增 ${result.imported} 筆，略過 ${result.skipped} 筆。`,
+      });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "匯入失敗");
+      const message = cause instanceof Error ? cause.message : "匯入失敗";
+      setError(message);
+      setBackupImportStatus({
+        phase: "error",
+        message: `匯入失敗：${message}`,
+      });
     }
   };
 
@@ -904,9 +932,25 @@ export default function FinanceDashboard({
                     </div>
                     <button
                       className="secondary"
+                      disabled={
+                        backupImportStatus?.phase === "reading" ||
+                        backupImportStatus?.phase === "uploading" ||
+                        backupImportStatus?.phase === "reloading"
+                      }
                       onClick={() => upload.current?.click()}
                     >
-                      <Upload size={17} /> 匯入資料
+                      {backupImportStatus?.phase === "reading" ||
+                      backupImportStatus?.phase === "uploading" ||
+                      backupImportStatus?.phase === "reloading" ? (
+                        <LoaderCircle className="animate-spin" size={17} />
+                      ) : (
+                        <Upload size={17} />
+                      )}
+                      {backupImportStatus?.phase === "reading" ||
+                      backupImportStatus?.phase === "uploading" ||
+                      backupImportStatus?.phase === "reloading"
+                        ? "匯入中…"
+                        : "匯入資料"}
                     </button>
                     <input
                       ref={upload}
@@ -917,6 +961,20 @@ export default function FinanceDashboard({
                       onChange={selectImportFile}
                     />
                   </div>
+                  {backupImportStatus && (
+                    <p
+                      id="backup-import-status"
+                      className={`notice${backupImportStatus.phase === "error" ? " error" : ""}`}
+                      role={
+                        backupImportStatus.phase === "error"
+                          ? "alert"
+                          : "status"
+                      }
+                      aria-live="polite"
+                    >
+                      {backupImportStatus.message}
+                    </p>
+                  )}
                 </section>
               )}
               {isAdmin && !demoMode && (

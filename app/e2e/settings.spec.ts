@@ -42,25 +42,28 @@ test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, re
 
   const backup = await request.get("/api/backup");
   expect(backup.ok()).toBeTruthy();
+  await page.route("**/api/backup", async (route) => {
+    if (route.request().method() === "POST")
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.continue();
+  });
   const chooserEvent = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "匯入資料" }).click();
-  const dialogEvent = page.waitForEvent("dialog");
-  await (
-    await chooserEvent
-  ).setFiles({
+  const upload = (await chooserEvent).setFiles({
     name: "backup.json",
     mimeType: "application/json",
     buffer: Buffer.from(await backup.text()),
   });
-  const dialog = await dialogEvent;
-  expect(dialog.message()).toContain("匯入完成");
-  await dialog.accept();
+  await expect(page.getByRole("button", { name: "匯入中…" })).toBeDisabled();
+  await upload;
+  await expect(page.getByRole("status")).toContainText("匯入成功");
+  await expect(page.getByRole("button", { name: "匯入資料" })).toBeEnabled();
   await page.locator('input[type="file"]').setInputFiles({
     name: "invalid.json",
     mimeType: "application/json",
     buffer: Buffer.from("{}"),
   });
-  await expect(page.locator(".notice.error")).toBeVisible();
+  await expect(page.locator("#backup-import-status")).toContainText("匯入失敗");
 });
 
 test("範例設定不提供備份或審核，管理員可由正式設定前往審核", async ({

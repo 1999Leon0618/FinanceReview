@@ -2256,6 +2256,13 @@ const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
   ) OR EXISTS (
     SELECT 1 FROM watchlist_items watch
     WHERE watch.security_id = item.id AND watch.owner_key = ?1
+  ) OR EXISTS (
+    SELECT 1 FROM snapshot_positions snapshot_position
+    JOIN snapshot_accounts snapshot_account
+      ON snapshot_account.id = snapshot_position.snapshot_account_id
+    JOIN snapshots snapshot ON snapshot.id = snapshot_account.snapshot_id
+    WHERE snapshot_position.security_id = item.id
+      AND snapshot.owner_key = ?1
   )`,
   account_positions: `account_positions item JOIN accounts account ON account.id = item.account_id
     WHERE account.owner_key = ?`,
@@ -2363,7 +2370,10 @@ const backupParents: Partial<
     >
   >
 > = {
-  account_positions: [["account_id", "accounts"]],
+  account_positions: [
+    ["account_id", "accounts"],
+    ["security_id", "securities"],
+  ],
   loans: [["account_id", "accounts", true]],
   credit_cards: [["credit_card_account_id", "credit_card_accounts"]],
   snapshots: [["base_snapshot_id", "snapshots", true]],
@@ -2372,19 +2382,26 @@ const backupParents: Partial<
     ["account_id", "accounts"],
   ],
   snapshot_fx_rates: [["snapshot_id", "snapshots"]],
-  cash_balances: [["snapshot_account_id", "snapshot_accounts"]],
+  cash_balances: [
+    ["snapshot_account_id", "snapshot_accounts"],
+    ["fx_rate_id", "snapshot_fx_rates", true],
+  ],
   snapshot_positions: [
     ["snapshot_account_id", "snapshot_accounts"],
     ["position_id", "account_positions"],
+    ["security_id", "securities"],
+    ["fx_rate_id", "snapshot_fx_rates", true],
   ],
   snapshot_loans: [
     ["snapshot_id", "snapshots"],
     ["snapshot_account_id", "snapshot_accounts", true],
     ["loan_id", "loans"],
+    ["fx_rate_id", "snapshot_fx_rates", true],
   ],
   snapshot_credit_card_accounts: [
     ["snapshot_id", "snapshots"],
     ["credit_card_account_id", "credit_card_accounts"],
+    ["fx_rate_id", "snapshot_fx_rates", true],
   ],
   snapshot_cash_flows: [["snapshot_id", "snapshots"]],
   position_sales: [

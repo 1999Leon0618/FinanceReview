@@ -2234,6 +2234,19 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
     app_settings: ["key", "value_json", "updated_at"],
   };
 
+const ownerBackupTables = new Set<(typeof backupTables)[number]>([
+  "accounts",
+  "loans",
+  "credit_card_accounts",
+  "snapshots",
+  "watchlist_items",
+  "research_notes",
+  "research_note_revisions",
+  "research_note_sources",
+  "research_quote_snapshots",
+  "research_todos",
+]);
+
 const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
   accounts: "accounts item WHERE item.owner_key = ?",
   securities: `securities item WHERE EXISTS (
@@ -2297,6 +2310,45 @@ function ownedBackupQuery(table: (typeof backupTables)[number]) {
     .map((column) => `item.${column}`)
     .join(", ");
   return `SELECT ${columns} FROM ${ownedBackupFrom[table]} ORDER BY 1`;
+}
+
+function backupIdQueryBatches(
+  select: (table: (typeof backupTables)[number]) => string,
+) {
+  // Cloudflare D1 allows at most five SELECT terms in a compound statement.
+  // Five batches also keep the complete import below the free-plan query cap.
+  const batchSize = 5;
+  const queries: string[] = [];
+  for (let index = 0; index < backupTables.length; index += batchSize) {
+    queries.push(
+      backupTables
+        .slice(index, index + batchSize)
+        .map(select)
+        .join(" UNION ALL "),
+    );
+  }
+  return queries;
+}
+
+function allBackupIdsQueries() {
+  return backupIdQueryBatches((table) => {
+    const primaryColumn = backupColumns[table][0];
+    const ownerColumn = ownerBackupTables.has(table) ? "owner_key" : "NULL";
+    return `SELECT '${table}' AS table_name,
+        CAST(${primaryColumn} AS TEXT) AS primary_value,
+        ${ownerColumn} AS owner_key
+        FROM ${table}`;
+  });
+}
+
+function ownedBackupIdsQueries() {
+  return backupIdQueryBatches((table) => {
+    const primaryColumn = backupColumns[table][0];
+    const from = ownedBackupFrom[table].replace(/\?(?!\d)/g, "?1");
+    return `SELECT '${table}' AS table_name,
+        CAST(item.${primaryColumn} AS TEXT) AS primary_value
+        FROM ${from}`;
+  });
 }
 
 const backupParents: Partial<
@@ -2386,70 +2438,93 @@ export async function importBackup(payload: unknown) {
   if (![1, 2, 3].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
   const backupData = backup.data;
+
+  for (const table of backupTables) {
+    const rows = backupData[table] ?? [];
+    const primaryColumn = backupColumns[table][0];
+    if (!Array.isArray(rows)) throw new Error(`${table} 備份資料格式無效`);
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row))
+        throw new Error(`${table} 備份列格式無效`);
+      if (!Object.hasOwn(row, primaryColumn))
+        throw new Error(`${table}.${primaryColumn} 不可缺少`);
+    }
+  }
+
   return withTransaction(async (db) => {
     const ownerKey = getDataOwner().key;
     let imported = 0;
     let skipped = 0;
     await db.prepare("PRAGMA defer_foreign_keys = ON").run();
 
-    const ownerTables = new Set([
-      "accounts",
-      "loans",
-      "credit_card_accounts",
-      "snapshots",
-      "watchlist_items",
-      "research_notes",
-      "research_note_revisions",
-      "research_note_sources",
-      "research_quote_snapshots",
-      "research_todos",
-    ]);
-    const existingIds = new Map<string, Set<string>>();
+    const existingRows = new Map<string, Map<string, string | null>>();
+    for (const table of backupTables) existingRows.set(table, new Map());
+    for (const query of allBackupIdsQueries()) {
+      for (const row of await db.prepare(query).all()) {
+        existingRows
+          .get(String(row.table_name))
+          ?.set(
+            String(row.primary_value),
+            row.owner_key === null || row.owner_key === undefined
+              ? null
+              : String(row.owner_key),
+          );
+      }
+    }
+
+    const ownedIds = new Map<string, Set<string>>();
+    for (const table of backupTables) ownedIds.set(table, new Set());
+    for (const query of ownedBackupIdsQueries()) {
+      for (const row of await db.prepare(query).all(ownerKey)) {
+        ownedIds.get(String(row.table_name))?.add(String(row.primary_value));
+      }
+    }
+
+    const legacyClaims = new Map<string, string[]>();
+    const rowsToInsert = new Map<string, Row[]>();
 
     // A backup is also the proof needed to claim rows created before owner
     // isolation existed. Claim only matching legacy IDs; an ID owned by another
     // Access identity is always a hard conflict.
     for (const table of backupTables) {
       const primaryColumn = backupColumns[table][0];
-      const existing = new Set<string>();
+      const existing = existingRows.get(table)!;
+      const pending: Row[] = [];
       for (const row of backupData[table] ?? []) {
-        if (!row || typeof row !== "object" || Array.isArray(row))
-          throw new Error(`${table} 備份列格式無效`);
-        if (!Object.hasOwn(row, primaryColumn))
-          throw new Error(`${table}.${primaryColumn} 不可缺少`);
         const primaryValue = String(row[primaryColumn]);
-        const columns = ownerTables.has(table)
-          ? `${primaryColumn}, owner_key`
-          : primaryColumn;
-        const found = (await db
-          .prepare(`SELECT ${columns} FROM ${table} WHERE ${primaryColumn} = ?`)
-          .get(primaryValue)) as Row | undefined;
-        if (!found) continue;
+        if (!existing.has(primaryValue)) {
+          pending.push(row);
+          existing.set(
+            primaryValue,
+            ownerBackupTables.has(table) ? ownerKey : null,
+          );
+          continue;
+        }
 
-        if (ownerTables.has(table)) {
-          const existingOwner = String(found.owner_key);
+        if (ownerBackupTables.has(table)) {
+          const existingOwner = existing.get(primaryValue);
           if (existingOwner !== ownerKey && existingOwner !== "legacy")
             throw new Error(`${table}.${primaryColumn} 已屬於其他登入帳號`);
-          if (existingOwner === "legacy")
-            await db
-              .prepare(
-                `UPDATE ${table} SET owner_key = ? WHERE ${primaryColumn} = ? AND owner_key = 'legacy'`,
-              )
-              .run(ownerKey, primaryValue);
+          if (existingOwner === "legacy") {
+            const claims = legacyClaims.get(table) ?? [];
+            claims.push(primaryValue);
+            legacyClaims.set(table, claims);
+            existing.set(primaryValue, ownerKey);
+            ownedIds.get(table)?.add(primaryValue);
+          }
         }
-        existing.add(primaryValue);
+        skipped += 1;
       }
-      existingIds.set(table, existing);
+      rowsToInsert.set(table, pending);
     }
 
     const allowedIds = new Map<string, Set<string>>();
     for (const table of backupTables) {
       const primaryColumn = backupColumns[table][0];
-      const owned = await db.prepare(ownedBackupQuery(table)).all(ownerKey);
       allowedIds.set(
         table,
         new Set([
-          ...owned.map((row) => String(row[primaryColumn])),
+          ...(ownedIds.get(table) ?? []),
           ...(backupData[table] ?? []).map((row) => String(row[primaryColumn])),
         ]),
       );
@@ -2469,39 +2544,52 @@ export async function importBackup(payload: unknown) {
       }
     }
 
+    for (const [table, primaryValues] of legacyClaims) {
+      const typedTable = table as (typeof backupTables)[number];
+      const primaryColumn = backupColumns[typedTable][0];
+      await db
+        .prepare(
+          `UPDATE ${typedTable} SET owner_key = ?1
+          WHERE owner_key = 'legacy'
+          AND ${primaryColumn} IN (SELECT CAST(value AS TEXT) FROM json_each(?2))`,
+        )
+        .run(ownerKey, JSON.stringify(primaryValues));
+    }
+
     for (const table of backupTables) {
-      const rows = backupData[table] ?? [];
-      const primaryColumn = backupColumns[table][0];
-      const existing = new Set(
-        (await db.prepare(ownedBackupQuery(table)).all(ownerKey)).map((row) =>
-          String(row[primaryColumn]),
-        ),
-      );
-      for (const value of existingIds.get(table) ?? []) existing.add(value);
-      for (const row of rows) {
+      const groups = new Map<string, { columns: string[]; rows: Row[] }>();
+      for (const row of rowsToInsert.get(table) ?? []) {
         const columns = backupColumns[table].filter((column) =>
           Object.hasOwn(row, column),
         );
         if (columns.length === 0) continue;
-        const primaryValue = String(row[primaryColumn]);
-        if (existing.has(primaryValue)) {
-          skipped += 1;
-          continue;
-        }
-        const insertColumns = ownerTables.has(table)
+        const signature = columns.join("\u0000");
+        const group = groups.get(signature) ?? {
+          columns: [...columns],
+          rows: [],
+        };
+        group.rows.push(row);
+        groups.set(signature, group);
+      }
+
+      for (const { columns, rows } of groups.values()) {
+        const insertColumns = ownerBackupTables.has(table)
           ? [...columns, "owner_key"]
           : columns;
-        const values = ownerTables.has(table)
-          ? [...columns.map((column) => row[column] as never), ownerKey]
-          : columns.map((column) => row[column] as never);
-        const placeholders = insertColumns.map(() => "?").join(", ");
+        const selectedColumns = columns.map(
+          (column) => `json_extract(value, '$.${column}')`,
+        );
+        if (ownerBackupTables.has(table)) selectedColumns.push("?2");
         await db
           .prepare(
-            `INSERT INTO ${table} (${insertColumns.join(", ")}) VALUES (${placeholders})`,
+            `INSERT INTO ${table} (${insertColumns.join(", ")})
+            SELECT ${selectedColumns.join(", ")} FROM json_each(?1)`,
           )
-          .run(...values);
-        imported += 1;
-        existing.add(primaryValue);
+          .run(
+            JSON.stringify(rows),
+            ...(ownerBackupTables.has(table) ? [ownerKey] : []),
+          );
+        imported += rows.length;
       }
     }
     await db

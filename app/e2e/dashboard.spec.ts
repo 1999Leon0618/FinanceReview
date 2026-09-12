@@ -129,7 +129,7 @@ test("手機橫向模式可從設定管理備份", async ({ page }) => {
   await expect(page.getByRole("button", { name: "選擇備份" })).toBeVisible();
 });
 
-test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) => {
+test("主要分頁使用獨立網址且切換時不重載", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {
       rawInput: "建立獨立頁面導覽測試資料",
@@ -148,6 +148,22 @@ test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) 
   expect(created.ok(), await created.text()).toBeTruthy();
 
   await page.goto("/");
+
+  const dashboardPageRequests: string[] = [];
+  page.on("request", (requested) => {
+    const pathname = new URL(requested.url()).pathname;
+    if (
+      [
+        "/",
+        "/accounts",
+        "/investments",
+        "/credit-cards",
+        "/research",
+        "/settings",
+      ].includes(pathname)
+    )
+      dashboardPageRequests.push(pathname);
+  });
 
   await page.getByRole("link", { name: "帳戶", exact: true }).first().click();
   await expect(page).toHaveURL(/\/accounts$/);
@@ -174,6 +190,34 @@ test("帳戶、投資與信用卡使用獨立頁面", async ({ page, request }) 
     page.getByRole("heading", { name: "信用卡", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "信用卡帳單" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/investments$/);
+  await expect(
+    page.getByRole("heading", { name: "所有投資持倉" }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "研究", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/research$/);
+  await expect(
+    page.getByRole("heading", { name: "投資研究", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "設定", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(
+    page.getByRole("heading", { name: "設定", exact: true }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("link", { name: "財務總覽", exact: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole("heading", { name: "財務總覽", exact: true }),
+  ).toBeVisible();
+  expect(dashboardPageRequests).toEqual([]);
 });
 
 test("資產淨值圖表期間由下拉選單設定並保留", async ({ page, request }) => {

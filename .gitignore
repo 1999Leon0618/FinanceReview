@@ -4,3 +4,6 @@ data/backups/
 
 # Local workspace probes
 _workspace-test.txt
+
+# Local Wrangler cache created when commands run from the repository root
+/.wrangler/

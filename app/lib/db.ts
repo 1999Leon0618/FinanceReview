@@ -3,10 +3,10 @@ import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export type SqlValue = string | number | null | Uint8Array;
-export type RunResult = { changes: number };
+type SqlValue = string | number | null | Uint8Array;
+type RunResult = { changes: number };
 
-export interface FinanceStatement {
+interface FinanceStatement {
   get(...values: SqlValue[]): Promise<Record<string, unknown> | undefined>;
   all(...values: SqlValue[]): Promise<Record<string, unknown>[]>;
   run(...values: SqlValue[]): Promise<RunResult>;

@@ -92,15 +92,15 @@ import type {
 } from "@/lib/types";
 
 const SnapshotEditor = dynamic(() =>
-  import("@/components/finance-dashboard").then(
+  import("@/components/dashboard-dialogs").then(
     (module) => module.SnapshotEditor,
   ),
 );
 const SaleDialog = dynamic(() =>
-  import("@/components/finance-dashboard").then((module) => module.SaleDialog),
+  import("@/components/dashboard-dialogs").then((module) => module.SaleDialog),
 );
 const SoldHistoryDialog = dynamic(() =>
-  import("@/components/finance-dashboard").then(
+  import("@/components/dashboard-dialogs").then(
     (module) => module.SoldHistoryDialog,
   ),
 );

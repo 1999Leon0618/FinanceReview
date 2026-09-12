@@ -7,14 +7,13 @@ import {
   Archive,
   BarChart3,
   Check,
-  ChevronDown,
-  ChevronUp,
   FileText,
   LoaderCircle,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   X,
 } from "lucide-react";
 import {
@@ -142,42 +141,101 @@ function noteEditor(note: ResearchNote): EditorState {
   };
 }
 
-function QuoteCard({ item }: { item: WatchlistItem }) {
+const quoteNumber = new Intl.NumberFormat("zh-TW", {
+  maximumFractionDigits: 4,
+});
+
+function QuoteCard({
+  item,
+  selected,
+  onToggle,
+  onOpenChart,
+}: {
+  item: WatchlistItem;
+  selected?: boolean;
+  onToggle?: () => void;
+  onOpenChart?: () => void;
+}) {
   const change = Number(item.quote.changePercent ?? 0);
+  const changeValue = Number(item.quote.changeValue);
+  const changeClass =
+    change > 0
+      ? "research-quote-positive"
+      : change < 0
+        ? "research-quote-negative"
+        : "research-quote-flat";
+  const statusLabel =
+    item.quote.status === "fresh"
+      ? "最新"
+      : item.quote.status === "missing"
+        ? "無行情"
+        : "待更新";
   return (
-    <article className="rounded-2xl border border-[#dce4dd] bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5">
+    <article
+      className={`research-quote-card ${selected ? "selected" : ""} ${!item.enabled ? "disabled" : ""}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold text-[#718078]">
-            {item.market} · {item.held ? "持有" : "未持有"}
+          <p className="research-quote-market">
+            {item.market}
+            <span>{item.held ? "持有" : "觀察"}</span>
           </p>
-          <h3 className="mt-1 text-lg font-bold">{item.symbol}</h3>
-          <p className="text-xs text-[#718078]">{item.name}</p>
+          <h3>{item.symbol}</h3>
+          <p className="research-quote-name">{item.name}</p>
         </div>
-        <span
-          className={`rounded-full px-2 py-1 text-[10px] font-bold ${item.quote.status === "fresh" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
-        >
-          {item.quote.status === "missing" ? "無行情" : item.quote.status}
+        <span className={`research-quote-status ${item.quote.status}`}>
+          {statusLabel}
         </span>
       </div>
-      <p className="mt-4 text-2xl font-bold">
-        {item.quote.price ?? "—"}{" "}
-        <small className="text-xs">{item.quote.currency}</small>
-      </p>
-      <p
-        className={`mt-1 text-sm font-semibold ${change > 0 ? "text-red-600" : change < 0 ? "text-emerald-600" : "text-[#718078]"}`}
-      >
-        {item.quote.changeValue ?? "—"}（
-        {item.quote.changePercent
-          ? `${Number(item.quote.changePercent).toFixed(2)}%`
-          : "—"}
-        ）
-      </p>
-      <p className="mt-3 text-[11px] text-[#849088]">
-        {item.quote.quoteAsOf
-          ? new Date(item.quote.quoteAsOf).toLocaleString("zh-TW")
-          : "尚未更新"}
-      </p>
+      <div className="research-quote-value">
+        <p>
+          {item.quote.price == null
+            ? "—"
+            : quoteNumber.format(Number(item.quote.price))}
+          <small>{item.quote.currency}</small>
+        </p>
+        <span className={changeClass}>
+          {item.quote.changeValue != null && Number.isFinite(changeValue)
+            ? quoteNumber.format(changeValue)
+            : "—"}
+          <b>
+            {item.quote.changePercent == null
+              ? "—"
+              : `${change > 0 ? "+" : ""}${change.toFixed(2)}%`}
+          </b>
+        </span>
+      </div>
+      <div className="research-quote-footer">
+        <time>
+          {item.quote.quoteAsOf
+            ? new Date(item.quote.quoteAsOf).toLocaleString("zh-TW", {
+                month: "numeric",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "尚未更新"}
+        </time>
+        {(onToggle || onOpenChart) && (
+          <div>
+            {onToggle && (
+              <button className="research-card-action" onClick={onToggle}>
+                {item.enabled ? <Check size={14} /> : <RotateCcw size={14} />}
+                {item.enabled ? "追蹤中" : "重新追蹤"}
+              </button>
+            )}
+            {onOpenChart && (
+              <button
+                className={`research-card-action ${selected ? "active" : ""}`}
+                onClick={onOpenChart}
+              >
+                <BarChart3 size={14} />
+                走勢
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </article>
   );
 }
@@ -324,7 +382,11 @@ function WatchlistPanel({
   const [symbol, setSymbol] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "TW" | "US">("all");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [chartRange, setChartRange] = useState<1 | 3 | 6 | 12>(3);
+  const [chartBusy, setChartBusy] = useState(false);
   const [candles, setCandles] = useState<Record<string, CandlePoint[]>>({});
 
   const add = async () => {
@@ -367,30 +429,85 @@ function WatchlistPanel({
     await reload();
   };
 
-  const showKline = async (item: WatchlistItem) => {
-    if (expanded === item.id) return setExpanded(null);
+  const showKline = async (
+    item: WatchlistItem,
+    range: 1 | 3 | 6 | 12 = chartRange,
+  ) => {
     setError("");
-    setExpanded(item.id);
-    if (candles[item.id]) return;
+    setSelectedId(item.id);
+    setChartRange(range);
+    const cacheKey = `${item.id}:${range}`;
+    if (candles[cacheKey]) return;
+    setChartBusy(true);
     try {
       const result = await requestJson<{ candles: CandlePoint[] }>(
-        `/api/watchlist/${item.id}/candles?range=3`,
+        `/api/watchlist/${item.id}/candles?range=${range}`,
       );
-      setCandles((current) => ({ ...current, [item.id]: result.candles }));
+      setCandles((current) => ({
+        ...current,
+        [cacheKey]: result.candles,
+      }));
     } catch (cause) {
-      setExpanded(null);
+      setSelectedId(null);
       setError(cause instanceof Error ? cause.message : "K 線取得失敗");
+    } finally {
+      setChartBusy(false);
     }
   };
 
+  const selectedItem = items.find((item) => item.id === selectedId) ?? null;
+  const visibleItems = items.filter((item) => {
+    const marketMatches =
+      filter === "all" ||
+      (filter === "US" ? item.market === "US" : item.market !== "US");
+    const keyword = query.trim().toUpperCase();
+    return (
+      marketMatches &&
+      (!keyword ||
+        item.symbol.toUpperCase().includes(keyword) ||
+        item.name.toUpperCase().includes(keyword))
+    );
+  });
+  const enabledCount = items.filter((item) => item.enabled).length;
+  const heldCount = items.filter((item) => item.held).length;
+  const attentionCount = items.filter(
+    (item) => item.quote.status !== "fresh",
+  ).length;
+
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-[#dce4dd] bg-white p-5 dark:border-white/10 dark:bg-white/5">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="min-w-32 text-xs font-semibold">
-            市場
+    <div className="research-market-workspace">
+      <section className="research-market-overview">
+        <div>
+          <p className="eyebrow">MARKET WATCH</p>
+          <h2>我的觀察清單</h2>
+          <p>聚焦持倉與研究標的，快速掌握價格、漲跌與技術走勢。</p>
+        </div>
+        <div className="research-market-metrics">
+          <div>
+            <span>追蹤中</span>
+            <strong>{enabledCount}</strong>
+          </div>
+          <div>
+            <span>目前持有</span>
+            <strong>{heldCount}</strong>
+          </div>
+          <div>
+            <span>需要更新</span>
+            <strong>{attentionCount}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="research-add-panel">
+        <div className="research-add-copy">
+          <strong>新增觀察標的</strong>
+          <span>輸入單一股票或 ETF 代碼</span>
+        </div>
+        <div className="research-add-form">
+          <label>
+            <span className="sr-only">市場</span>
             <select
-              className="field mt-2"
+              className="field"
               value={market}
               onChange={(event) =>
                 setMarket(event.target.value as typeof market)
@@ -401,13 +518,13 @@ function WatchlistPanel({
               <option value="US">US</option>
             </select>
           </label>
-          <label className="min-w-48 flex-1 text-xs font-semibold">
-            標的代碼
+          <label className="research-symbol-input">
+            <span className="sr-only">標的代碼</span>
             <input
-              className="field mt-2"
+              className="field"
               value={symbol}
               onChange={(event) => setSymbol(event.target.value.toUpperCase())}
-              placeholder="2330、0050、AAPL"
+              placeholder={market === "US" ? "例如 AAPL" : "例如 2330"}
             />
           </label>
           <button
@@ -424,52 +541,112 @@ function WatchlistPanel({
             onClick={refresh}
           >
             <RefreshCw className={busy ? "animate-spin" : ""} size={16} />
-            刷新自選行情
+            更新行情
           </button>
         </div>
-        <p className="mt-3 text-xs text-[#718078]">
-          持倉與額外自選會在投資頁「更新全部行情」時一併更新；此按鈕只刷新快取，不建立資產快照。
-        </p>
-        {error && <p className="notice error mt-4">{error}</p>}
       </section>
-      {items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-[#cdd8d0] p-10 text-center text-sm text-[#718078]">
-          目前沒有台美股自選標的。
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {items.map((item) => (
-            <div key={item.id} className={!item.enabled ? "opacity-60" : ""}>
-              <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-                <QuoteCard item={item} />
-                <div className="flex gap-2 lg:flex-col lg:justify-center">
-                  <button className="secondary" onClick={() => toggle(item)}>
-                    {item.enabled ? (
-                      <Check size={15} />
-                    ) : (
-                      <RotateCcw size={15} />
-                    )}
-                    {item.enabled ? "追蹤中" : "重新追蹤"}
-                  </button>
-                  <button className="secondary" onClick={() => showKline(item)}>
-                    <BarChart3 size={15} />K 線{" "}
-                    {expanded === item.id ? (
-                      <ChevronUp size={14} />
-                    ) : (
-                      <ChevronDown size={14} />
-                    )}
-                  </button>
-                </div>
-              </div>
-              {expanded === item.id && (
-                <div className="mt-3 rounded-2xl border border-[#dce4dd] bg-white p-4 dark:border-white/10 dark:bg-white/5">
-                  <Kline candles={candles[item.id] ?? []} />
-                </div>
-              )}
+
+      {error && <p className="notice error">{error}</p>}
+
+      {selectedItem && (
+        <section className="research-chart-panel">
+          <header>
+            <div>
+              <p>
+                {selectedItem.market} · {selectedItem.name}
+              </p>
+              <h3>{selectedItem.symbol} 技術走勢</h3>
             </div>
-          ))}
-        </div>
+            <div className="research-chart-actions">
+              <div aria-label="K 線期間">
+                {([1, 3, 6, 12] as const).map((range) => (
+                  <button
+                    key={range}
+                    className={chartRange === range ? "active" : ""}
+                    disabled={chartBusy}
+                    onClick={() => showKline(selectedItem, range)}
+                  >
+                    {range}月
+                  </button>
+                ))}
+              </div>
+              <button
+                className="icon-button"
+                aria-label="關閉 K 線"
+                onClick={() => setSelectedId(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </header>
+          {chartBusy ? (
+            <div className="research-chart-loading">
+              <LoaderCircle className="animate-spin" size={22} />
+              正在取得走勢
+            </div>
+          ) : (
+            <Kline
+              candles={candles[`${selectedItem.id}:${chartRange}`] ?? []}
+            />
+          )}
+        </section>
       )}
+
+      <section className="research-list-section">
+        <header className="research-list-toolbar">
+          <div className="research-filter-tabs" aria-label="自選市場篩選">
+            {(
+              [
+                ["all", "全部"],
+                ["TW", "台股"],
+                ["US", "美股"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                className={filter === value ? "active" : ""}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+                <span>
+                  {value === "all"
+                    ? items.length
+                    : items.filter((item) =>
+                        value === "US"
+                          ? item.market === "US"
+                          : item.market !== "US",
+                      ).length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className="research-watch-search">
+            <Search size={15} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜尋代碼或名稱"
+            />
+          </label>
+        </header>
+        {items.length === 0 ? (
+          <p className="research-empty-state">目前沒有台美股自選標的。</p>
+        ) : visibleItems.length === 0 ? (
+          <p className="research-empty-state">找不到符合條件的標的。</p>
+        ) : (
+          <div className="research-quote-grid">
+            {visibleItems.map((item) => (
+              <QuoteCard
+                key={item.id}
+                item={item}
+                selected={selectedId === item.id}
+                onToggle={() => toggle(item)}
+                onOpenChart={() => showKline(item)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -1680,10 +1857,10 @@ export default function ResearchWorkspace() {
   }, []);
   const tabs = useMemo(
     () => [
-      { id: "watchlist" as const, label: "行情面板" },
-      { id: "TW" as const, label: "台股研究" },
-      { id: "US" as const, label: "美股研究" },
-      { id: "todos" as const, label: "待辦" },
+      { id: "watchlist" as const, label: "行情面板", detail: "自選與走勢" },
+      { id: "TW" as const, label: "台股研究", detail: "盤前、盤中、盤後" },
+      { id: "US" as const, label: "美股研究", detail: "事件與報告" },
+      { id: "todos" as const, label: "研究待辦", detail: "追蹤下一步" },
     ],
     [],
   );
@@ -1694,20 +1871,14 @@ export default function ResearchWorkspace() {
       </div>
     );
   return (
-    <div className="space-y-6">
+    <div className="research-workspace">
       {error && <p className="notice error">{error}</p>}
-      <nav
-        className="flex gap-2 overflow-x-auto border-b border-[#dce4dd] pb-3"
-        aria-label="投資研究分頁"
-      >
+      <nav className="research-tabs" aria-label="投資研究分頁">
         {tabs.map((item) => (
           <button
             key={item.id}
-            className={
-              tab === item.id
-                ? "primary whitespace-nowrap"
-                : "secondary whitespace-nowrap"
-            }
+            className={tab === item.id ? "active" : ""}
+            aria-current={tab === item.id ? "page" : undefined}
             onClick={() => setTab(item.id)}
           >
             {item.id === "watchlist" ? (
@@ -1717,7 +1888,10 @@ export default function ResearchWorkspace() {
             ) : (
               <FileText size={15} />
             )}
-            {item.label}
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </span>
           </button>
         ))}
       </nav>

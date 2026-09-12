@@ -42,7 +42,7 @@ function rangeStart(range: PerformanceReport["range"]) {
   return start.toISOString();
 }
 
-export async function loadPerformanceInputs(
+async function loadPerformanceInputs(
   range: PerformanceReport["range"],
 ): Promise<PerformanceInput[]> {
   const db = await getDatabase();

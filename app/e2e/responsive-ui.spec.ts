@@ -99,9 +99,7 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   await expect(page.getByRole("button", { name: "行情面板" })).toBeVisible();
   await expect(page.getByRole("button", { name: "台股研究" })).toBeVisible();
   await expect(page.getByRole("button", { name: "美股研究" })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "待辦", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /研究待辦/ })).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));

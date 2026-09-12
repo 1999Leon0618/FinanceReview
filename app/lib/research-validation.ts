@@ -59,7 +59,7 @@ export const researchDocumentSchema = z.object({
     .max(100),
 });
 
-export const researchSourceInputSchema = z.object({
+const researchSourceInputSchema = z.object({
   id: identifier.optional(),
   blockId: identifier.nullable().optional(),
   watchlistItemId: identifier.nullable().optional(),
@@ -122,8 +122,6 @@ export const researchNoteInputSchema = z
         });
     }
   });
-
-export const researchNoteUpdateSchema = researchNoteInputSchema;
 
 export const watchlistCreateSchema = z.object({
   market: z.enum(["TWSE", "TPEX", "US"]),

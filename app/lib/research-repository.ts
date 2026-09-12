@@ -77,7 +77,7 @@ function watchlistFromRow(row: Row): WatchlistItem {
   };
 }
 
-export async function syncHoldingWatchlist(database?: FinanceDatabase) {
+async function syncHoldingWatchlist(database?: FinanceDatabase) {
   const db = database ?? (await getDatabase());
   const ownerKey = getDataOwner().key;
   const rows = (await db

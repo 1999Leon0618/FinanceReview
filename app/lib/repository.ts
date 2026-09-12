@@ -1521,7 +1521,7 @@ const taipeiDay = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-export function dedupeDailyTrend(
+function dedupeDailyTrend(
   rows: Array<{ capturedAt: string; totalAssetValueTwd: string }>,
 ) {
   return dedupeLatestByTaipeiDay(rows);

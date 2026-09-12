@@ -2,7 +2,7 @@ import type { CreditCardPaymentStatus } from "./types";
 
 export const inputDate = (value?: string | null) => value?.slice(0, 10) ?? "";
 
-export function creditCardPaymentPeriod(value: string) {
+function creditCardPaymentPeriod(value: string) {
   return inputDate(value).slice(0, 7);
 }
 

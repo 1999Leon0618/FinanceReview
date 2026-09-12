@@ -1,23 +1,23 @@
-export type AccountType = "bank" | "brokerage" | "cash";
+type AccountType = "bank" | "brokerage" | "cash";
 export type Market = "TWSE" | "TPEX" | "US" | "FUND" | "FUTURES";
-export type SecurityType = "stock" | "etf" | "fund" | "future";
-export type PositionSide = "long" | "short";
-export type LoanType =
+type SecurityType = "stock" | "etf" | "fund" | "future";
+type PositionSide = "long" | "short";
+type LoanType =
   "mortgage" | "personal" | "auto" | "student" | "credit" | "other";
-export type LoanRateType = "fixed" | "floating";
+type LoanRateType = "fixed" | "floating";
 export type QuoteStatus = "fresh" | "stale" | "manual";
 export type QuoteSource = "TWSE" | "TPEX" | "YAHOO" | "MANUAL";
-export type SnapshotCashFlowType =
+type SnapshotCashFlowType =
   | "capital_contribution"
   | "capital_withdrawal"
   | "income"
   | "fee_tax"
   | "other_inflow"
   | "other_outflow";
-export type CreditCardAccountStatus = "active" | "inactive" | "closed";
-export type CreditCardNetwork =
+type CreditCardAccountStatus = "active" | "inactive" | "closed";
+type CreditCardNetwork =
   "visa" | "mastercard" | "jcb" | "amex" | "unionpay" | "other";
-export type CreditCardHolderType = "primary" | "additional";
+type CreditCardHolderType = "primary" | "additional";
 export type CreditCardPaymentStatus =
   | "no_statement"
   | "unpaid"
@@ -49,7 +49,7 @@ export interface SnapshotChangeBreakdown {
   marketAndFxTwd: string | null;
 }
 
-export interface CashBalanceInput {
+interface CashBalanceInput {
   currency: string;
   amount: string;
   fxRate?: FxRateInput;
@@ -115,7 +115,7 @@ export interface LoanView extends LoanInput {
   valueTwd: string;
 }
 
-export interface CreditCardInput {
+interface CreditCardInput {
   cardId?: string;
   name: string;
   lastFour?: string | null;
@@ -242,8 +242,8 @@ export interface SaleView {
   note: string | null;
 }
 
-export type UpdateFreshnessTone = "fresh" | "attention" | "warning";
-export type HealthSeverity = "info" | "warning" | "critical";
+type UpdateFreshnessTone = "fresh" | "attention" | "warning";
+type HealthSeverity = "info" | "warning" | "critical";
 
 export interface HealthFinding {
   id: string;
@@ -388,8 +388,8 @@ export interface SnapshotProposal {
 
 export type ResearchMarketScope = "TW" | "US";
 export type ResearchNoteType = "premarket" | "intraday" | "postmarket";
-export type WatchlistOrigin = "holding" | "manual" | "report";
-export type WatchstockView = "card" | "kline";
+type WatchlistOrigin = "holding" | "manual" | "report";
+type WatchstockView = "card" | "kline";
 
 export interface MarketQuoteView {
   price: string | null;

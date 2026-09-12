@@ -293,6 +293,94 @@ try {
     const restoredBody = await restored.json();
     assert.equal(restoredBody.imported, 0);
     assert.ok(restoredBody.skipped > 0);
+
+    const bulkSnapshotCount = 60;
+    const bulkAccountId = "workers-bulk-import-account";
+    const bulkData = Object.fromEntries(
+      Object.keys(backupBody.data).map((table) => [table, []]),
+    );
+    bulkData.accounts = [
+      {
+        id: bulkAccountId,
+        name: "Workers 批次匯入帳戶",
+        institution: null,
+        account_type: "bank",
+        account_reference: null,
+        default_currency: "TWD",
+        archived_at: null,
+        created_at: "2026-09-08T00:00:00.000Z",
+        updated_at: "2026-09-08T00:00:00.000Z",
+      },
+    ];
+    bulkData.snapshots = Array.from(
+      { length: bulkSnapshotCount },
+      (_, index) => ({
+        id: `workers-bulk-import-snapshot-${index}`,
+        captured_at: `2026-09-08T00:00:${String(index).padStart(2, "0")}.000Z`,
+        base_snapshot_id: null,
+        raw_input: "Workers 大型備份匯入測試",
+        parser_model: "manual",
+        parser_schema_version: 1,
+        total_cash_twd: String(index + 1),
+        total_securities_twd: "0",
+        total_asset_value_twd: String(index + 1),
+        total_liabilities_twd: "0",
+        total_credit_card_liabilities_twd: "0",
+        total_credit_card_credits_twd: "0",
+        net_worth_twd: String(index + 1),
+        total_cost_twd: "0",
+        unrealized_pnl_twd: "0",
+        created_at: `2026-09-08T00:00:${String(index).padStart(2, "0")}.000Z`,
+        updated_at: `2026-09-08T00:00:${String(index).padStart(2, "0")}.000Z`,
+      }),
+    );
+    bulkData.snapshot_accounts = Array.from(
+      { length: bulkSnapshotCount },
+      (_, index) => ({
+        id: `workers-bulk-import-snapshot-account-${index}`,
+        snapshot_id: `workers-bulk-import-snapshot-${index}`,
+        account_id: bulkAccountId,
+        name: "Workers 批次匯入帳戶",
+        institution: null,
+        account_type: "bank",
+        account_reference: null,
+        default_currency: "TWD",
+        sort_order: 0,
+      }),
+    );
+    bulkData.cash_balances = Array.from(
+      { length: bulkSnapshotCount },
+      (_, index) => ({
+        id: `workers-bulk-import-cash-${index}`,
+        snapshot_account_id: `workers-bulk-import-snapshot-account-${index}`,
+        currency: "TWD",
+        amount: String(index + 1),
+        fx_rate_id: null,
+        value_twd: String(index + 1),
+      }),
+    );
+    const bulkRestored = await post("/api/backup", {
+      schemaVersion: backupBody.schemaVersion,
+      exportedAt: "2026-09-08T00:01:00.000Z",
+      data: bulkData,
+    });
+    assert.equal(bulkRestored.status, 200, await bulkRestored.clone().text());
+    assert.deepEqual(await bulkRestored.json(), {
+      imported: 1 + bulkSnapshotCount * 3,
+      skipped: 0,
+    });
+    const afterBulkRestore = await worker.fetch(
+      "http://localhost/api/dashboard?range=all",
+    );
+    assert.equal(afterBulkRestore.status, 200);
+    const afterBulkRestoreBody = await afterBulkRestore.json();
+    assert.ok(
+      afterBulkRestoreBody.history.some(
+        (snapshot) =>
+          snapshot.id ===
+          `workers-bulk-import-snapshot-${bulkSnapshotCount - 1}`,
+      ),
+    );
   });
   await worker.stop();
   worker = undefined;

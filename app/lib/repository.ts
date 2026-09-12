@@ -2426,6 +2426,146 @@ const backupParents: Partial<
   ],
 };
 
+export type BackupImportMode = "history" | "merge" | "replace";
+
+export type BackupImportPreview = {
+  backup: { snapshots: number; earliest: string | null; latest: string | null };
+  cloud: { snapshots: number; earliest: string | null; latest: string | null };
+  historicalSnapshots: number;
+  duplicateSnapshots: number;
+  mergeWillChangeCurrent: boolean;
+  recommendedMode: BackupImportMode;
+};
+
+type BackupPayload = {
+  schemaVersion: number;
+  data: Record<string, Row[]>;
+};
+
+function parseBackup(payload: unknown): BackupPayload {
+  if (!payload || typeof payload !== "object") throw new Error("備份格式無效");
+  const backup = payload as {
+    schemaVersion?: number;
+    data?: Record<string, Row[]>;
+  };
+  if (![1, 2, 3].includes(backup.schemaVersion ?? 0) || !backup.data)
+    throw new Error("不支援此備份版本");
+
+  for (const table of backupTables) {
+    const rows = backup.data[table] ?? [];
+    const primaryColumn = backupColumns[table][0];
+    if (!Array.isArray(rows)) throw new Error(`${table} 備份資料格式無效`);
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row))
+        throw new Error(`${table} 備份列格式無效`);
+      if (!Object.hasOwn(row, primaryColumn))
+        throw new Error(`${table}.${primaryColumn} 不可缺少`);
+    }
+  }
+  return { schemaVersion: backup.schemaVersion!, data: backup.data };
+}
+
+function backupSnapshotRange(rows: Row[]) {
+  const dates = rows
+    .map((row) => String(row.captured_at ?? ""))
+    .filter(Boolean)
+    .sort();
+  return {
+    snapshots: rows.length,
+    earliest: dates[0] ?? null,
+    latest: dates.at(-1) ?? null,
+  };
+}
+
+function historicalBackupData(
+  backupData: Record<string, Row[]>,
+  cloudLatest: string | null,
+) {
+  if (!cloudLatest) return backupData;
+  const selectedSnapshots = (backupData.snapshots ?? [])
+    .filter((row) => String(row.captured_at) < cloudLatest)
+    .map((row) => ({ ...row }));
+  const snapshotIds = new Set(selectedSnapshots.map((row) => String(row.id)));
+  for (const row of selectedSnapshots) {
+    if (row.base_snapshot_id && !snapshotIds.has(String(row.base_snapshot_id)))
+      row.base_snapshot_id = null;
+  }
+  const snapshotAccounts = (backupData.snapshot_accounts ?? []).filter((row) =>
+    snapshotIds.has(String(row.snapshot_id)),
+  );
+  const snapshotAccountIds = new Set(
+    snapshotAccounts.map((row) => String(row.id)),
+  );
+  return {
+    ...backupData,
+    snapshots: selectedSnapshots,
+    snapshot_accounts: snapshotAccounts,
+    snapshot_fx_rates: (backupData.snapshot_fx_rates ?? []).filter((row) =>
+      snapshotIds.has(String(row.snapshot_id)),
+    ),
+    cash_balances: (backupData.cash_balances ?? []).filter((row) =>
+      snapshotAccountIds.has(String(row.snapshot_account_id)),
+    ),
+    snapshot_positions: (backupData.snapshot_positions ?? []).filter((row) =>
+      snapshotAccountIds.has(String(row.snapshot_account_id)),
+    ),
+    snapshot_loans: (backupData.snapshot_loans ?? []).filter((row) =>
+      snapshotIds.has(String(row.snapshot_id)),
+    ),
+    snapshot_credit_card_accounts: (
+      backupData.snapshot_credit_card_accounts ?? []
+    ).filter((row) => snapshotIds.has(String(row.snapshot_id))),
+    snapshot_cash_flows: (backupData.snapshot_cash_flows ?? []).filter((row) =>
+      snapshotIds.has(String(row.snapshot_id)),
+    ),
+    position_sales: (backupData.position_sales ?? []).filter((row) =>
+      snapshotIds.has(String(row.result_snapshot_id)),
+    ),
+  };
+}
+
+export async function previewBackup(
+  payload: unknown,
+): Promise<BackupImportPreview> {
+  const backup = parseBackup(payload);
+  const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
+  const cloudRow = (await db
+    .prepare(
+      `SELECT COUNT(*) AS snapshots, MIN(captured_at) AS earliest,
+      MAX(captured_at) AS latest FROM snapshots WHERE owner_key = ?`,
+    )
+    .get(ownerKey)) as Row;
+  const cloud = {
+    snapshots: Number(cloudRow.snapshots ?? 0),
+    earliest: cloudRow.earliest ? String(cloudRow.earliest) : null,
+    latest: cloudRow.latest ? String(cloudRow.latest) : null,
+  };
+  const backupRange = backupSnapshotRange(backup.data.snapshots ?? []);
+  const cloudSnapshotIds = new Set(
+    (
+      await db
+        .prepare("SELECT id FROM snapshots WHERE owner_key = ?")
+        .all(ownerKey)
+    ).map((row) => String(row.id)),
+  );
+  return {
+    backup: backupRange,
+    cloud,
+    historicalSnapshots: (backup.data.snapshots ?? []).filter(
+      (row) => !cloud.latest || String(row.captured_at) < cloud.latest,
+    ).length,
+    duplicateSnapshots: (backup.data.snapshots ?? []).filter((row) =>
+      cloudSnapshotIds.has(String(row.id)),
+    ).length,
+    mergeWillChangeCurrent: Boolean(
+      backupRange.latest &&
+      (!cloud.latest || backupRange.latest > cloud.latest),
+    ),
+    recommendedMode: cloud.snapshots > 0 ? "history" : "replace",
+  };
+}
+
 export async function exportBackup() {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
@@ -2446,30 +2586,26 @@ export async function exportBackup() {
   };
 }
 
-export async function importBackup(payload: unknown) {
-  if (!payload || typeof payload !== "object") throw new Error("備份格式無效");
-  const backup = payload as {
-    schemaVersion?: number;
-    data?: Record<string, Row[]>;
-  };
-  if (![1, 2, 3].includes(backup.schemaVersion ?? 0) || !backup.data)
-    throw new Error("不支援此備份版本");
-  const backupData = backup.data;
-
-  for (const table of backupTables) {
-    const rows = backupData[table] ?? [];
-    const primaryColumn = backupColumns[table][0];
-    if (!Array.isArray(rows)) throw new Error(`${table} 備份資料格式無效`);
-    for (const row of rows) {
-      if (!row || typeof row !== "object" || Array.isArray(row))
-        throw new Error(`${table} 備份列格式無效`);
-      if (!Object.hasOwn(row, primaryColumn))
-        throw new Error(`${table}.${primaryColumn} 不可缺少`);
-    }
-  }
+export async function importBackup(
+  payload: unknown,
+  mode: BackupImportMode = "merge",
+) {
+  const backup = parseBackup(payload);
 
   return withTransaction(async (db) => {
     const ownerKey = getDataOwner().key;
+    const cloudLatestRow = (await db
+      .prepare(
+        "SELECT MAX(captured_at) AS latest FROM snapshots WHERE owner_key = ?",
+      )
+      .get(ownerKey)) as Row | undefined;
+    const backupData =
+      mode === "history"
+        ? historicalBackupData(
+            backup.data,
+            cloudLatestRow?.latest ? String(cloudLatestRow.latest) : null,
+          )
+        : backup.data;
     let imported = 0;
     let skipped = 0;
     await db.prepare("PRAGMA defer_foreign_keys = ON").run();
@@ -2494,6 +2630,36 @@ export async function importBackup(payload: unknown) {
     for (const query of ownedBackupIdsQueries()) {
       for (const row of await db.prepare(query).all(ownerKey)) {
         ownedIds.get(String(row.table_name))?.add(String(row.primary_value));
+      }
+    }
+
+    const replaceableTables = new Set<(typeof backupTables)[number]>(
+      backupTables.filter(
+        (table) => table !== "securities" && table !== "app_settings",
+      ),
+    );
+    if (mode === "replace") {
+      const tablesToReplace = new Set(
+        [...replaceableTables].filter(
+          (table) => (ownedIds.get(table)?.size ?? 0) > 0,
+        ),
+      );
+      for (const table of replaceableTables) {
+        for (const id of ownedIds.get(table) ?? [])
+          existingRows.get(table)?.delete(id);
+        ownedIds.set(table, new Set());
+      }
+      for (const table of [...backupTables].reverse()) {
+        if (!tablesToReplace.has(table)) continue;
+        const primaryColumn = backupColumns[table][0];
+        const from = ownedBackupFrom[table].replace(/\?(?!\d)/g, "?1");
+        await db
+          .prepare(
+            `DELETE FROM ${table} WHERE ${primaryColumn} IN (
+              SELECT item.${primaryColumn} FROM ${from}
+            )`,
+          )
+          .run(ownerKey);
       }
     }
 

@@ -10,6 +10,8 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { MouseEvent } from "react";
 import {
   Area,
   AreaChart,
@@ -58,7 +60,6 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import ResearchWorkspace from "@/components/research-workspace";
 import type { QuoteRefreshPreview } from "@/lib/quote-refresh";
 import {
   DisplayOrderEditor,
@@ -66,6 +67,10 @@ import {
 } from "@/components/display-order-editor";
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
 import { requestJson as request } from "@/lib/client-request";
+import {
+  financePageFromPathname,
+  type FinancePage,
+} from "@/lib/dashboard-navigation";
 import {
   creditCardDisplayPayment,
   creditCardPaymentMonthLabel,
@@ -104,15 +109,15 @@ const SoldHistoryDialog = dynamic(() =>
     (module) => module.SoldHistoryDialog,
   ),
 );
+const ResearchWorkspace = dynamic(
+  () => import("@/components/research-workspace"),
+  {
+    loading: () => <p className="empty-state">正在載入研究工作區…</p>,
+  },
+);
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
-export type FinancePage =
-  | "overview"
-  | "accounts"
-  | "investments"
-  | "credit-cards"
-  | "research"
-  | "settings";
+export type { FinancePage } from "@/lib/dashboard-navigation";
 type DashboardNotification = {
   title: string;
   message: string;
@@ -218,6 +223,10 @@ export default function FinanceDashboard({
   demoMode?: boolean;
   demoReturnHref?: string;
 }) {
+  const pathname = usePathname();
+  const activePage = demoMode
+    ? page
+    : (financePageFromPathname(pathname) ?? page);
   const [data, setData] = useState<DashboardData | null>(initialData);
   const [range, setRange] = useState("6m");
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -339,6 +348,46 @@ export default function FinanceDashboard({
     setDarkMode(nextDarkMode);
   };
 
+  const navigateWithinDashboard = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      if (
+        demoMode ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.currentTarget.target === "_blank" ||
+        event.currentTarget.hasAttribute("download")
+      )
+        return;
+
+      const target = new URL(event.currentTarget.href);
+      if (
+        target.origin !== window.location.origin ||
+        !financePageFromPathname(target.pathname)
+      )
+        return;
+
+      event.preventDefault();
+      const nextLocation = `${target.pathname}${target.search}${target.hash}`;
+      const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextLocation !== currentLocation)
+        window.history.pushState(null, "", nextLocation);
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const destination = target.hash
+            ? document.getElementById(target.hash.slice(1))
+            : document.getElementById("top");
+          destination?.scrollIntoView({ block: "start" });
+        });
+      });
+    },
+    [demoMode],
+  );
+
   const load = useCallback(async () => {
     if (demoMode) return true;
     try {
@@ -373,7 +422,7 @@ export default function FinanceDashboard({
   }, [demoMode, range]);
 
   useEffect(() => {
-    if (demoMode || page !== "investments") return;
+    if (demoMode || activePage !== "investments") return;
     let cancelled = false;
     const loadingTimer = window.setTimeout(() => {
       if (!cancelled) setPerformanceLoading(true);
@@ -395,7 +444,7 @@ export default function FinanceDashboard({
       cancelled = true;
       window.clearTimeout(loadingTimer);
     };
-  }, [benchmark, demoMode, range, data?.latest?.id, page]);
+  }, [benchmark, demoMode, range, data?.latest?.id, activePage]);
 
   useEffect(() => {
     if (!data?.health.shouldWarnOnOpen || !data.health.lastUpdatedAt) return;
@@ -722,13 +771,13 @@ export default function FinanceDashboard({
       location: "帳本設定",
       description: "調整顯示偏好，管理備份與帳本存取。",
     },
-  }[page];
+  }[activePage];
   const primarySortSection: DisplaySection =
-    page === "investments"
+    activePage === "investments"
       ? "holdings"
-      : page === "credit-cards"
+      : activePage === "credit-cards"
         ? "creditCards"
-        : page === "overview"
+        : activePage === "overview"
           ? "loans"
           : "accounts";
 
@@ -756,47 +805,63 @@ export default function FinanceDashboard({
 
         <nav className="sidebar-nav" aria-label="主要導覽">
           <Link
-            className={page === "overview" ? "active" : ""}
+            className={activePage === "overview" ? "active" : ""}
             href={demoMode ? "/demo" : "/"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <LayoutDashboard size={17} />
             財務總覽
           </Link>
           <Link
-            className={page === "accounts" ? "active" : ""}
+            className={activePage === "accounts" ? "active" : ""}
             href={demoMode ? "/demo" : "/accounts"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <WalletCards size={17} />
             帳戶
           </Link>
           <Link
-            className={page === "investments" ? "active" : ""}
+            className={activePage === "investments" ? "active" : ""}
             href={demoMode ? "/demo" : "/investments"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <TrendingUp size={17} />
             投資
           </Link>
           <Link
-            className={page === "credit-cards" ? "active" : ""}
+            className={activePage === "credit-cards" ? "active" : ""}
             href={demoMode ? "/demo" : "/credit-cards"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <CreditCard size={17} />
             信用卡
           </Link>
           <Link
-            className={page === "research" ? "active" : ""}
+            className={activePage === "research" ? "active" : ""}
             href={demoMode ? "/demo" : "/research"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <BookOpenText size={17} />
             研究
           </Link>
-          <Link href={demoMode ? "/demo#history" : "/#history"}>
+          <Link
+            href={demoMode ? "/demo#history" : "/#history"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
+          >
             <History size={17} />
             歷史紀錄
           </Link>
           <Link
-            className={page === "settings" ? "active" : ""}
+            className={activePage === "settings" ? "active" : ""}
             href={demoMode ? "/demo?view=settings" : "/settings"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <Settings size={17} /> 設定
           </Link>
@@ -847,9 +912,11 @@ export default function FinanceDashboard({
           <Link
             className="icon-button settings-entry"
             href={demoMode ? "/demo?view=settings" : "/settings"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
             aria-label="設定"
             title="設定"
-            aria-current={page === "settings" ? "page" : undefined}
+            aria-current={activePage === "settings" ? "page" : undefined}
           >
             <Settings size={18} />
           </Link>
@@ -857,7 +924,7 @@ export default function FinanceDashboard({
             <Link className="primary demo-top-return" href={demoReturnHref}>
               <ArrowLeft size={15} /> 返回申請
             </Link>
-          ) : page !== "research" ? (
+          ) : activePage !== "research" ? (
             <button className="primary" onClick={() => setEditor(true)}>
               <Plus size={16} />
               新增快照
@@ -867,36 +934,46 @@ export default function FinanceDashboard({
 
         <nav className="mobile-page-nav" aria-label="手機主要導覽">
           <Link
-            className={page === "overview" ? "active" : ""}
+            className={activePage === "overview" ? "active" : ""}
             href={demoMode ? "/demo" : "/"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <LayoutDashboard size={16} />
             總覽
           </Link>
           <Link
-            className={page === "accounts" ? "active" : ""}
+            className={activePage === "accounts" ? "active" : ""}
             href={demoMode ? "/demo" : "/accounts"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <WalletCards size={16} />
             帳戶
           </Link>
           <Link
-            className={page === "investments" ? "active" : ""}
+            className={activePage === "investments" ? "active" : ""}
             href={demoMode ? "/demo" : "/investments"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <TrendingUp size={16} />
             投資
           </Link>
           <Link
-            className={page === "credit-cards" ? "active" : ""}
+            className={activePage === "credit-cards" ? "active" : ""}
             href={demoMode ? "/demo" : "/credit-cards"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <CreditCard size={16} />
             信用卡
           </Link>
           <Link
-            className={page === "research" ? "active" : ""}
+            className={activePage === "research" ? "active" : ""}
             href={demoMode ? "/demo" : "/research"}
+            prefetch={false}
+            onClick={navigateWithinDashboard}
           >
             <BookOpenText size={16} />
             研究
@@ -929,26 +1006,29 @@ export default function FinanceDashboard({
               </p>
             </div>
             <div className="page-intro-actions">
-              {page !== "settings" && page !== "research" && latest && data && (
-                <FreshnessBadge health={data.health} />
-              )}
-              {page !== "settings" && page !== "research" && !demoMode && (
-                <button
-                  className="secondary"
-                  aria-label="自訂排序"
-                  disabled={!latest || !displayOrder.ready}
-                  onClick={() => setSortingSection(primarySortSection)}
-                >
-                  <ArrowUpDown size={16} /> 自訂排序
-                </button>
-              )}
+              {activePage !== "settings" &&
+                activePage !== "research" &&
+                latest &&
+                data && <FreshnessBadge health={data.health} />}
+              {activePage !== "settings" &&
+                activePage !== "research" &&
+                !demoMode && (
+                  <button
+                    className="secondary"
+                    aria-label="自訂排序"
+                    disabled={!latest || !displayOrder.ready}
+                    onClick={() => setSortingSection(primarySortSection)}
+                  >
+                    <ArrowUpDown size={16} /> 自訂排序
+                  </button>
+                )}
             </div>
           </div>
 
           {error && <p className="notice error mt-6">{error}</p>}
-          {page === "research" ? (
+          {activePage === "research" ? (
             <ResearchWorkspace />
-          ) : page === "settings" ? (
+          ) : activePage === "settings" ? (
             <div className="settings-sections">
               <section
                 className="settings-panel"
@@ -1120,6 +1200,8 @@ export default function FinanceDashboard({
               <Link
                 className="settings-return secondary"
                 href={demoMode ? "/demo" : "/"}
+                prefetch={false}
+                onClick={navigateWithinDashboard}
               >
                 <ArrowLeft size={17} /> 返回財務總覽
               </Link>
@@ -1133,7 +1215,7 @@ export default function FinanceDashboard({
             <EmptyState onCreate={() => setEditor(true)} />
           ) : (
             <>
-              {page === "overview" && (
+              {activePage === "overview" && (
                 <>
                   <section className="summary-grid">
                     <NetWorthCard
@@ -1180,21 +1262,33 @@ export default function FinanceDashboard({
                       className="workspace-shortcuts"
                       aria-label="資產快捷導覽"
                     >
-                      <Link href="/accounts">
+                      <Link
+                        href="/accounts"
+                        prefetch={false}
+                        onClick={navigateWithinDashboard}
+                      >
                         <Landmark size={19} />
                         <span>
                           帳戶與現金<small>查看各帳戶餘額</small>
                         </span>
                         <ChevronRight size={16} />
                       </Link>
-                      <Link href="/investments">
+                      <Link
+                        href="/investments"
+                        prefetch={false}
+                        onClick={navigateWithinDashboard}
+                      >
                         <TrendingUp size={19} />
                         <span>
                           投資持倉<small>追蹤標的與績效</small>
                         </span>
                         <ChevronRight size={16} />
                       </Link>
-                      <Link href="/credit-cards">
+                      <Link
+                        href="/credit-cards"
+                        prefetch={false}
+                        onClick={navigateWithinDashboard}
+                      >
                         <CreditCard size={19} />
                         <span>
                           信用卡帳單<small>掌握繳款與額度</small>
@@ -1248,7 +1342,7 @@ export default function FinanceDashboard({
                 </>
               )}
 
-              {page === "accounts" && (
+              {activePage === "accounts" && (
                 <section
                   id="accounts"
                   className="content-section page-primary-section"
@@ -1280,7 +1374,7 @@ export default function FinanceDashboard({
                 </section>
               )}
 
-              {page === "investments" && (
+              {activePage === "investments" && (
                 <>
                   <PerformancePanel
                     report={performance}
@@ -1342,7 +1436,7 @@ export default function FinanceDashboard({
                 </>
               )}
 
-              {page === "credit-cards" && (
+              {activePage === "credit-cards" && (
                 <CreditCardPanel
                   accounts={latest.creditCardAccounts}
                   valuesHidden={valuesHidden}

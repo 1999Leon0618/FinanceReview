@@ -1544,20 +1544,23 @@ function dedupeLatestByTaipeiDay<T extends { capturedAt: string }>(rows: T[]) {
 export async function getDashboard(range = "6m"): Promise<DashboardData> {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
-  const latest = await getLatestSnapshot(db);
-  const history = await listSnapshotSummaries(100, db);
   const since = dateFromRange(range);
-  const rows = since
-    ? await db
-        .prepare(
-          "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? AND captured_at >= ? ORDER BY captured_at",
-        )
-        .all(ownerKey, since)
-    : await db
-        .prepare(
-          "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? ORDER BY captured_at",
-        )
-        .all(ownerKey);
+  const [latest, history, rows, sold] = await Promise.all([
+    getLatestSnapshot(db),
+    listSnapshotSummaries(100, db),
+    since
+      ? db
+          .prepare(
+            "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? AND captured_at >= ? ORDER BY captured_at",
+          )
+          .all(ownerKey, since)
+      : db
+          .prepare(
+            "SELECT captured_at, net_worth_twd FROM snapshots WHERE owner_key = ? ORDER BY captured_at",
+          )
+          .all(ownerKey),
+    listSales(db),
+  ]);
   return {
     latest,
     history,
@@ -1567,7 +1570,7 @@ export async function getDashboard(range = "6m"): Promise<DashboardData> {
         totalAssetValueTwd: text(row.net_worth_twd),
       })),
     ),
-    sold: await listSales(db),
+    sold,
     health: buildHealthReport(latest),
   };
 }

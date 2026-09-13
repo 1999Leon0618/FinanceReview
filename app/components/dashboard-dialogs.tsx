@@ -336,7 +336,11 @@ export function SnapshotEditor({
     [creditCardAccounts, selectedCreditCardAccountIds],
   );
   const validationWarnings = useMemo(() => {
-    if (!hasPrepared) return [];
+    if (
+      !hasPrepared ||
+      (includeCreditCards && selectedCreditCardAccountIds.length === 0)
+    )
+      return [];
     const result = snapshotCreateSchema.safeParse({
       rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
@@ -358,6 +362,7 @@ export function SnapshotEditor({
     mergedLoans,
     normalizedCreditCardAccounts,
     includeCreditCards,
+    selectedCreditCardAccountIds.length,
     cashFlows,
   ]);
   const fxRates = useMemo(() => {

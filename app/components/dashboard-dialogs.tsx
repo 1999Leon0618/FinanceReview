@@ -291,6 +291,10 @@ export function SnapshotEditor({
   const [includeCreditCards, setIncludeCreditCards] = useState(false);
   const [hasPrepared, setHasPrepared] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [validationResult, setValidationResult] = useState({
+    key: "",
+    warnings: [] as string[],
+  });
   const [busy, setBusy] = useState("");
   const [resolvingPosition, setResolvingPosition] = useState<string | null>(
     null,
@@ -335,13 +339,8 @@ export function SnapshotEditor({
         })),
     [creditCardAccounts, selectedCreditCardAccountIds],
   );
-  const validationWarnings = useMemo(() => {
-    if (
-      !hasPrepared ||
-      (includeCreditCards && selectedCreditCardAccountIds.length === 0)
-    )
-      return [];
-    const result = snapshotCreateSchema.safeParse({
+  const validationPayload = useMemo(
+    () => ({
       rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
       accounts: includeCreditCards ? [] : mergedAccounts,
@@ -349,22 +348,32 @@ export function SnapshotEditor({
       creditCardAccounts: includeCreditCards
         ? normalizedCreditCardAccounts
         : undefined,
-      creditCardUpdateMode: includeCreditCards ? "partial" : undefined,
+      creditCardUpdateMode: includeCreditCards
+        ? ("partial" as const)
+        : undefined,
       cashFlows,
-    });
-    if (result.success) return [];
-    return [...new Set(result.error.issues.map((issue) => issue.message))];
-  }, [
-    hasPrepared,
-    processedInput,
-    latest?.id,
-    mergedAccounts,
-    mergedLoans,
-    normalizedCreditCardAccounts,
-    includeCreditCards,
-    selectedCreditCardAccountIds.length,
-    cashFlows,
-  ]);
+    }),
+    [
+      processedInput,
+      latest?.id,
+      includeCreditCards,
+      mergedAccounts,
+      mergedLoans,
+      normalizedCreditCardAccounts,
+      cashFlows,
+    ],
+  );
+  const validationKey = JSON.stringify(validationPayload);
+  const validationWarnings =
+    validationResult.key === validationKey ? validationResult.warnings : [];
+  const validateSnapshot = () => {
+    const result = snapshotCreateSchema.safeParse(validationPayload);
+    const issues = result.success
+      ? []
+      : [...new Set(result.error.issues.map((issue) => issue.message))];
+    setValidationResult({ key: validationKey, warnings: issues });
+    return issues;
+  };
   const fxRates = useMemo(() => {
     const rates = new Map<
       string,
@@ -650,10 +659,7 @@ export function SnapshotEditor({
     setSelectedCreditCardAccountIds((items) => [...items, accountId]);
   };
   const quotes = async () => {
-    if (validationWarnings.length > 0) {
-      setError("資料檢核未通過，已取消取得行情；請先修正下方警告。");
-      return;
-    }
+    if (validateSnapshot().length > 0) return;
     setBusy("quotes");
     setError("");
     try {
@@ -680,10 +686,7 @@ export function SnapshotEditor({
     }
   };
   const save = async () => {
-    if (validationWarnings.length > 0) {
-      setError("資料檢核未通過，已取消保存；請先修正下方警告。");
-      return;
-    }
+    if (validateSnapshot().length > 0) return;
     setBusy("save");
     setError("");
     try {
@@ -934,7 +937,7 @@ export function SnapshotEditor({
         )}
         {validationWarnings.length > 0 && (
           <div className="notice error" role="alert">
-            <p className="font-semibold">資料不合理，已停止行情查詢與保存：</p>
+            <p className="font-semibold">資料不合理，請修正後再試：</p>
             {validationWarnings.map((item, index) => (
               <p key={`${item}-${index}`}>• {item}</p>
             ))}
@@ -2665,15 +2668,7 @@ export function SnapshotEditor({
           </button>
           <button
             className="primary min-w-40"
-            disabled={
-              !hasPrepared ||
-              (accounts.length === 0 &&
-                loans.length === 0 &&
-                (!includeCreditCards ||
-                  selectedCreditCardAccountIds.length === 0)) ||
-              !!busy ||
-              validationWarnings.length > 0
-            }
+            disabled={!hasPrepared || !!busy}
             onClick={save}
           >
             {busy === "save" ? (

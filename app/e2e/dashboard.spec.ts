@@ -659,10 +659,14 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await dialog.getByRole("button", { name: "只更新信用卡" }).click();
   await expect(dialog).toContainText("更新本月信用卡繳款狀況");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
-  await expect(
-    dialog.getByRole("button", { name: "保存這筆紀錄" }),
-  ).toBeDisabled();
+  const saveButton = dialog.getByRole("button", { name: "保存這筆紀錄" });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "至少需要一個帳戶、一筆貸款或一個信用卡帳戶",
+  );
   await dialog.getByLabel("本次更新 國泰世華信用卡").check();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect(dialog).toContainText("繳款期限 2026-09-19");
   await expect(dialog.getByText("本次繳款期限")).toHaveCount(0);
   await dialog.getByLabel("總應繳金額").fill("10000");

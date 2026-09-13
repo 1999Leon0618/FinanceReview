@@ -366,7 +366,7 @@ test("新增快照可建立全新帳戶並依帳戶類型顯示欄位", async ({
   await expect(dialog.getByLabel("基金級別代碼")).toBeVisible();
 });
 
-test("貸款資料不合理時顯示警告並停止保存", async ({ page }) => {
+test("貸款資料不合理時按保存才顯示警告", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "新增快照" }).click();
 
@@ -376,12 +376,13 @@ test("貸款資料不合理時顯示警告並停止保存", async ({ page }) => 
   await dialog.getByLabel("原始貸款金額").fill("100000");
   await dialog.getByLabel("目前未償本金").fill("120000");
 
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  const saveButton = dialog.getByRole("button", { name: "保存這筆紀錄" });
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
   await expect(dialog.getByRole("alert")).toContainText(
     "目前未償本金不可高於原始貸款金額",
   );
-  await expect(
-    dialog.getByRole("button", { name: "保存這筆紀錄" }),
-  ).toBeDisabled();
 });
 
 test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, request }) => {

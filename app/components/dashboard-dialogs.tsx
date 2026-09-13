@@ -1044,22 +1044,38 @@ export function SnapshotEditor({
               </div>
             </section>
             {includeCreditCards && creditCardAccounts.length > 0 && (
-              <section className="overflow-hidden rounded-[24px] border border-[#d8e2da] bg-white shadow-[0_12px_40px_rgba(31,60,45,.07)]">
-                <div className="border-b border-[#e7ece8] bg-[#f8faf7] px-6 py-5">
-                  <div className="flex items-center gap-2 text-[#397259]">
-                    <WalletCards size={16} />
-                    <p className="text-[10px] font-bold uppercase tracking-[.16em]">
-                      CREDIT CARD PAYMENTS
+              <section className="overflow-hidden rounded-[28px] border border-[#d4e0d7] bg-white shadow-[0_18px_48px_rgba(31,60,45,.09)]">
+                <div className="flex flex-wrap items-end justify-between gap-5 border-b border-[#e4ebe6] bg-[#f4f9f5] px-6 py-6">
+                  <div>
+                    <div className="flex items-center gap-2 text-[#397259]">
+                      <WalletCards size={17} />
+                      <p className="text-[10px] font-bold uppercase tracking-[.18em]">
+                        CREDIT CARD UPDATE
+                      </p>
+                    </div>
+                    <h3 className="mt-2 text-xl font-semibold text-[#193126]">
+                      更新信用卡帳單
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-[#66776e]">
+                      直接編輯要更新的銀行，系統會自動選取；沒有操作的銀行會沿用上一份快照。
                     </p>
                   </div>
-                  <h3 className="mt-2 text-lg font-semibold text-[#193126]">
-                    更新本月信用卡繳款狀況
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-[#718078]">
-                    點選任一欄位會自動選取該銀行；其他信用卡、資產與負債會沿用上一份快照。
-                  </p>
+                  <div
+                    aria-live="polite"
+                    className="min-w-36 rounded-2xl border border-[#cfddd3] bg-white/80 px-4 py-3 text-right shadow-sm"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#78877e]">
+                      本次更新
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-[#285e45]">
+                      {selectedCreditCardAccountIds.length}
+                      <span className="text-xs font-medium text-[#7b8981]">
+                        {` / ${creditCardAccounts.length} 家銀行`}
+                      </span>
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-3 p-5">
+                <div className="grid gap-4 p-5">
                   {creditCardAccounts.map((account, accountIndex) => {
                     const accountId = account.creditCardAccountId;
                     const selected = Boolean(
@@ -1080,64 +1096,85 @@ export function SnapshotEditor({
                         ),
                       );
                     return (
-                      <details
-                        open
+                      <article
                         key={account.creditCardAccountId ?? accountIndex}
-                        className="overflow-hidden rounded-[18px] border border-[#dfe7e1]"
+                        className={`overflow-hidden rounded-[22px] border bg-white transition-all ${
+                          selected
+                            ? "border-[#78a88d] shadow-[0_12px_30px_rgba(43,105,72,.12)] ring-1 ring-[#78a88d]/20"
+                            : "border-[#dfe7e1] shadow-[0_6px_18px_rgba(31,60,45,.04)]"
+                        }`}
                       >
-                        <summary className="cursor-pointer list-none bg-[#f8faf7] px-4 py-3 marker:hidden">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
+                        <header
+                          className={`flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4 ${
+                            selected
+                              ? "border-[#d9e7dd] bg-[#f2f8f3]"
+                              : "border-[#e7ece8] bg-[#fafbf9]"
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div
+                              className={`grid size-10 shrink-0 place-items-center rounded-xl ${
+                                selected
+                                  ? "bg-[#397259] text-white"
+                                  : "bg-[#e9efeb] text-[#69786f]"
+                              }`}
+                            >
+                              {selected ? (
+                                <CheckCircle2 size={19} />
+                              ) : (
+                                <WalletCards size={19} />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#193126]">
+                                {account.name}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-[#77847c]">
+                                {account.issuer}・帳單月份{" "}
+                                {account.statementPeriod}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#53665b] shadow-sm ring-1 ring-[#dce5de]">
+                              {cycle
+                                ? `繳款期限 ${cycle.dueDate}`
+                                : "尚未設定繳款期限"}
+                            </span>
+                            <label
+                              className={`flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                                selected
+                                  ? "bg-[#397259] text-white"
+                                  : "bg-[#edf1ee] text-[#5f6f66] hover:bg-[#e4ebe6]"
+                              }`}
+                            >
                               <input
                                 aria-label={`本次更新 ${account.name}`}
                                 checked={selected}
                                 disabled={!accountId || !!busy}
-                                onClick={(event) => event.stopPropagation()}
                                 onChange={() =>
                                   accountId &&
                                   toggleCreditCardAccount(accountId)
                                 }
                                 type="checkbox"
                               />
-                              <div>
-                                <p className="text-sm font-semibold">
-                                  {account.name}
-                                </p>
-                                <p className="mt-1 text-[11px] text-[#7a877f]">
-                                  {account.issuer}
-                                </p>
-                              </div>
-                            </div>
-                            <span className="rounded-full bg-[#edf3ee] px-3 py-1.5 text-[11px] font-semibold text-[#476251]">
-                              {cycle
-                                ? `繳款期限 ${cycle.dueDate}`
-                                : "尚未設定繳款期限"}
-                            </span>
+                              {selected ? "本次會更新" : "沿用原資料"}
+                            </label>
                           </div>
-                        </summary>
+                        </header>
                         <div
-                          className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                          className="grid grid-cols-3 gap-4 p-5 max-lg:grid-cols-2 max-sm:grid-cols-1"
                           onFocusCapture={() =>
                             accountId && selectCreditCardAccount(accountId)
                           }
                         >
-                          <label>
-                            繳款日期
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            總應繳金額
+                            <span className="ml-1 font-normal text-[#89958e]">
+                              {account.currency}
+                            </span>
                             <input
-                              className="field"
-                              type="date"
-                              value={inputDate(account.paymentDate)}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  paymentDate: event.target.value || null,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            總應繳金額（{account.currency}）
-                            <input
-                              className="field"
+                              className="field mt-2"
                               inputMode="decimal"
                               value={account.statementAmount}
                               onChange={(event) =>
@@ -1147,10 +1184,13 @@ export function SnapshotEditor({
                               }
                             />
                           </label>
-                          <label>
-                            實際繳款金額（{account.currency}）
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            實際繳款金額
+                            <span className="ml-1 font-normal text-[#89958e]">
+                              {account.currency}
+                            </span>
                             <input
-                              className="field"
+                              className="field mt-2"
                               inputMode="decimal"
                               value={account.paymentAmount}
                               onChange={(event) =>
@@ -1160,35 +1200,66 @@ export function SnapshotEditor({
                               }
                             />
                           </label>
-                          <label>
-                            剩餘分期本金（{account.currency}，選填）
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            繳款日期
                             <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.remainingInstallmentPrincipal}
+                              className="field mt-2"
+                              type="date"
+                              value={inputDate(account.paymentDate)}
                               onChange={(event) =>
                                 updateCreditCard({
-                                  remainingInstallmentPrincipal:
-                                    event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            銀行顯示的溢繳餘額（{account.currency}，選填）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.overpaymentBalance}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  overpaymentBalance: event.target.value,
+                                  paymentDate: event.target.value || null,
                                 })
                               }
                             />
                           </label>
                         </div>
-                      </details>
+                        <details
+                          className="border-t border-[#edf1ee] bg-[#fbfcfb] px-5 py-3"
+                          onFocusCapture={() =>
+                            accountId && selectCreditCardAccount(accountId)
+                          }
+                        >
+                          <summary className="cursor-pointer text-xs font-semibold text-[#557061] marker:text-[#7d9989]">
+                            分期與溢繳（選填）
+                          </summary>
+                          <div className="mt-4 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+                            <label className="text-xs font-semibold text-[#53645a]">
+                              剩餘分期本金
+                              <span className="ml-1 font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                              <input
+                                className="field mt-2"
+                                inputMode="decimal"
+                                value={account.remainingInstallmentPrincipal}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    remainingInstallmentPrincipal:
+                                      event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-xs font-semibold text-[#53645a]">
+                              銀行顯示的溢繳餘額
+                              <span className="ml-1 font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                              <input
+                                className="field mt-2"
+                                inputMode="decimal"
+                                value={account.overpaymentBalance}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    overpaymentBalance: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      </article>
                     );
                   })}
                 </div>

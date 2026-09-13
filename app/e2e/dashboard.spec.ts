@@ -658,7 +658,8 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("更新本月信用卡繳款狀況")).toHaveCount(0);
   await dialog.getByRole("button", { name: "只更新信用卡" }).click();
-  await expect(dialog).toContainText("更新本月信用卡繳款狀況");
+  await expect(dialog).toContainText("更新信用卡帳單");
+  await expect(dialog).toContainText("0 / 1 家銀行");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   const saveButton = dialog.getByRole("button", { name: "保存這筆紀錄" });
   await expect(saveButton).toBeEnabled();
@@ -669,11 +670,13 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   const statementAmount = dialog.getByLabel("總應繳金額");
   await statementAmount.focus();
   await expect(dialog.getByLabel("本次更新 國泰世華信用卡")).toBeChecked();
+  await expect(dialog).toContainText("1 / 1 家銀行");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect(dialog).toContainText("繳款期限 2026-09-19");
   await expect(dialog.getByText("本次繳款期限")).toHaveCount(0);
   await statementAmount.fill("10000");
   await dialog.getByLabel("實際繳款金額").fill("15000");
+  await dialog.getByText("分期與溢繳（選填）").click();
   await dialog.getByLabel("剩餘分期本金").fill("0");
   await dialog.getByLabel("銀行顯示的溢繳餘額").fill("5000");
   await dialog.getByLabel("繳款日期").fill("2026-09-17");

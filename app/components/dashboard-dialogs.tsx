@@ -286,6 +286,8 @@ export function SnapshotEditor({
   const [creditCardAccounts, setCreditCardAccounts] = useState<
     CreditCardAccountInput[]
   >(() => cloneCreditCardAccounts(latest?.creditCardAccounts ?? []));
+  const [selectedCreditCardAccountIds, setSelectedCreditCardAccountIds] =
+    useState<string[]>([]);
   const [includeCreditCards, setIncludeCreditCards] = useState(false);
   const [hasPrepared, setHasPrepared] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -310,30 +312,40 @@ export function SnapshotEditor({
   );
   const normalizedCreditCardAccounts = useMemo(
     () =>
-      creditCardAccounts.map((account) => ({
-        ...account,
-        status: normalizeCreditCardAccountStatus(account.status, account.cards),
-        ...(creditCardCycleDates(
-          account.paymentDate || account.dueDate,
-          account.statementDayOfMonth,
-          account.paymentDayOfMonth,
-        ) ?? {}),
-        remainingInstallmentPrincipal:
-          account.remainingInstallmentPrincipal || "0",
-        overpaymentBalance: account.overpaymentBalance || "0",
-      })),
-    [creditCardAccounts],
+      creditCardAccounts
+        .filter(
+          (account) =>
+            account.creditCardAccountId &&
+            selectedCreditCardAccountIds.includes(account.creditCardAccountId),
+        )
+        .map((account) => ({
+          ...account,
+          status: normalizeCreditCardAccountStatus(
+            account.status,
+            account.cards,
+          ),
+          ...(creditCardCycleDates(
+            account.paymentDate || account.dueDate,
+            account.statementDayOfMonth,
+            account.paymentDayOfMonth,
+          ) ?? {}),
+          remainingInstallmentPrincipal:
+            account.remainingInstallmentPrincipal || "0",
+          overpaymentBalance: account.overpaymentBalance || "0",
+        })),
+    [creditCardAccounts, selectedCreditCardAccountIds],
   );
   const validationWarnings = useMemo(() => {
     if (!hasPrepared) return [];
     const result = snapshotCreateSchema.safeParse({
       rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
-      accounts: mergedAccounts,
-      loans: mergedLoans,
+      accounts: includeCreditCards ? [] : mergedAccounts,
+      loans: includeCreditCards ? [] : mergedLoans,
       creditCardAccounts: includeCreditCards
         ? normalizedCreditCardAccounts
         : undefined,
+      creditCardUpdateMode: includeCreditCards ? "partial" : undefined,
       cashFlows,
     });
     if (result.success) return [];
@@ -586,42 +598,51 @@ export function SnapshotEditor({
   };
   const startCreditCardsOnly = () => {
     setAccounts([]);
-    setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
+    setPreservedAccounts([]);
     setLoans([]);
-    setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
+    setPreservedLoans([]);
     setProcessedInput("更新信用卡繳款狀況");
-    const currentDate = new Date().toLocaleDateString("en-CA", {
-      timeZone: "Asia/Taipei",
-    });
     setCreditCardAccounts(
-      cloneCreditCardAccounts(latest?.creditCardAccounts ?? []).map(
-        (account) => {
-          const cycle = creditCardCycleDates(
-            currentDate,
-            account.statementDayOfMonth,
-            account.paymentDayOfMonth,
-          );
-          if (
-            !cycle ||
-            cycle.dueDate.slice(0, 7) <= account.dueDate.slice(0, 7)
-          )
-            return account;
-          return {
-            ...account,
-            ...cycle,
-            statementAmount: "",
-            paymentAmount: "",
-            paymentDate: null,
-            remainingInstallmentPrincipal: "",
-            overpaymentBalance: "",
-          };
-        },
-      ),
+      cloneCreditCardAccounts(latest?.creditCardAccounts ?? []),
     );
+    setSelectedCreditCardAccountIds([]);
     setIncludeCreditCards(true);
     setWarnings([]);
     setError("");
     setHasPrepared(true);
+  };
+  const toggleCreditCardAccount = (accountId: string) => {
+    if (selectedCreditCardAccountIds.includes(accountId)) {
+      setSelectedCreditCardAccountIds((items) =>
+        items.filter((item) => item !== accountId),
+      );
+      return;
+    }
+    const currentDate = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Taipei",
+    });
+    setCreditCardAccounts((items) =>
+      items.map((account) => {
+        if (account.creditCardAccountId !== accountId) return account;
+        const cycle = creditCardCycleDates(
+          currentDate,
+          account.statementDayOfMonth,
+          account.paymentDayOfMonth,
+        );
+        if (!cycle || cycle.dueDate.slice(0, 7) <= account.dueDate.slice(0, 7))
+          return account;
+        return {
+          ...account,
+          ...cycle,
+          statementAmount: "",
+          paymentAmount: "",
+          paymentDate: null,
+          remainingInstallmentPrincipal: "",
+          overpaymentBalance: "",
+        };
+      }),
+    );
+    setSelectedCreditCardAccountIds((items) => [...items, accountId]);
   };
   const quotes = async () => {
     if (validationWarnings.length > 0) {
@@ -673,11 +694,12 @@ export function SnapshotEditor({
               latest ? Date.parse(latest.capturedAt) + 1 : 0,
             ),
           ).toISOString(),
-          accounts: mergedAccounts,
-          loans: mergedLoans,
+          accounts: includeCreditCards ? [] : mergedAccounts,
+          loans: includeCreditCards ? [] : mergedLoans,
           creditCardAccounts: includeCreditCards
             ? normalizedCreditCardAccounts
             : undefined,
+          creditCardUpdateMode: includeCreditCards ? "partial" : undefined,
           cashFlows,
         }),
       });
@@ -989,7 +1011,12 @@ export function SnapshotEditor({
                     ],
                     ["貸款", loans.length],
                     ...(includeCreditCards
-                      ? [["信用卡", creditCardAccounts.length] as const]
+                      ? [
+                          [
+                            "信用卡",
+                            selectedCreditCardAccountIds.length,
+                          ] as const,
+                        ]
                       : []),
                   ].map(([label, count]) => (
                     <span
@@ -1015,11 +1042,16 @@ export function SnapshotEditor({
                     更新本月信用卡繳款狀況
                   </h3>
                   <p className="mt-1 text-xs leading-5 text-[#718078]">
-                    與資產及負債一起保存為同一份快照；每張卡請填繳款日期、總應繳金額與實際繳款金額。
+                    選擇這次要更新的銀行即可；其他信用卡、資產與負債會沿用上一份快照。
                   </p>
                 </div>
                 <div className="space-y-3 p-5">
                   {creditCardAccounts.map((account, accountIndex) => {
+                    const accountId = account.creditCardAccountId;
+                    const selected = Boolean(
+                      accountId &&
+                      selectedCreditCardAccountIds.includes(accountId),
+                    );
                     const cycle = creditCardCycleDates(
                       account.paymentDate || account.dueDate,
                       account.statementDayOfMonth,
@@ -1035,19 +1067,32 @@ export function SnapshotEditor({
                       );
                     return (
                       <details
-                        open
+                        open={selected}
                         key={account.creditCardAccountId ?? accountIndex}
                         className="overflow-hidden rounded-[18px] border border-[#dfe7e1]"
                       >
                         <summary className="cursor-pointer list-none bg-[#f8faf7] px-4 py-3 marker:hidden">
                           <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold">
-                                {account.name}
-                              </p>
-                              <p className="mt-1 text-[11px] text-[#7a877f]">
-                                {account.issuer}
-                              </p>
+                            <div className="flex items-center gap-3">
+                              <input
+                                aria-label={`本次更新 ${account.name}`}
+                                checked={selected}
+                                disabled={!accountId || !!busy}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={() =>
+                                  accountId &&
+                                  toggleCreditCardAccount(accountId)
+                                }
+                                type="checkbox"
+                              />
+                              <div>
+                                <p className="text-sm font-semibold">
+                                  {account.name}
+                                </p>
+                                <p className="mt-1 text-[11px] text-[#7a877f]">
+                                  {account.issuer}
+                                </p>
+                              </div>
                             </div>
                             <span className="rounded-full bg-[#edf3ee] px-3 py-1.5 text-[11px] font-semibold text-[#476251]">
                               {cycle
@@ -1056,74 +1101,76 @@ export function SnapshotEditor({
                             </span>
                           </div>
                         </summary>
-                        <div className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                          <label>
-                            繳款日期
-                            <input
-                              className="field"
-                              type="date"
-                              value={inputDate(account.paymentDate)}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  paymentDate: event.target.value || null,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            總應繳金額（{account.currency}）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.statementAmount}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  statementAmount: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            實際繳款金額（{account.currency}）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.paymentAmount}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  paymentAmount: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            剩餘分期本金（{account.currency}，選填）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.remainingInstallmentPrincipal}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  remainingInstallmentPrincipal:
-                                    event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            銀行顯示的溢繳餘額（{account.currency}，選填）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.overpaymentBalance}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  overpaymentBalance: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                        </div>
+                        {selected && (
+                          <div className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
+                            <label>
+                              繳款日期
+                              <input
+                                className="field"
+                                type="date"
+                                value={inputDate(account.paymentDate)}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    paymentDate: event.target.value || null,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              總應繳金額（{account.currency}）
+                              <input
+                                className="field"
+                                inputMode="decimal"
+                                value={account.statementAmount}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    statementAmount: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              實際繳款金額（{account.currency}）
+                              <input
+                                className="field"
+                                inputMode="decimal"
+                                value={account.paymentAmount}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    paymentAmount: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              剩餘分期本金（{account.currency}，選填）
+                              <input
+                                className="field"
+                                inputMode="decimal"
+                                value={account.remainingInstallmentPrincipal}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    remainingInstallmentPrincipal:
+                                      event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              銀行顯示的溢繳餘額（{account.currency}，選填）
+                              <input
+                                className="field"
+                                inputMode="decimal"
+                                value={account.overpaymentBalance}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    overpaymentBalance: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        )}
                       </details>
                     );
                   })}
@@ -2617,7 +2664,8 @@ export function SnapshotEditor({
               !hasPrepared ||
               (accounts.length === 0 &&
                 loans.length === 0 &&
-                (!includeCreditCards || creditCardAccounts.length === 0)) ||
+                (!includeCreditCards ||
+                  selectedCreditCardAccountIds.length === 0)) ||
               !!busy ||
               validationWarnings.length > 0
             }

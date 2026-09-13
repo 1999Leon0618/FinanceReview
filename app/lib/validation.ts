@@ -407,6 +407,7 @@ export const snapshotCreateSchema = z
     accounts: z.array(accountStateSchema).default([]),
     loans: z.array(loanInputSchema).default([]),
     creditCardAccounts: z.array(creditCardAccountInputSchema).optional(),
+    creditCardUpdateMode: z.literal("partial").optional(),
     cashFlows: z
       .array(
         z.object({
@@ -431,6 +432,25 @@ export const snapshotCreateSchema = z
       (value.creditCardAccounts?.length ?? 0) > 0,
     { message: "至少需要一個帳戶、一筆貸款或一個信用卡帳戶" },
   )
+  .superRefine((value, context) => {
+    if (value.creditCardUpdateMode !== "partial") return;
+    if (!value.baseSnapshotId) {
+      context.addIssue({
+        code: "custom",
+        path: ["baseSnapshotId"],
+        message: "局部更新信用卡時必須指定基準快照",
+      });
+    }
+    (value.creditCardAccounts ?? []).forEach((account, index) => {
+      if (!account.creditCardAccountId) {
+        context.addIssue({
+          code: "custom",
+          path: ["creditCardAccounts", index, "creditCardAccountId"],
+          message: "局部更新信用卡時必須指定信用卡帳戶",
+        });
+      }
+    });
+  })
   .superRefine(addDuplicateIssues);
 
 export const saleCreateSchema = z

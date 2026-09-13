@@ -666,11 +666,13 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await expect(dialog.getByRole("alert")).toContainText(
     "至少需要一個帳戶、一筆貸款或一個信用卡帳戶",
   );
-  await dialog.getByLabel("本次更新 國泰世華信用卡").check();
+  const statementAmount = dialog.getByLabel("總應繳金額");
+  await statementAmount.focus();
+  await expect(dialog.getByLabel("本次更新 國泰世華信用卡")).toBeChecked();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await expect(dialog).toContainText("繳款期限 2026-09-19");
   await expect(dialog.getByText("本次繳款期限")).toHaveCount(0);
-  await dialog.getByLabel("總應繳金額").fill("10000");
+  await statementAmount.fill("10000");
   await dialog.getByLabel("實際繳款金額").fill("15000");
   await dialog.getByLabel("剩餘分期本金").fill("0");
   await dialog.getByLabel("銀行顯示的溢繳餘額").fill("5000");

@@ -625,13 +625,8 @@ export function SnapshotEditor({
     setError("");
     setHasPrepared(true);
   };
-  const toggleCreditCardAccount = (accountId: string) => {
-    if (selectedCreditCardAccountIds.includes(accountId)) {
-      setSelectedCreditCardAccountIds((items) =>
-        items.filter((item) => item !== accountId),
-      );
-      return;
-    }
+  const selectCreditCardAccount = (accountId: string) => {
+    if (selectedCreditCardAccountIds.includes(accountId)) return;
     const currentDate = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Taipei",
     });
@@ -656,7 +651,18 @@ export function SnapshotEditor({
         };
       }),
     );
-    setSelectedCreditCardAccountIds((items) => [...items, accountId]);
+    setSelectedCreditCardAccountIds((items) =>
+      items.includes(accountId) ? items : [...items, accountId],
+    );
+  };
+  const toggleCreditCardAccount = (accountId: string) => {
+    if (selectedCreditCardAccountIds.includes(accountId)) {
+      setSelectedCreditCardAccountIds((items) =>
+        items.filter((item) => item !== accountId),
+      );
+      return;
+    }
+    selectCreditCardAccount(accountId);
   };
   const quotes = async () => {
     if (validateSnapshot().length > 0) return;
@@ -1050,7 +1056,7 @@ export function SnapshotEditor({
                     更新本月信用卡繳款狀況
                   </h3>
                   <p className="mt-1 text-xs leading-5 text-[#718078]">
-                    選擇這次要更新的銀行即可；其他信用卡、資產與負債會沿用上一份快照。
+                    點選任一欄位會自動選取該銀行；其他信用卡、資產與負債會沿用上一份快照。
                   </p>
                 </div>
                 <div className="space-y-3 p-5">
@@ -1075,7 +1081,7 @@ export function SnapshotEditor({
                       );
                     return (
                       <details
-                        open={selected}
+                        open
                         key={account.creditCardAccountId ?? accountIndex}
                         className="overflow-hidden rounded-[18px] border border-[#dfe7e1]"
                       >
@@ -1109,76 +1115,79 @@ export function SnapshotEditor({
                             </span>
                           </div>
                         </summary>
-                        {selected && (
-                          <div className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                            <label>
-                              繳款日期
-                              <input
-                                className="field"
-                                type="date"
-                                value={inputDate(account.paymentDate)}
-                                onChange={(event) =>
-                                  updateCreditCard({
-                                    paymentDate: event.target.value || null,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              總應繳金額（{account.currency}）
-                              <input
-                                className="field"
-                                inputMode="decimal"
-                                value={account.statementAmount}
-                                onChange={(event) =>
-                                  updateCreditCard({
-                                    statementAmount: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              實際繳款金額（{account.currency}）
-                              <input
-                                className="field"
-                                inputMode="decimal"
-                                value={account.paymentAmount}
-                                onChange={(event) =>
-                                  updateCreditCard({
-                                    paymentAmount: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              剩餘分期本金（{account.currency}，選填）
-                              <input
-                                className="field"
-                                inputMode="decimal"
-                                value={account.remainingInstallmentPrincipal}
-                                onChange={(event) =>
-                                  updateCreditCard({
-                                    remainingInstallmentPrincipal:
-                                      event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label>
-                              銀行顯示的溢繳餘額（{account.currency}，選填）
-                              <input
-                                className="field"
-                                inputMode="decimal"
-                                value={account.overpaymentBalance}
-                                onChange={(event) =>
-                                  updateCreditCard({
-                                    overpaymentBalance: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                          </div>
-                        )}
+                        <div
+                          className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                          onFocusCapture={() =>
+                            accountId && selectCreditCardAccount(accountId)
+                          }
+                        >
+                          <label>
+                            繳款日期
+                            <input
+                              className="field"
+                              type="date"
+                              value={inputDate(account.paymentDate)}
+                              onChange={(event) =>
+                                updateCreditCard({
+                                  paymentDate: event.target.value || null,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            總應繳金額（{account.currency}）
+                            <input
+                              className="field"
+                              inputMode="decimal"
+                              value={account.statementAmount}
+                              onChange={(event) =>
+                                updateCreditCard({
+                                  statementAmount: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            實際繳款金額（{account.currency}）
+                            <input
+                              className="field"
+                              inputMode="decimal"
+                              value={account.paymentAmount}
+                              onChange={(event) =>
+                                updateCreditCard({
+                                  paymentAmount: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            剩餘分期本金（{account.currency}，選填）
+                            <input
+                              className="field"
+                              inputMode="decimal"
+                              value={account.remainingInstallmentPrincipal}
+                              onChange={(event) =>
+                                updateCreditCard({
+                                  remainingInstallmentPrincipal:
+                                    event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            銀行顯示的溢繳餘額（{account.currency}，選填）
+                            <input
+                              className="field"
+                              inputMode="decimal"
+                              value={account.overpaymentBalance}
+                              onChange={(event) =>
+                                updateCreditCard({
+                                  overpaymentBalance: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
                       </details>
                     );
                   })}

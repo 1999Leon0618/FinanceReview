@@ -1169,12 +1169,14 @@ export function SnapshotEditor({
                           }
                         >
                           <label className="text-xs font-semibold text-[#53645a]">
-                            總應繳金額
-                            <span className="ml-1 font-normal text-[#89958e]">
-                              {account.currency}
+                            <span className="flex h-10 flex-col gap-1">
+                              <span>總應繳金額</span>
+                              <span className="font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
                             </span>
                             <input
-                              className="field mt-2"
+                              className="field"
                               inputMode="decimal"
                               value={account.statementAmount}
                               onChange={(event) =>
@@ -1185,12 +1187,14 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label className="text-xs font-semibold text-[#53645a]">
-                            實際繳款金額
-                            <span className="ml-1 font-normal text-[#89958e]">
-                              {account.currency}
+                            <span className="flex h-10 flex-col gap-1">
+                              <span>實際繳款金額</span>
+                              <span className="font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
                             </span>
                             <input
-                              className="field mt-2"
+                              className="field"
                               inputMode="decimal"
                               value={account.paymentAmount}
                               onChange={(event) =>
@@ -1201,9 +1205,11 @@ export function SnapshotEditor({
                             />
                           </label>
                           <label className="text-xs font-semibold text-[#53645a]">
-                            繳款日期
+                            <span className="flex h-10 items-start">
+                              繳款日期
+                            </span>
                             <input
-                              className="field mt-2"
+                              className="field"
                               type="date"
                               value={inputDate(account.paymentDate)}
                               onChange={(event) =>

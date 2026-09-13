@@ -660,6 +660,15 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await dialog.getByRole("button", { name: "只更新信用卡" }).click();
   await expect(dialog).toContainText("更新信用卡帳單");
   await expect(dialog).toContainText("0 / 1 家銀行");
+  const primaryFields = await Promise.all(
+    ["總應繳金額", "實際繳款金額", "繳款日期"].map((label) =>
+      dialog.getByLabel(label).boundingBox(),
+    ),
+  );
+  expect(
+    Math.max(...primaryFields.map((box) => box?.y ?? 0)) -
+      Math.min(...primaryFields.map((box) => box?.y ?? 0)),
+  ).toBeLessThanOrEqual(1);
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   const saveButton = dialog.getByRole("button", { name: "保存這筆紀錄" });
   await expect(saveButton).toBeEnabled();

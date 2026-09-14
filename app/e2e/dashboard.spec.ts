@@ -632,7 +632,8 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await expect(panel).toContainText("CUBE 卡 •••• 1234、蝦皮卡 •••• 5678");
   await expect(panel).toContainText("已剪卡");
   await expect(panel).toContainText("1 張使用中・1 張停用／剪卡");
-  await expect(panel).toContainText("2026 年 9 月應繳");
+  await expect(panel).toContainText("2026 年 9 月已繳清");
+  await expect(panel).not.toContainText("2026 年 9 月應繳");
   await expect(panel).toContainText("帳單月份 2026 年 8 月");
   await expect(panel).toContainText("已繳");
   await expect(panel).toContainText("NT$20,000");
@@ -691,7 +692,8 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await dialog.getByLabel("繳款日期").fill("2026-09-17");
   await dialog.getByRole("button", { name: "保存這筆紀錄" }).click();
 
-  await expect(panel).toContainText("2026 年 9 月應繳");
+  await expect(panel).toContainText("2026 年 9 月已繳清");
+  await expect(panel).not.toContainText("2026 年 9 月應繳");
   await expect(panel).toContainText("已繳");
   await expect(panel).toContainText("溢繳資產");
   await expect(panel.getByText("每月卡費走勢")).toBeVisible();

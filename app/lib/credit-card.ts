@@ -1,5 +1,7 @@
 import type { CreditCardPaymentStatus } from "./types";
 
+type CreditCardPaymentLabel = "已繳" | "部分繳" | "未繳" | "待更新";
+
 export const inputDate = (value?: string | null) => value?.slice(0, 10) ?? "";
 
 function creditCardPaymentPeriod(value: string) {
@@ -11,7 +13,17 @@ export function creditCardPaymentMonthLabel(value: string) {
   return year && month ? `${year} 年 ${month} 月` : "月份待確認";
 }
 
-export function creditCardPaymentLabel(status: CreditCardPaymentStatus) {
+export function creditCardPaymentHeading(
+  value: string,
+  label: CreditCardPaymentLabel,
+) {
+  const month = creditCardPaymentMonthLabel(value);
+  return label === "已繳" ? `${month}已繳清` : `${month}應繳`;
+}
+
+export function creditCardPaymentLabel(
+  status: CreditCardPaymentStatus,
+): CreditCardPaymentLabel {
   switch (status) {
     case "paid":
     case "overpaid":
@@ -31,7 +43,11 @@ export function creditCardDisplayPayment(
   paymentDayOfMonth: number | null | undefined,
   status: CreditCardPaymentStatus,
   now = new Date(),
-) {
+): {
+  dueDate: string;
+  label: CreditCardPaymentLabel;
+  awaitingUpdate: boolean;
+} {
   const label = creditCardPaymentLabel(status);
   if (label !== "已繳" || !paymentDayOfMonth)
     return { dueDate: inputDate(dueDate), label, awaitingUpdate: false };

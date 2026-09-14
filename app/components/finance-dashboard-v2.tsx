@@ -68,6 +68,7 @@ import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
 import { requestJson as request } from "@/lib/client-request";
 import {
   creditCardDisplayPayment,
+  creditCardPaymentHeading,
   creditCardPaymentMonthLabel,
   creditCardCycleDates,
   inputDate,
@@ -3520,8 +3521,10 @@ function CreditCardPanel({
                             : ""}
                         </p>
                         <p className="mt-2 text-sm font-semibold text-[#40564a]">
-                          {creditCardPaymentMonthLabel(displayPayment.dueDate)}
-                          應繳
+                          {creditCardPaymentHeading(
+                            displayPayment.dueDate,
+                            paymentLabel,
+                          )}
                         </p>
                       </div>
                     </div>

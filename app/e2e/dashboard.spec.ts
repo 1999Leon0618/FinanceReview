@@ -333,45 +333,71 @@ test("一鍵更新現值完成後使用浮動通知且不插入結果卡片", as
   await expect(notification).toHaveCount(0);
 });
 
-test("新增快照可建立全新帳戶並依帳戶類型顯示欄位", async ({ page }) => {
-  await page.goto("/");
+test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async ({ page }) => {
+  await page.goto("/accounts");
+  await page
+    .getByRole("button", { name: /^(新增帳戶|管理帳戶|新增第一筆紀錄)$/ })
+    .click();
+
+  const settingsDialog = page.getByRole("dialog", { name: "管理一般帳戶" });
+  await expect(settingsDialog.getByLabel("帳戶名稱").first()).toBeVisible();
+  await settingsDialog.getByRole("button", { name: "新增帳戶" }).click();
+  const newAccountName = settingsDialog.getByLabel("帳戶名稱").last();
+  await newAccountName.fill("設定測試帳戶");
+  await settingsDialog.getByLabel("金融機構").last().fill("測試銀行");
+  await settingsDialog.getByLabel("帳戶類型").last().selectOption("cash");
+  await settingsDialog.getByRole("button", { name: "保存帳戶設定" }).click();
+  await expect(page.getByText("帳戶設定已更新")).toBeVisible();
+
   await page.getByRole("button", { name: "新增快照" }).click();
-
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toHaveAccessibleName("建立財務快照");
-  await expect(dialog.locator('[aria-current="step"]')).toContainText(
-    "選擇項目",
-  );
+  const snapshotDialog = page.getByRole("dialog", { name: "建立財務快照" });
+  await snapshotDialog.getByRole("checkbox", { name: /設定測試帳戶/ }).click();
+  await snapshotDialog
+    .getByRole("button", { name: "下一步：確認所選項目" })
+    .click();
+  await snapshotDialog
+    .locator("details")
+    .filter({ hasText: "設定測試帳戶" })
+    .locator("summary")
+    .click();
+  await expect(snapshotDialog.getByLabel("帳戶名稱")).toHaveCount(0);
+  await expect(snapshotDialog.getByLabel("金融機構")).toHaveCount(0);
   await expect(
-    dialog.getByRole("heading", { name: "選擇要更新的項目" }),
+    snapshotDialog.getByRole("button", { name: "管理帳戶設定" }),
   ).toBeVisible();
-  await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(0);
-
-  await dialog.getByRole("button", { name: "新增全新帳戶" }).click();
-  await expect(dialog.locator('[aria-current="step"]')).toContainText(
-    "確認明細",
-  );
-  await expect(dialog.getByRole("button", { name: "新增帳戶" })).toBeVisible();
-  await expect(dialog.getByLabel("帳戶名稱")).toHaveValue("新帳戶");
-
-  await dialog.getByLabel("類型").selectOption("cash");
-  await expect(dialog.getByRole("button", { name: "＋ 新增基金" })).toHaveCount(
-    0,
-  );
-
-  await dialog.getByLabel("類型").selectOption("brokerage");
-  await dialog.getByRole("button", { name: "＋ 新增基金" }).click();
-  await expect(dialog.getByLabel("市場")).toHaveValue("FUND");
-  await expect(dialog.getByLabel("類型").nth(1)).toHaveValue("fund");
-  await expect(dialog.getByLabel("基金級別代碼")).toBeVisible();
 });
 
-test("貸款資料不合理時按保存才顯示警告", async ({ page }) => {
+test("貸款資料不合理時按保存才顯示警告", async ({ page, request }) => {
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立貸款驗證測試帳戶",
+      capturedAt: new Date(Date.now() + 129_600_000).toISOString(),
+      accounts: [
+        {
+          name: "貸款驗證帳戶",
+          institution: "貸款驗證銀行",
+          accountReference: "LOAN-VALIDATION",
+          accountType: "bank",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "0" }],
+          positions: [],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
   await page.goto("/");
   await page.getByRole("button", { name: "新增快照" }).click();
 
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "新增全新帳戶" }).click();
+  await dialog.getByRole("checkbox", { name: /貸款驗證帳戶/ }).click();
+  await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
+  await dialog
+    .locator("details")
+    .filter({ hasText: "貸款驗證帳戶" })
+    .locator("summary")
+    .click();
   await dialog.getByRole("button", { name: "＋ 新增貸款" }).click();
   await dialog.getByLabel("原始貸款金額").fill("100000");
   await dialog.getByLabel("目前未償本金").fill("120000");
@@ -394,7 +420,8 @@ test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, re
       accounts: [
         {
           name: "多選帳戶甲",
-          institution: "測試銀行",
+          institution: "多選測試銀行",
+          accountReference: "MULTI-A",
           accountType: "bank",
           defaultCurrency: "TWD",
           cashBalances: [{ currency: "TWD", amount: "1000" }],
@@ -402,7 +429,8 @@ test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, re
         },
         {
           name: "多選帳戶乙",
-          institution: "測試券商",
+          institution: "多選測試券商",
+          accountReference: "MULTI-B",
           accountType: "brokerage",
           defaultCurrency: "TWD",
           cashBalances: [{ currency: "TWD", amount: "2000" }],
@@ -421,9 +449,13 @@ test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, re
   await dialog.getByRole("checkbox", { name: /多選帳戶乙/ }).click();
   await expect(dialog.getByText("已選取 2 個項目")).toBeVisible();
   await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
-  await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(2);
-  await expect(dialog.getByLabel("帳戶名稱").nth(0)).toHaveValue("多選帳戶甲");
-  await expect(dialog.getByLabel("帳戶名稱").nth(1)).toHaveValue("多選帳戶乙");
+  await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(0);
+  await expect(
+    dialog.getByText("多選帳戶甲", { exact: true }).last(),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("多選帳戶乙", { exact: true }).last(),
+  ).toBeVisible();
 });
 
 test("快照資金流會顯示淨值變動歸因", async ({ page, request }) => {

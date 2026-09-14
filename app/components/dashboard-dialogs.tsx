@@ -82,13 +82,6 @@ const hasCompleteQuoteCode = (
   return /^[A-Z][A-Z0-9.-]{0,14}$/.test(code.toUpperCase());
 };
 
-const emptyAccount = (): AccountStateInput => ({
-  name: "新帳戶",
-  accountType: "brokerage",
-  defaultCurrency: "TWD",
-  cashBalances: [{ currency: "TWD", amount: "0" }],
-  positions: [],
-});
 const emptyPosition = (
   securityType: "stock" | "etf" | "fund" | "future" = "stock",
 ): AccountStateInput["positions"][number] => ({
@@ -270,10 +263,14 @@ export function SnapshotEditor({
   latest,
   onClose,
   onSaved,
+  onManageAccounts,
+  onManageCreditCards,
 }: {
   latest: DashboardData["latest"];
   onClose: () => void;
   onSaved: () => void;
+  onManageAccounts: () => void;
+  onManageCreditCards: () => void;
 }) {
   const [processedInput, setProcessedInput] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -420,18 +417,6 @@ export function SnapshotEditor({
     setLoans((items) =>
       items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
     );
-  const changeAccountType = (
-    index: number,
-    accountType: AccountStateInput["accountType"],
-  ) => {
-    const account = accounts[index];
-    if (accountType === "cash" && account.positions.length > 0) {
-      setError("現金帳戶只能記錄現金餘額；請先移除投資品項，再變更帳戶類型。");
-      return;
-    }
-    setError("");
-    updateAccount(index, { accountType });
-  };
   const applyFxRate = (currency: string, rate: string) => {
     const fxRate = manualFx(currency, rate);
     setAccounts((items) =>
@@ -613,17 +598,6 @@ export function SnapshotEditor({
         ].join("、"),
     );
     setIncludeCreditCards(selectedCreditCards.length > 0);
-    setWarnings([]);
-    setError("");
-    setHasPrepared(true);
-  };
-  const startNewAccount = () => {
-    setAccounts([emptyAccount()]);
-    setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
-    setLoans([]);
-    setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
-    setProcessedInput("新增帳戶");
-    setIncludeCreditCards(false);
     setWarnings([]);
     setError("");
     setHasPrepared(true);
@@ -958,15 +932,23 @@ export function SnapshotEditor({
               </p>
             </div>
             <div className="snapshot-manual-entry">
-              <p>建立資料</p>
+              <p>帳戶設定</p>
               <div>
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={startNewAccount}
+                  onClick={onManageAccounts}
                   className="secondary"
                 >
-                  新增全新帳戶
+                  管理一般帳戶
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={onManageCreditCards}
+                  className="secondary"
+                >
+                  管理信用卡
                 </button>
               </div>
             </div>
@@ -1482,100 +1464,15 @@ export function SnapshotEditor({
                   <div className="p-5">
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f6f9f6] px-4 py-3">
                       <p className="text-xs text-[#718078]">
-                        完整編輯帳戶基本資料、現金、投資與關聯貸款。
+                        這裡只更新會隨快照變動的金額與持倉；名稱、機構、類型及記帳幣別請至帳戶管理調整。
                       </p>
-                      <div className="flex flex-wrap gap-3">
-                        {accounts.length > 1 && (
-                          <button
-                            type="button"
-                            className="link danger-text"
-                            onClick={() =>
-                              setAccounts((items) =>
-                                items.filter(
-                                  (_, index) => index !== accountIndex,
-                                ),
-                              )
-                            }
-                          >
-                            移除帳戶
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-3 max-lg:grid-cols-3 max-md:grid-cols-2">
-                      <label>
-                        帳戶名稱
-                        <input
-                          className="field"
-                          value={account.name}
-                          onChange={(e) => {
-                            const name = e.target.value;
-                            setLoans((items) =>
-                              items.map((loan) =>
-                                loanBelongsToAccount(loan, account)
-                                  ? { ...loan, accountName: name }
-                                  : loan,
-                              ),
-                            );
-                            updateAccount(accountIndex, { name });
-                          }}
-                        />
-                      </label>
-                      <label>
-                        機構
-                        <input
-                          className="field"
-                          value={account.institution ?? ""}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              institution: e.target.value || null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        帳戶識別碼
-                        <input
-                          className="field"
-                          placeholder="自訂代號或末四碼"
-                          value={account.accountReference ?? ""}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              accountReference: e.target.value || null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        類型
-                        <select
-                          className="field"
-                          value={account.accountType}
-                          onChange={(e) =>
-                            changeAccountType(
-                              accountIndex,
-                              e.target
-                                .value as AccountStateInput["accountType"],
-                            )
-                          }
-                        >
-                          <option value="bank">銀行</option>
-                          <option value="brokerage">券商</option>
-                          <option value="cash">現金</option>
-                        </select>
-                      </label>
-                      <label>
-                        預設幣別
-                        <input
-                          className="field"
-                          value={account.defaultCurrency}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              defaultCurrency: e.target.value.toUpperCase(),
-                            })
-                          }
-                        />
-                      </label>
+                      <button
+                        type="button"
+                        className="secondary shrink-0"
+                        onClick={onManageAccounts}
+                      >
+                        管理帳戶設定
+                      </button>
                     </div>
                     <div className="mt-6 flex items-center gap-2">
                       <Banknote size={15} className="text-[#3c7659]" />
@@ -1586,30 +1483,14 @@ export function SnapshotEditor({
                     {account.cashBalances.map((balance, index) => (
                       <div
                         key={index}
-                        className="mt-3 grid grid-cols-[120px_1fr_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-md:grid-cols-2"
+                        className="mt-3 grid grid-cols-[120px_minmax(0,1fr)] items-end gap-3 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-md:grid-cols-1"
                       >
-                        <label>
+                        <div>
                           幣別
-                          <input
-                            className="field"
-                            value={balance.currency}
-                            onChange={(e) =>
-                              updateAccount(accountIndex, {
-                                cashBalances: account.cashBalances.map(
-                                  (item, i) =>
-                                    i === index
-                                      ? {
-                                          ...item,
-                                          currency:
-                                            e.target.value.toUpperCase(),
-                                          fxRate: undefined,
-                                        }
-                                      : item,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
+                          <strong className="field flex items-center">
+                            {balance.currency}
+                          </strong>
+                        </div>
                         <label>
                           餘額
                           <input
@@ -1628,33 +1509,8 @@ export function SnapshotEditor({
                             }
                           />
                         </label>
-                        <button
-                          aria-label="移除現金"
-                          onClick={() =>
-                            updateAccount(accountIndex, {
-                              cashBalances: account.cashBalances.filter(
-                                (_, i) => i !== index,
-                              ),
-                            })
-                          }
-                        >
-                          <X size={17} />
-                        </button>
                       </div>
                     ))}
-                    <button
-                      className="link mt-2"
-                      onClick={() =>
-                        updateAccount(accountIndex, {
-                          cashBalances: [
-                            ...account.cashBalances,
-                            { currency: account.defaultCurrency, amount: "0" },
-                          ],
-                        })
-                      }
-                    >
-                      ＋ 新增幣別
-                    </button>
                     {account.accountType !== "cash" ? (
                       <>
                         <div className="mt-6 flex items-center gap-2">
@@ -2332,13 +2188,6 @@ export function SnapshotEditor({
                 </details>
               ))}
             </div>
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#b9c8bd] bg-white/60 px-4 py-4 text-sm font-semibold text-[#35684f]"
-              onClick={() => setAccounts((items) => [...items, emptyAccount()])}
-            >
-              <Plus size={14} />
-              新增帳戶
-            </button>
             <div
               className={`${loans.some((loan) => !mergedAccounts.some((account) => loanBelongsToAccount(loan, account))) ? "flex" : "hidden"} flex-wrap items-end justify-between gap-3 pt-3`}
             >

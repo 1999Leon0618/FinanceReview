@@ -1072,8 +1072,14 @@ async function createSnapshotInDb(
       : rawInput.creditCardAccounts;
   const input = normalizeSnapshotIdentities({
     ...rawInput,
-    accounts: baseSnapshot ? baseSnapshot.accounts : rawInput.accounts,
-    loans: baseSnapshot ? baseSnapshot.loans : rawInput.loans,
+    accounts:
+      baseSnapshot && (rawInput.accounts?.length ?? 0) === 0
+        ? baseSnapshot.accounts
+        : rawInput.accounts,
+    loans:
+      baseSnapshot && (rawInput.loans?.length ?? 0) === 0
+        ? baseSnapshot.loans
+        : rawInput.loans,
     creditCardAccounts: inheritedCreditCards,
   });
   assertNoDuplicateIdentities(input);

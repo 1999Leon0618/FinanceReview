@@ -340,10 +340,10 @@ test("新增快照可建立全新帳戶並依帳戶類型顯示欄位", async ({
   const dialog = page.getByRole("dialog");
   await expect(dialog).toHaveAccessibleName("建立財務快照");
   await expect(dialog.locator('[aria-current="step"]')).toContainText(
-    "選擇帳戶",
+    "選擇項目",
   );
   await expect(
-    dialog.getByRole("heading", { name: "選擇要更新的帳戶" }),
+    dialog.getByRole("heading", { name: "選擇要更新的項目" }),
   ).toBeVisible();
   await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(0);
 
@@ -419,8 +419,8 @@ test("新增快照可複選既有帳戶並一次帶入確認", async ({ page, re
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox", { name: /多選帳戶甲/ }).click();
   await dialog.getByRole("checkbox", { name: /多選帳戶乙/ }).click();
-  await expect(dialog.getByText("已選取 2 個帳戶")).toBeVisible();
-  await dialog.getByRole("button", { name: "更新所選帳戶" }).click();
+  await expect(dialog.getByText("已選取 2 個項目")).toBeVisible();
+  await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
   await expect(dialog.getByLabel("帳戶名稱")).toHaveCount(2);
   await expect(dialog.getByLabel("帳戶名稱").nth(0)).toHaveValue("多選帳戶甲");
   await expect(dialog.getByLabel("帳戶名稱").nth(1)).toHaveValue("多選帳戶乙");
@@ -658,9 +658,15 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
   await page.getByRole("button", { name: "新增快照" }).first().click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("更新本月信用卡繳款狀況")).toHaveCount(0);
-  await dialog.getByRole("button", { name: "只更新信用卡" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "只更新信用卡" }),
+  ).toHaveCount(0);
+  await expect(dialog).toContainText("信用卡額度群組");
+  await dialog.getByRole("checkbox", { name: /國泰世華信用卡/ }).click();
+  await expect(dialog).toContainText("已選取 1／2 個項目");
+  await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
   await expect(dialog).toContainText("更新信用卡帳單");
-  await expect(dialog).toContainText("0 / 1 家銀行");
+  await expect(dialog).toContainText("1 / 1 家銀行");
   const primaryFields = await Promise.all(
     ["總應繳金額", "實際繳款金額", "繳款日期"].map((label) =>
       dialog.getByLabel(label).boundingBox(),
@@ -670,6 +676,8 @@ test("信用卡共用額度會顯示帳單使用比例並可更新溢繳狀態",
     Math.max(...primaryFields.map((box) => box?.y ?? 0)) -
       Math.min(...primaryFields.map((box) => box?.y ?? 0)),
   ).toBeLessThanOrEqual(1);
+  await dialog.getByLabel("本次更新 國泰世華信用卡").uncheck();
+  await expect(dialog).toContainText("0 / 1 家銀行");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   const saveButton = dialog.getByRole("button", { name: "保存這筆紀錄" });
   await expect(saveButton).toBeEnabled();

@@ -14,6 +14,7 @@ import {
   Banknote,
   Building2,
   CheckCircle2,
+  CreditCard,
   Landmark,
   LoaderCircle,
   Plus,
@@ -300,6 +301,14 @@ export function SnapshotEditor({
     null,
   );
   const [error, setError] = useState("");
+  const selectableItemCount =
+    (latest?.accounts.length ?? 0) +
+    (latest?.creditCardAccounts.filter((account) => account.creditCardAccountId)
+      .length ?? 0);
+  const selectedItemCount =
+    selectedAccountIds.length + selectedCreditCardAccountIds.length;
+  const allItemsSelected =
+    selectableItemCount > 0 && selectedItemCount === selectableItemCount;
   const quoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
   );
@@ -343,8 +352,8 @@ export function SnapshotEditor({
     () => ({
       rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
-      accounts: includeCreditCards ? [] : mergedAccounts,
-      loans: includeCreditCards ? [] : mergedLoans,
+      accounts,
+      loans,
       creditCardAccounts: includeCreditCards
         ? normalizedCreditCardAccounts
         : undefined,
@@ -357,8 +366,8 @@ export function SnapshotEditor({
       processedInput,
       latest?.id,
       includeCreditCards,
-      mergedAccounts,
-      mergedLoans,
+      accounts,
+      loans,
       normalizedCreditCardAccounts,
       cashFlows,
     ],
@@ -572,8 +581,8 @@ export function SnapshotEditor({
         ? items.filter((item) => item !== accountId)
         : [...items, accountId],
     );
-  const startSelectedAccounts = () => {
-    if (!latest || selectedAccountIds.length === 0) return;
+  const startSelectedItems = () => {
+    if (!latest || selectedItemCount === 0) return;
     const selected = latest.accounts.filter((account) =>
       selectedAccountIds.includes(account.accountId),
     );
@@ -591,10 +600,19 @@ export function SnapshotEditor({
     setPreservedAccounts(cloneAccounts(preserved));
     setLoans(cloneLoans(selectedLoans));
     setPreservedLoans(cloneLoans(otherLoans));
-    setProcessedInput(
-      `更新帳戶：${selected.map((item) => item.name).join("、")}`,
+    const selectedCreditCards = latest.creditCardAccounts.filter(
+      (account) =>
+        account.creditCardAccountId &&
+        selectedCreditCardAccountIds.includes(account.creditCardAccountId),
     );
-    setIncludeCreditCards(false);
+    setProcessedInput(
+      "更新項目：" +
+        [
+          ...selected.map((item) => item.name),
+          ...selectedCreditCards.map((item) => item.name),
+        ].join("、"),
+    );
+    setIncludeCreditCards(selectedCreditCards.length > 0);
     setWarnings([]);
     setError("");
     setHasPrepared(true);
@@ -606,21 +624,6 @@ export function SnapshotEditor({
     setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
     setProcessedInput("新增帳戶");
     setIncludeCreditCards(false);
-    setWarnings([]);
-    setError("");
-    setHasPrepared(true);
-  };
-  const startCreditCardsOnly = () => {
-    setAccounts([]);
-    setPreservedAccounts([]);
-    setLoans([]);
-    setPreservedLoans([]);
-    setProcessedInput("更新信用卡繳款狀況");
-    setCreditCardAccounts(
-      cloneCreditCardAccounts(latest?.creditCardAccounts ?? []),
-    );
-    setSelectedCreditCardAccountIds([]);
-    setIncludeCreditCards(true);
     setWarnings([]);
     setError("");
     setHasPrepared(true);
@@ -708,8 +711,8 @@ export function SnapshotEditor({
               latest ? Date.parse(latest.capturedAt) + 1 : 0,
             ),
           ).toISOString(),
-          accounts: includeCreditCards ? [] : mergedAccounts,
-          loans: includeCreditCards ? [] : mergedLoans,
+          accounts: mergedAccounts,
+          loans: mergedLoans,
           creditCardAccounts: includeCreditCards
             ? normalizedCreditCardAccounts
             : undefined,
@@ -738,7 +741,7 @@ export function SnapshotEditor({
         </div>
         <ol className="snapshot-steps" aria-label="建立快照進度">
           {[
-            [1, "選擇帳戶"],
+            [1, "選擇項目"],
             [2, "確認明細"],
             [3, "儲存快照"],
           ].map(([step, label]) => (
@@ -774,35 +777,48 @@ export function SnapshotEditor({
             <div className="snapshot-composer-heading">
               <span>第 1 步</span>
               <div>
-                <h3>選擇要更新的帳戶</h3>
-                <p>可以一次選取多個帳戶；未選取的帳戶會沿用上一份快照。</p>
+                <h3>選擇要更新的項目</h3>
+                <p>
+                  一般帳戶與信用卡可一起更新；未選取的資料會沿用上一份快照。
+                </p>
               </div>
             </div>
-            {latest?.accounts.length ? (
+            {selectableItemCount > 0 ? (
               <>
                 <div className="snapshot-selection-toolbar">
                   <p>
-                    已選取 <strong>{selectedAccountIds.length}</strong>／
-                    {latest.accounts.length} 個帳戶
+                    已選取 <strong>{selectedItemCount}</strong>／
+                    {selectableItemCount} 個項目
                   </p>
                   <button
                     type="button"
                     className="link"
-                    onClick={() =>
+                    onClick={() => {
+                      if (allItemsSelected) {
+                        setSelectedAccountIds([]);
+                        setSelectedCreditCardAccountIds([]);
+                        return;
+                      }
                       setSelectedAccountIds(
-                        selectedAccountIds.length === latest.accounts.length
-                          ? []
-                          : latest.accounts.map((account) => account.accountId),
-                      )
-                    }
+                        latest?.accounts.map((account) => account.accountId) ??
+                          [],
+                      );
+                      for (const account of latest?.creditCardAccounts ?? []) {
+                        if (account.creditCardAccountId)
+                          selectCreditCardAccount(account.creditCardAccountId);
+                      }
+                    }}
                   >
-                    {selectedAccountIds.length === latest.accounts.length
-                      ? "取消全選"
-                      : "全部選取"}
+                    {allItemsSelected ? "取消全選" : "全部選取"}
                   </button>
                 </div>
                 <div className="snapshot-account-options">
-                  {latest.accounts.map((account) => {
+                  {(latest?.accounts.length ?? 0) > 0 && (
+                    <p className="col-span-full px-1 pt-1 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
+                      一般帳戶
+                    </p>
+                  )}
+                  {latest?.accounts.map((account) => {
                     const selected = selectedAccountIds.includes(
                       account.accountId,
                     );
@@ -840,6 +856,47 @@ export function SnapshotEditor({
                       </button>
                     );
                   })}
+                  {(latest?.creditCardAccounts.length ?? 0) > 0 && (
+                    <p className="col-span-full px-1 pt-2 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
+                      信用卡額度群組
+                    </p>
+                  )}
+                  {latest?.creditCardAccounts.map((account) => {
+                    const accountId = account.creditCardAccountId;
+                    const selected = Boolean(
+                      accountId &&
+                      selectedCreditCardAccountIds.includes(accountId),
+                    );
+                    const activeCards = account.cards.filter(
+                      (card) => card.status === "active",
+                    ).length;
+                    return (
+                      <button
+                        key={accountId ?? `${account.issuer}:${account.name}`}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        disabled={!accountId}
+                        className={`snapshot-account-option ${selected ? "selected" : ""}`}
+                        onClick={() =>
+                          accountId && toggleCreditCardAccount(accountId)
+                        }
+                      >
+                        <span className="snapshot-account-option-icon">
+                          <CreditCard size={17} />
+                        </span>
+                        <span className="snapshot-account-option-copy">
+                          <strong>{account.name}</strong>
+                          <small>
+                            {account.issuer}・信用卡・{activeCards} 張使用中
+                          </small>
+                        </span>
+                        <span className="snapshot-account-option-check">
+                          {selected ? "✓" : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             ) : (
@@ -849,17 +906,6 @@ export function SnapshotEditor({
                 <p>先建立第一個帳戶，再填入現金、持倉或貸款資料。</p>
               </div>
             )}
-            <div className="snapshot-composer-actions">
-              <button
-                disabled={selectedAccountIds.length === 0 || !!busy}
-                onClick={startSelectedAccounts}
-                className="primary"
-              >
-                <CheckCircle2 size={16} />
-                更新所選帳戶
-              </button>
-              <p>選取後會帶入目前資料，確認並修改後才會儲存。</p>
-            </div>
           </div>
           <aside className="snapshot-entry-aside">
             <div className="snapshot-preparation-status">
@@ -868,11 +914,14 @@ export function SnapshotEditor({
               </span>
               <div>
                 <h3>
-                  {selectedAccountIds.length > 0
-                    ? `已選取 ${selectedAccountIds.length} 個帳戶`
-                    : "尚未選取帳戶"}
+                  {selectedItemCount > 0
+                    ? `已選取 ${selectedItemCount} 個項目`
+                    : "尚未選取項目"}
                 </h3>
-                <p>可複選帳戶，並在下一步一起更新。</p>
+                <p>
+                  一般帳戶 {selectedAccountIds.length}・信用卡{" "}
+                  {selectedCreditCardAccountIds.length}
+                </p>
               </div>
             </div>
             <div className="snapshot-entry-guide">
@@ -882,7 +931,7 @@ export function SnapshotEditor({
                   <span>1</span>
                   <p>
                     <strong>選擇更新範圍</strong>
-                    <small>勾選一個或多個既有帳戶</small>
+                    <small>勾選一般帳戶或信用卡額度群組</small>
                   </p>
                 </li>
                 <li>
@@ -909,18 +958,8 @@ export function SnapshotEditor({
               </p>
             </div>
             <div className="snapshot-manual-entry">
-              <p>其他更新</p>
+              <p>建立資料</p>
               <div>
-                {creditCardAccounts.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={startCreditCardsOnly}
-                    className="secondary"
-                  >
-                    只更新信用卡
-                  </button>
-                )}
                 <button
                   type="button"
                   disabled={!!busy}
@@ -976,7 +1015,7 @@ export function SnapshotEditor({
                       }}
                       className="inline-flex items-center rounded-xl border border-[#d8e2da] bg-white px-4 py-2.5 text-xs font-semibold text-[#456353] transition hover:bg-[#f6f9f6]"
                     >
-                      重新選擇帳戶
+                      重新選擇項目
                     </button>
                     <button
                       disabled={
@@ -2754,8 +2793,8 @@ export function SnapshotEditor({
           </button>
           <button
             className="primary min-w-40"
-            disabled={!hasPrepared || !!busy}
-            onClick={save}
+            disabled={!!busy || (!hasPrepared && selectedItemCount === 0)}
+            onClick={hasPrepared ? save : startSelectedItems}
           >
             {busy === "save" ? (
               <>
@@ -2765,7 +2804,7 @@ export function SnapshotEditor({
             ) : (
               <>
                 <CheckCircle2 size={15} />
-                保存這筆紀錄
+                {hasPrepared ? "保存這筆紀錄" : "下一步：確認所選項目"}
               </>
             )}
           </button>

@@ -1089,6 +1089,40 @@ describe("快照與全部賣出", () => {
         statementPeriod: "2026-09",
         statementAmount: "20000",
       });
+
+      const mixedUpdate = await createSnapshot({
+        rawInput: "同時更新期貨帳戶與玉山信用卡",
+        baseSnapshotId: updated.id,
+        capturedAt: "2026-10-02T00:00:00.000Z",
+        accounts: [
+          {
+            ...updated.accounts[0],
+            cashBalances: updated.accounts[0].cashBalances.map((balance) => ({
+              ...balance,
+              amount: "350000",
+            })),
+          },
+        ],
+        loans: updated.loans,
+        creditCardUpdateMode: "partial",
+        creditCardAccounts: [
+          {
+            ...updated.creditCardAccounts[1],
+            statementPeriod: "2026-10",
+            statementDate: "2026-10-03",
+            dueDate: "2026-10-18",
+            statementAmount: "25000",
+          },
+        ],
+      });
+
+      expect(mixedUpdate.accounts[0].cashBalances[0].amount).toBe("350000");
+      expect(mixedUpdate.creditCardAccounts[0].statementAmount).toBe("15000");
+      expect(mixedUpdate.creditCardAccounts[1]).toMatchObject({
+        issuer: "玉山銀行",
+        statementPeriod: "2026-10",
+        statementAmount: "25000",
+      });
     });
   });
 

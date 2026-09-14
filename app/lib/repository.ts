@@ -921,7 +921,7 @@ async function findOrCreateCreditCard(
 }
 
 function creditCardViewToInput(
-  account: CreditCardAccountView,
+  account: CreditCardAccountInput,
 ): CreditCardAccountInput {
   return {
     creditCardAccountId: account.creditCardAccountId,
@@ -1036,14 +1036,50 @@ async function createSnapshotInDb(
   rawInput: SnapshotCreateInput,
 ): Promise<string> {
   const ownerKey = getDataOwner().key;
-  const inheritedCreditCards =
-    rawInput.creditCardAccounts === undefined && rawInput.baseSnapshotId
+  const baseSnapshot =
+    rawInput.creditCardUpdateMode === "partial" && rawInput.baseSnapshotId
+      ? await getSnapshotDetail(rawInput.baseSnapshotId, db)
+      : null;
+  if (rawInput.creditCardUpdateMode === "partial" && !baseSnapshot)
+    throw new Error("局部更新信用卡需要有效的基準快照");
+  const partialCreditCardUpdates = new Map(
+    (rawInput.creditCardAccounts ?? []).map((account) => [
+      account.creditCardAccountId,
+      account,
+    ]),
+  );
+  if (
+    baseSnapshot &&
+    [...partialCreditCardUpdates.keys()].some(
+      (accountId) =>
+        !accountId ||
+        !baseSnapshot.creditCardAccounts.some(
+          (account) => account.creditCardAccountId === accountId,
+        ),
+    )
+  )
+    throw new Error("局部更新包含不存在於基準快照的信用卡帳戶");
+  const inheritedCreditCards = baseSnapshot
+    ? baseSnapshot.creditCardAccounts.map((account) =>
+        creditCardViewToInput(
+          partialCreditCardUpdates.get(account.creditCardAccountId) ?? account,
+        ),
+      )
+    : rawInput.creditCardAccounts === undefined && rawInput.baseSnapshotId
       ? ((
           await getSnapshotDetail(rawInput.baseSnapshotId, db)
         )?.creditCardAccounts.map(creditCardViewToInput) ?? [])
       : rawInput.creditCardAccounts;
   const input = normalizeSnapshotIdentities({
     ...rawInput,
+    accounts:
+      baseSnapshot && (rawInput.accounts?.length ?? 0) === 0
+        ? baseSnapshot.accounts
+        : rawInput.accounts,
+    loans:
+      baseSnapshot && (rawInput.loans?.length ?? 0) === 0
+        ? baseSnapshot.loans
+        : rawInput.loans,
     creditCardAccounts: inheritedCreditCards,
   });
   assertNoDuplicateIdentities(input);

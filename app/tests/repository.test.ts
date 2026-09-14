@@ -1002,6 +1002,130 @@ describe("快照與全部賣出", () => {
     ).toBe(false);
   });
 
+  it("只更新一個銀行的信用卡時會保留其他信用卡與期貨資產", async () => {
+    const owner = dataOwnerFromEmail("partial-card-update@example.com");
+    await runWithDataOwner(owner, async () => {
+      const base = await createSnapshot({
+        rawInput: "建立局部信用卡更新測試資料",
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        accounts: [
+          {
+            name: "期貨帳戶",
+            accountType: "brokerage",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "300000" }],
+            positions: [
+              {
+                market: "FUTURES",
+                symbol: "MTX202609",
+                name: "小型臺指期",
+                securityType: "future",
+                positionSide: "long",
+                contractMultiplier: "50",
+                contractExpiry: "202609",
+                quoteCurrency: "TWD",
+                quantity: "1",
+                averageCost: "22000",
+                marketPrice: "22100",
+                quoteAsOf: "2026-09-01T00:00:00.000Z",
+                quoteSource: "MANUAL",
+                quoteStatus: "manual",
+              },
+            ],
+          },
+        ],
+        creditCardAccounts: ["國泰世華", "玉山銀行"].map((issuer, index) => ({
+          name: `${issuer}信用卡`,
+          issuer,
+          currency: "TWD",
+          sharedCreditLimit: "200000",
+          statementDayOfMonth: 3,
+          paymentDayOfMonth: 18,
+          status: "active" as const,
+          cards: [],
+          statementPeriod: "2026-09",
+          statementDate: "2026-09-03",
+          dueDate: "2026-09-18",
+          statementAmount: String((index + 1) * 10000),
+          paymentAmount: "0",
+          paymentDate: null,
+          remainingInstallmentPrincipal: "0",
+          overpaymentBalance: "0",
+        })),
+      });
+
+      const updated = await createSnapshot({
+        rawInput: "只更新國泰世華信用卡",
+        baseSnapshotId: base.id,
+        capturedAt: "2026-10-01T00:00:00.000Z",
+        accounts: [],
+        loans: [],
+        creditCardUpdateMode: "partial",
+        creditCardAccounts: [
+          {
+            ...base.creditCardAccounts[0],
+            statementPeriod: "2026-10",
+            statementDate: "2026-10-03",
+            dueDate: "2026-10-18",
+            statementAmount: "15000",
+            paymentAmount: "15000",
+            paymentDate: "2026-10-17",
+          },
+        ],
+      });
+
+      expect(updated.accounts[0].positions[0]).toMatchObject({
+        securityType: "future",
+        market: "FUTURES",
+      });
+      expect(updated.creditCardAccounts).toHaveLength(2);
+      expect(updated.creditCardAccounts[0]).toMatchObject({
+        issuer: "國泰世華",
+        statementPeriod: "2026-10",
+        statementAmount: "15000",
+      });
+      expect(updated.creditCardAccounts[1]).toMatchObject({
+        issuer: "玉山銀行",
+        statementPeriod: "2026-09",
+        statementAmount: "20000",
+      });
+
+      const mixedUpdate = await createSnapshot({
+        rawInput: "同時更新期貨帳戶與玉山信用卡",
+        baseSnapshotId: updated.id,
+        capturedAt: "2026-10-02T00:00:00.000Z",
+        accounts: [
+          {
+            ...updated.accounts[0],
+            cashBalances: updated.accounts[0].cashBalances.map((balance) => ({
+              ...balance,
+              amount: "350000",
+            })),
+          },
+        ],
+        loans: updated.loans,
+        creditCardUpdateMode: "partial",
+        creditCardAccounts: [
+          {
+            ...updated.creditCardAccounts[1],
+            statementPeriod: "2026-10",
+            statementDate: "2026-10-03",
+            dueDate: "2026-10-18",
+            statementAmount: "25000",
+          },
+        ],
+      });
+
+      expect(mixedUpdate.accounts[0].cashBalances[0].amount).toBe("350000");
+      expect(mixedUpdate.creditCardAccounts[0].statementAmount).toBe("15000");
+      expect(mixedUpdate.creditCardAccounts[1]).toMatchObject({
+        issuer: "玉山銀行",
+        statementPeriod: "2026-10",
+        statementAmount: "25000",
+      });
+    });
+  });
+
   it("備份可在新資料庫還原貸款與淨值", async () => {
     const backup = await exportBackup();
     closeDatabaseForTests();

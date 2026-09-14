@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   creditCardCycleDates,
   creditCardDisplayPayment,
+  creditCardPaymentHeading,
   creditCardPaymentLabel,
   creditCardPaymentMonthLabel,
   followingCreditCardDueDate,
@@ -27,6 +28,21 @@ describe("信用卡繳款期限", () => {
     expect(creditCardPaymentLabel("partially_paid")).toBe("部分繳");
     expect(creditCardPaymentLabel("overdue")).toBe("未繳");
     expect(creditCardPaymentLabel("no_statement")).toBe("待更新");
+  });
+
+  it("本期已繳清時不再將同一月份標示為應繳", () => {
+    expect(creditCardPaymentHeading("2026-09-18", "已繳")).toBe(
+      "2026 年 9 月已繳清",
+    );
+    expect(creditCardPaymentHeading("2026-09-18", "未繳")).toBe(
+      "2026 年 9 月應繳",
+    );
+    expect(creditCardPaymentHeading("2026-09-18", "部分繳")).toBe(
+      "2026 年 9 月應繳",
+    );
+    expect(creditCardPaymentHeading("2026-09-18", "待更新")).toBe(
+      "2026 年 9 月應繳",
+    );
   });
 
   it("進入下一個繳款月份後將已繳帳單顯示為當月待更新", () => {

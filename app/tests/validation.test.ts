@@ -95,6 +95,38 @@ describe("資產與負債資料合理性檢核", () => {
       ).toBe(true);
   });
 
+  it("局部信用卡更新只驗證選取的銀行，不要求同時送出資產", () => {
+    const result = snapshotCreateSchema.safeParse({
+      rawInput: "只更新國泰世華信用卡",
+      baseSnapshotId: "00000000-0000-4000-8000-000000000001",
+      accounts: [],
+      loans: [],
+      creditCardUpdateMode: "partial",
+      creditCardAccounts: [
+        {
+          creditCardAccountId: "00000000-0000-4000-8000-000000000002",
+          name: "國泰世華信用卡",
+          issuer: "國泰世華",
+          currency: "TWD",
+          sharedCreditLimit: "200000",
+          paymentDayOfMonth: 18,
+          status: "active",
+          cards: [],
+          statementPeriod: "2026-10",
+          statementDate: "2026-10-03",
+          dueDate: "2026-10-18",
+          statementAmount: "15000",
+          paymentAmount: "15000",
+          paymentDate: "2026-10-17",
+          remainingInstallmentPrincipal: "0",
+          overpaymentBalance: "0",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("拒絕零元資金流", () => {
     const result = snapshotCreateSchema.safeParse({
       rawInput: "",

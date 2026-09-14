@@ -14,6 +14,7 @@ import {
   Banknote,
   Building2,
   CheckCircle2,
+  CreditCard,
   Landmark,
   LoaderCircle,
   Plus,
@@ -81,13 +82,6 @@ const hasCompleteQuoteCode = (
   return /^[A-Z][A-Z0-9.-]{0,14}$/.test(code.toUpperCase());
 };
 
-const emptyAccount = (): AccountStateInput => ({
-  name: "新帳戶",
-  accountType: "brokerage",
-  defaultCurrency: "TWD",
-  cashBalances: [{ currency: "TWD", amount: "0" }],
-  positions: [],
-});
 const emptyPosition = (
   securityType: "stock" | "etf" | "fund" | "future" = "stock",
 ): AccountStateInput["positions"][number] => ({
@@ -269,10 +263,14 @@ export function SnapshotEditor({
   latest,
   onClose,
   onSaved,
+  onManageAccounts,
+  onManageCreditCards,
 }: {
   latest: DashboardData["latest"];
   onClose: () => void;
   onSaved: () => void;
+  onManageAccounts: () => void;
+  onManageCreditCards: () => void;
 }) {
   const [processedInput, setProcessedInput] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -286,14 +284,28 @@ export function SnapshotEditor({
   const [creditCardAccounts, setCreditCardAccounts] = useState<
     CreditCardAccountInput[]
   >(() => cloneCreditCardAccounts(latest?.creditCardAccounts ?? []));
+  const [selectedCreditCardAccountIds, setSelectedCreditCardAccountIds] =
+    useState<string[]>([]);
   const [includeCreditCards, setIncludeCreditCards] = useState(false);
   const [hasPrepared, setHasPrepared] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [validationResult, setValidationResult] = useState({
+    key: "",
+    warnings: [] as string[],
+  });
   const [busy, setBusy] = useState("");
   const [resolvingPosition, setResolvingPosition] = useState<string | null>(
     null,
   );
   const [error, setError] = useState("");
+  const selectableItemCount =
+    (latest?.accounts.length ?? 0) +
+    (latest?.creditCardAccounts.filter((account) => account.creditCardAccountId)
+      .length ?? 0);
+  const selectedItemCount =
+    selectedAccountIds.length + selectedCreditCardAccountIds.length;
+  const allItemsSelected =
+    selectableItemCount > 0 && selectedItemCount === selectableItemCount;
   const quoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
   );
@@ -310,44 +322,64 @@ export function SnapshotEditor({
   );
   const normalizedCreditCardAccounts = useMemo(
     () =>
-      creditCardAccounts.map((account) => ({
-        ...account,
-        status: normalizeCreditCardAccountStatus(account.status, account.cards),
-        ...(creditCardCycleDates(
-          account.paymentDate || account.dueDate,
-          account.statementDayOfMonth,
-          account.paymentDayOfMonth,
-        ) ?? {}),
-        remainingInstallmentPrincipal:
-          account.remainingInstallmentPrincipal || "0",
-        overpaymentBalance: account.overpaymentBalance || "0",
-      })),
-    [creditCardAccounts],
+      creditCardAccounts
+        .filter(
+          (account) =>
+            account.creditCardAccountId &&
+            selectedCreditCardAccountIds.includes(account.creditCardAccountId),
+        )
+        .map((account) => ({
+          ...account,
+          status: normalizeCreditCardAccountStatus(
+            account.status,
+            account.cards,
+          ),
+          ...(creditCardCycleDates(
+            account.paymentDate || account.dueDate,
+            account.statementDayOfMonth,
+            account.paymentDayOfMonth,
+          ) ?? {}),
+          remainingInstallmentPrincipal:
+            account.remainingInstallmentPrincipal || "0",
+          overpaymentBalance: account.overpaymentBalance || "0",
+        })),
+    [creditCardAccounts, selectedCreditCardAccountIds],
   );
-  const validationWarnings = useMemo(() => {
-    if (!hasPrepared) return [];
-    const result = snapshotCreateSchema.safeParse({
+  const validationPayload = useMemo(
+    () => ({
       rawInput: processedInput || "手動更新財務快照",
       baseSnapshotId: latest?.id ?? null,
-      accounts: mergedAccounts,
-      loans: mergedLoans,
+      accounts,
+      loans,
       creditCardAccounts: includeCreditCards
         ? normalizedCreditCardAccounts
         : undefined,
+      creditCardUpdateMode: includeCreditCards
+        ? ("partial" as const)
+        : undefined,
       cashFlows,
-    });
-    if (result.success) return [];
-    return [...new Set(result.error.issues.map((issue) => issue.message))];
-  }, [
-    hasPrepared,
-    processedInput,
-    latest?.id,
-    mergedAccounts,
-    mergedLoans,
-    normalizedCreditCardAccounts,
-    includeCreditCards,
-    cashFlows,
-  ]);
+    }),
+    [
+      processedInput,
+      latest?.id,
+      includeCreditCards,
+      accounts,
+      loans,
+      normalizedCreditCardAccounts,
+      cashFlows,
+    ],
+  );
+  const validationKey = JSON.stringify(validationPayload);
+  const validationWarnings =
+    validationResult.key === validationKey ? validationResult.warnings : [];
+  const validateSnapshot = () => {
+    const result = snapshotCreateSchema.safeParse(validationPayload);
+    const issues = result.success
+      ? []
+      : [...new Set(result.error.issues.map((issue) => issue.message))];
+    setValidationResult({ key: validationKey, warnings: issues });
+    return issues;
+  };
   const fxRates = useMemo(() => {
     const rates = new Map<
       string,
@@ -385,18 +417,6 @@ export function SnapshotEditor({
     setLoans((items) =>
       items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
     );
-  const changeAccountType = (
-    index: number,
-    accountType: AccountStateInput["accountType"],
-  ) => {
-    const account = accounts[index];
-    if (accountType === "cash" && account.positions.length > 0) {
-      setError("現金帳戶只能記錄現金餘額；請先移除投資品項，再變更帳戶類型。");
-      return;
-    }
-    setError("");
-    updateAccount(index, { accountType });
-  };
   const applyFxRate = (currency: string, rate: string) => {
     const fxRate = manualFx(currency, rate);
     setAccounts((items) =>
@@ -546,8 +566,8 @@ export function SnapshotEditor({
         ? items.filter((item) => item !== accountId)
         : [...items, accountId],
     );
-  const startSelectedAccounts = () => {
-    if (!latest || selectedAccountIds.length === 0) return;
+  const startSelectedItems = () => {
+    if (!latest || selectedItemCount === 0) return;
     const selected = latest.accounts.filter((account) =>
       selectedAccountIds.includes(account.accountId),
     );
@@ -565,69 +585,64 @@ export function SnapshotEditor({
     setPreservedAccounts(cloneAccounts(preserved));
     setLoans(cloneLoans(selectedLoans));
     setPreservedLoans(cloneLoans(otherLoans));
-    setProcessedInput(
-      `更新帳戶：${selected.map((item) => item.name).join("、")}`,
+    const selectedCreditCards = latest.creditCardAccounts.filter(
+      (account) =>
+        account.creditCardAccountId &&
+        selectedCreditCardAccountIds.includes(account.creditCardAccountId),
     );
-    setIncludeCreditCards(false);
+    setProcessedInput(
+      "更新項目：" +
+        [
+          ...selected.map((item) => item.name),
+          ...selectedCreditCards.map((item) => item.name),
+        ].join("、"),
+    );
+    setIncludeCreditCards(selectedCreditCards.length > 0);
     setWarnings([]);
     setError("");
     setHasPrepared(true);
   };
-  const startNewAccount = () => {
-    setAccounts([emptyAccount()]);
-    setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
-    setLoans([]);
-    setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
-    setProcessedInput("新增帳戶");
-    setIncludeCreditCards(false);
-    setWarnings([]);
-    setError("");
-    setHasPrepared(true);
-  };
-  const startCreditCardsOnly = () => {
-    setAccounts([]);
-    setPreservedAccounts(latest ? cloneAccounts(latest.accounts) : []);
-    setLoans([]);
-    setPreservedLoans(latest ? cloneLoans(latest.loans) : []);
-    setProcessedInput("更新信用卡繳款狀況");
+  const selectCreditCardAccount = (accountId: string) => {
+    if (selectedCreditCardAccountIds.includes(accountId)) return;
     const currentDate = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Taipei",
     });
-    setCreditCardAccounts(
-      cloneCreditCardAccounts(latest?.creditCardAccounts ?? []).map(
-        (account) => {
-          const cycle = creditCardCycleDates(
-            currentDate,
-            account.statementDayOfMonth,
-            account.paymentDayOfMonth,
-          );
-          if (
-            !cycle ||
-            cycle.dueDate.slice(0, 7) <= account.dueDate.slice(0, 7)
-          )
-            return account;
-          return {
-            ...account,
-            ...cycle,
-            statementAmount: "",
-            paymentAmount: "",
-            paymentDate: null,
-            remainingInstallmentPrincipal: "",
-            overpaymentBalance: "",
-          };
-        },
-      ),
+    setCreditCardAccounts((items) =>
+      items.map((account) => {
+        if (account.creditCardAccountId !== accountId) return account;
+        const cycle = creditCardCycleDates(
+          currentDate,
+          account.statementDayOfMonth,
+          account.paymentDayOfMonth,
+        );
+        if (!cycle || cycle.dueDate.slice(0, 7) <= account.dueDate.slice(0, 7))
+          return account;
+        return {
+          ...account,
+          ...cycle,
+          statementAmount: "",
+          paymentAmount: "",
+          paymentDate: null,
+          remainingInstallmentPrincipal: "",
+          overpaymentBalance: "",
+        };
+      }),
     );
-    setIncludeCreditCards(true);
-    setWarnings([]);
-    setError("");
-    setHasPrepared(true);
+    setSelectedCreditCardAccountIds((items) =>
+      items.includes(accountId) ? items : [...items, accountId],
+    );
   };
-  const quotes = async () => {
-    if (validationWarnings.length > 0) {
-      setError("資料檢核未通過，已取消取得行情；請先修正下方警告。");
+  const toggleCreditCardAccount = (accountId: string) => {
+    if (selectedCreditCardAccountIds.includes(accountId)) {
+      setSelectedCreditCardAccountIds((items) =>
+        items.filter((item) => item !== accountId),
+      );
       return;
     }
+    selectCreditCardAccount(accountId);
+  };
+  const quotes = async () => {
+    if (validateSnapshot().length > 0) return;
     setBusy("quotes");
     setError("");
     try {
@@ -654,10 +669,7 @@ export function SnapshotEditor({
     }
   };
   const save = async () => {
-    if (validationWarnings.length > 0) {
-      setError("資料檢核未通過，已取消保存；請先修正下方警告。");
-      return;
-    }
+    if (validateSnapshot().length > 0) return;
     setBusy("save");
     setError("");
     try {
@@ -678,6 +690,7 @@ export function SnapshotEditor({
           creditCardAccounts: includeCreditCards
             ? normalizedCreditCardAccounts
             : undefined,
+          creditCardUpdateMode: includeCreditCards ? "partial" : undefined,
           cashFlows,
         }),
       });
@@ -702,7 +715,7 @@ export function SnapshotEditor({
         </div>
         <ol className="snapshot-steps" aria-label="建立快照進度">
           {[
-            [1, "選擇帳戶"],
+            [1, "選擇項目"],
             [2, "確認明細"],
             [3, "儲存快照"],
           ].map(([step, label]) => (
@@ -738,35 +751,48 @@ export function SnapshotEditor({
             <div className="snapshot-composer-heading">
               <span>第 1 步</span>
               <div>
-                <h3>選擇要更新的帳戶</h3>
-                <p>可以一次選取多個帳戶；未選取的帳戶會沿用上一份快照。</p>
+                <h3>選擇要更新的項目</h3>
+                <p>
+                  一般帳戶與信用卡可一起更新；未選取的資料會沿用上一份快照。
+                </p>
               </div>
             </div>
-            {latest?.accounts.length ? (
+            {selectableItemCount > 0 ? (
               <>
                 <div className="snapshot-selection-toolbar">
                   <p>
-                    已選取 <strong>{selectedAccountIds.length}</strong>／
-                    {latest.accounts.length} 個帳戶
+                    已選取 <strong>{selectedItemCount}</strong>／
+                    {selectableItemCount} 個項目
                   </p>
                   <button
                     type="button"
                     className="link"
-                    onClick={() =>
+                    onClick={() => {
+                      if (allItemsSelected) {
+                        setSelectedAccountIds([]);
+                        setSelectedCreditCardAccountIds([]);
+                        return;
+                      }
                       setSelectedAccountIds(
-                        selectedAccountIds.length === latest.accounts.length
-                          ? []
-                          : latest.accounts.map((account) => account.accountId),
-                      )
-                    }
+                        latest?.accounts.map((account) => account.accountId) ??
+                          [],
+                      );
+                      for (const account of latest?.creditCardAccounts ?? []) {
+                        if (account.creditCardAccountId)
+                          selectCreditCardAccount(account.creditCardAccountId);
+                      }
+                    }}
                   >
-                    {selectedAccountIds.length === latest.accounts.length
-                      ? "取消全選"
-                      : "全部選取"}
+                    {allItemsSelected ? "取消全選" : "全部選取"}
                   </button>
                 </div>
                 <div className="snapshot-account-options">
-                  {latest.accounts.map((account) => {
+                  {(latest?.accounts.length ?? 0) > 0 && (
+                    <p className="col-span-full px-1 pt-1 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
+                      一般帳戶
+                    </p>
+                  )}
+                  {latest?.accounts.map((account) => {
                     const selected = selectedAccountIds.includes(
                       account.accountId,
                     );
@@ -804,6 +830,47 @@ export function SnapshotEditor({
                       </button>
                     );
                   })}
+                  {(latest?.creditCardAccounts.length ?? 0) > 0 && (
+                    <p className="col-span-full px-1 pt-2 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
+                      信用卡額度群組
+                    </p>
+                  )}
+                  {latest?.creditCardAccounts.map((account) => {
+                    const accountId = account.creditCardAccountId;
+                    const selected = Boolean(
+                      accountId &&
+                      selectedCreditCardAccountIds.includes(accountId),
+                    );
+                    const activeCards = account.cards.filter(
+                      (card) => card.status === "active",
+                    ).length;
+                    return (
+                      <button
+                        key={accountId ?? `${account.issuer}:${account.name}`}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={selected}
+                        disabled={!accountId}
+                        className={`snapshot-account-option ${selected ? "selected" : ""}`}
+                        onClick={() =>
+                          accountId && toggleCreditCardAccount(accountId)
+                        }
+                      >
+                        <span className="snapshot-account-option-icon">
+                          <CreditCard size={17} />
+                        </span>
+                        <span className="snapshot-account-option-copy">
+                          <strong>{account.name}</strong>
+                          <small>
+                            {account.issuer}・信用卡・{activeCards} 張使用中
+                          </small>
+                        </span>
+                        <span className="snapshot-account-option-check">
+                          {selected ? "✓" : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             ) : (
@@ -813,17 +880,6 @@ export function SnapshotEditor({
                 <p>先建立第一個帳戶，再填入現金、持倉或貸款資料。</p>
               </div>
             )}
-            <div className="snapshot-composer-actions">
-              <button
-                disabled={selectedAccountIds.length === 0 || !!busy}
-                onClick={startSelectedAccounts}
-                className="primary"
-              >
-                <CheckCircle2 size={16} />
-                更新所選帳戶
-              </button>
-              <p>選取後會帶入目前資料，確認並修改後才會儲存。</p>
-            </div>
           </div>
           <aside className="snapshot-entry-aside">
             <div className="snapshot-preparation-status">
@@ -832,11 +888,14 @@ export function SnapshotEditor({
               </span>
               <div>
                 <h3>
-                  {selectedAccountIds.length > 0
-                    ? `已選取 ${selectedAccountIds.length} 個帳戶`
-                    : "尚未選取帳戶"}
+                  {selectedItemCount > 0
+                    ? `已選取 ${selectedItemCount} 個項目`
+                    : "尚未選取項目"}
                 </h3>
-                <p>可複選帳戶，並在下一步一起更新。</p>
+                <p>
+                  一般帳戶 {selectedAccountIds.length}・信用卡{" "}
+                  {selectedCreditCardAccountIds.length}
+                </p>
               </div>
             </div>
             <div className="snapshot-entry-guide">
@@ -846,7 +905,7 @@ export function SnapshotEditor({
                   <span>1</span>
                   <p>
                     <strong>選擇更新範圍</strong>
-                    <small>勾選一個或多個既有帳戶</small>
+                    <small>勾選一般帳戶或信用卡額度群組</small>
                   </p>
                 </li>
                 <li>
@@ -873,25 +932,23 @@ export function SnapshotEditor({
               </p>
             </div>
             <div className="snapshot-manual-entry">
-              <p>其他更新</p>
+              <p>帳戶設定</p>
               <div>
-                {creditCardAccounts.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={!!busy}
-                    onClick={startCreditCardsOnly}
-                    className="secondary"
-                  >
-                    只更新信用卡
-                  </button>
-                )}
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={startNewAccount}
+                  onClick={onManageAccounts}
                   className="secondary"
                 >
-                  新增全新帳戶
+                  管理一般帳戶
+                </button>
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={onManageCreditCards}
+                  className="secondary"
+                >
+                  管理信用卡
                 </button>
               </div>
             </div>
@@ -907,7 +964,7 @@ export function SnapshotEditor({
         )}
         {validationWarnings.length > 0 && (
           <div className="notice error" role="alert">
-            <p className="font-semibold">資料不合理，已停止行情查詢與保存：</p>
+            <p className="font-semibold">資料不合理，請修正後再試：</p>
             {validationWarnings.map((item, index) => (
               <p key={`${item}-${index}`}>• {item}</p>
             ))}
@@ -940,7 +997,7 @@ export function SnapshotEditor({
                       }}
                       className="inline-flex items-center rounded-xl border border-[#d8e2da] bg-white px-4 py-2.5 text-xs font-semibold text-[#456353] transition hover:bg-[#f6f9f6]"
                     >
-                      重新選擇帳戶
+                      重新選擇項目
                     </button>
                     <button
                       disabled={
@@ -989,7 +1046,12 @@ export function SnapshotEditor({
                     ],
                     ["貸款", loans.length],
                     ...(includeCreditCards
-                      ? [["信用卡", creditCardAccounts.length] as const]
+                      ? [
+                          [
+                            "信用卡",
+                            selectedCreditCardAccountIds.length,
+                          ] as const,
+                        ]
                       : []),
                   ].map(([label, count]) => (
                     <span
@@ -1003,23 +1065,44 @@ export function SnapshotEditor({
               </div>
             </section>
             {includeCreditCards && creditCardAccounts.length > 0 && (
-              <section className="overflow-hidden rounded-[24px] border border-[#d8e2da] bg-white shadow-[0_12px_40px_rgba(31,60,45,.07)]">
-                <div className="border-b border-[#e7ece8] bg-[#f8faf7] px-6 py-5">
-                  <div className="flex items-center gap-2 text-[#397259]">
-                    <WalletCards size={16} />
-                    <p className="text-[10px] font-bold uppercase tracking-[.16em]">
-                      CREDIT CARD PAYMENTS
+              <section className="overflow-hidden rounded-[28px] border border-[#d4e0d7] bg-white shadow-[0_18px_48px_rgba(31,60,45,.09)]">
+                <div className="flex flex-wrap items-end justify-between gap-5 border-b border-[#e4ebe6] bg-[#f4f9f5] px-6 py-6">
+                  <div>
+                    <div className="flex items-center gap-2 text-[#397259]">
+                      <WalletCards size={17} />
+                      <p className="text-[10px] font-bold uppercase tracking-[.18em]">
+                        CREDIT CARD UPDATE
+                      </p>
+                    </div>
+                    <h3 className="mt-2 text-xl font-semibold text-[#193126]">
+                      更新信用卡帳單
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-[#66776e]">
+                      直接編輯要更新的銀行，系統會自動選取；沒有操作的銀行會沿用上一份快照。
                     </p>
                   </div>
-                  <h3 className="mt-2 text-lg font-semibold text-[#193126]">
-                    更新本月信用卡繳款狀況
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-[#718078]">
-                    與資產及負債一起保存為同一份快照；每張卡請填繳款日期、總應繳金額與實際繳款金額。
-                  </p>
+                  <div
+                    aria-live="polite"
+                    className="min-w-36 rounded-2xl border border-[#cfddd3] bg-white/80 px-4 py-3 text-right shadow-sm"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#78877e]">
+                      本次更新
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-[#285e45]">
+                      {selectedCreditCardAccountIds.length}
+                      <span className="text-xs font-medium text-[#7b8981]">
+                        {` / ${creditCardAccounts.length} 家銀行`}
+                      </span>
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-3 p-5">
+                <div className="grid gap-4 p-5">
                   {creditCardAccounts.map((account, accountIndex) => {
+                    const accountId = account.creditCardAccountId;
+                    const selected = Boolean(
+                      accountId &&
+                      selectedCreditCardAccountIds.includes(accountId),
+                    );
                     const cycle = creditCardCycleDates(
                       account.paymentDate || account.dueDate,
                       account.statementDayOfMonth,
@@ -1034,44 +1117,85 @@ export function SnapshotEditor({
                         ),
                       );
                     return (
-                      <details
-                        open
+                      <article
                         key={account.creditCardAccountId ?? accountIndex}
-                        className="overflow-hidden rounded-[18px] border border-[#dfe7e1]"
+                        className={`overflow-hidden rounded-[22px] border bg-white transition-all ${
+                          selected
+                            ? "border-[#78a88d] shadow-[0_12px_30px_rgba(43,105,72,.12)] ring-1 ring-[#78a88d]/20"
+                            : "border-[#dfe7e1] shadow-[0_6px_18px_rgba(31,60,45,.04)]"
+                        }`}
                       >
-                        <summary className="cursor-pointer list-none bg-[#f8faf7] px-4 py-3 marker:hidden">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold">
+                        <header
+                          className={`flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4 ${
+                            selected
+                              ? "border-[#d9e7dd] bg-[#f2f8f3]"
+                              : "border-[#e7ece8] bg-[#fafbf9]"
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div
+                              className={`grid size-10 shrink-0 place-items-center rounded-xl ${
+                                selected
+                                  ? "bg-[#397259] text-white"
+                                  : "bg-[#e9efeb] text-[#69786f]"
+                              }`}
+                            >
+                              {selected ? (
+                                <CheckCircle2 size={19} />
+                              ) : (
+                                <WalletCards size={19} />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#193126]">
                                 {account.name}
                               </p>
-                              <p className="mt-1 text-[11px] text-[#7a877f]">
-                                {account.issuer}
+                              <p className="mt-0.5 text-[11px] text-[#77847c]">
+                                {account.issuer}・帳單月份{" "}
+                                {account.statementPeriod}
                               </p>
                             </div>
-                            <span className="rounded-full bg-[#edf3ee] px-3 py-1.5 text-[11px] font-semibold text-[#476251]">
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#53665b] shadow-sm ring-1 ring-[#dce5de]">
                               {cycle
                                 ? `繳款期限 ${cycle.dueDate}`
                                 : "尚未設定繳款期限"}
                             </span>
+                            <label
+                              className={`flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                                selected
+                                  ? "bg-[#397259] text-white"
+                                  : "bg-[#edf1ee] text-[#5f6f66] hover:bg-[#e4ebe6]"
+                              }`}
+                            >
+                              <input
+                                aria-label={`本次更新 ${account.name}`}
+                                checked={selected}
+                                disabled={!accountId || !!busy}
+                                onChange={() =>
+                                  accountId &&
+                                  toggleCreditCardAccount(accountId)
+                                }
+                                type="checkbox"
+                              />
+                              {selected ? "本次會更新" : "沿用原資料"}
+                            </label>
                           </div>
-                        </summary>
-                        <div className="grid grid-cols-3 gap-3 p-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-                          <label>
-                            繳款日期
-                            <input
-                              className="field"
-                              type="date"
-                              value={inputDate(account.paymentDate)}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  paymentDate: event.target.value || null,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            總應繳金額（{account.currency}）
+                        </header>
+                        <div
+                          className="grid grid-cols-3 gap-4 p-5 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                          onFocusCapture={() =>
+                            accountId && selectCreditCardAccount(accountId)
+                          }
+                        >
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            <span className="flex h-10 flex-col gap-1">
+                              <span>總應繳金額</span>
+                              <span className="font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                            </span>
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1083,8 +1207,13 @@ export function SnapshotEditor({
                               }
                             />
                           </label>
-                          <label>
-                            實際繳款金額（{account.currency}）
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            <span className="flex h-10 flex-col gap-1">
+                              <span>實際繳款金額</span>
+                              <span className="font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                            </span>
                             <input
                               className="field"
                               inputMode="decimal"
@@ -1096,35 +1225,68 @@ export function SnapshotEditor({
                               }
                             />
                           </label>
-                          <label>
-                            剩餘分期本金（{account.currency}，選填）
+                          <label className="text-xs font-semibold text-[#53645a]">
+                            <span className="flex h-10 items-start">
+                              繳款日期
+                            </span>
                             <input
                               className="field"
-                              inputMode="decimal"
-                              value={account.remainingInstallmentPrincipal}
+                              type="date"
+                              value={inputDate(account.paymentDate)}
                               onChange={(event) =>
                                 updateCreditCard({
-                                  remainingInstallmentPrincipal:
-                                    event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            銀行顯示的溢繳餘額（{account.currency}，選填）
-                            <input
-                              className="field"
-                              inputMode="decimal"
-                              value={account.overpaymentBalance}
-                              onChange={(event) =>
-                                updateCreditCard({
-                                  overpaymentBalance: event.target.value,
+                                  paymentDate: event.target.value || null,
                                 })
                               }
                             />
                           </label>
                         </div>
-                      </details>
+                        <details
+                          className="border-t border-[#edf1ee] bg-[#fbfcfb] px-5 py-3"
+                          onFocusCapture={() =>
+                            accountId && selectCreditCardAccount(accountId)
+                          }
+                        >
+                          <summary className="cursor-pointer text-xs font-semibold text-[#557061] marker:text-[#7d9989]">
+                            分期與溢繳（選填）
+                          </summary>
+                          <div className="mt-4 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+                            <label className="text-xs font-semibold text-[#53645a]">
+                              剩餘分期本金
+                              <span className="ml-1 font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                              <input
+                                className="field mt-2"
+                                inputMode="decimal"
+                                value={account.remainingInstallmentPrincipal}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    remainingInstallmentPrincipal:
+                                      event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-xs font-semibold text-[#53645a]">
+                              銀行顯示的溢繳餘額
+                              <span className="ml-1 font-normal text-[#89958e]">
+                                {account.currency}
+                              </span>
+                              <input
+                                className="field mt-2"
+                                inputMode="decimal"
+                                value={account.overpaymentBalance}
+                                onChange={(event) =>
+                                  updateCreditCard({
+                                    overpaymentBalance: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      </article>
                     );
                   })}
                 </div>
@@ -1302,100 +1464,15 @@ export function SnapshotEditor({
                   <div className="p-5">
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#f6f9f6] px-4 py-3">
                       <p className="text-xs text-[#718078]">
-                        完整編輯帳戶基本資料、現金、投資與關聯貸款。
+                        這裡只更新會隨快照變動的金額與持倉；名稱、機構、類型及記帳幣別請至帳戶管理調整。
                       </p>
-                      <div className="flex flex-wrap gap-3">
-                        {accounts.length > 1 && (
-                          <button
-                            type="button"
-                            className="link danger-text"
-                            onClick={() =>
-                              setAccounts((items) =>
-                                items.filter(
-                                  (_, index) => index !== accountIndex,
-                                ),
-                              )
-                            }
-                          >
-                            移除帳戶
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-3 max-lg:grid-cols-3 max-md:grid-cols-2">
-                      <label>
-                        帳戶名稱
-                        <input
-                          className="field"
-                          value={account.name}
-                          onChange={(e) => {
-                            const name = e.target.value;
-                            setLoans((items) =>
-                              items.map((loan) =>
-                                loanBelongsToAccount(loan, account)
-                                  ? { ...loan, accountName: name }
-                                  : loan,
-                              ),
-                            );
-                            updateAccount(accountIndex, { name });
-                          }}
-                        />
-                      </label>
-                      <label>
-                        機構
-                        <input
-                          className="field"
-                          value={account.institution ?? ""}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              institution: e.target.value || null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        帳戶識別碼
-                        <input
-                          className="field"
-                          placeholder="自訂代號或末四碼"
-                          value={account.accountReference ?? ""}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              accountReference: e.target.value || null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        類型
-                        <select
-                          className="field"
-                          value={account.accountType}
-                          onChange={(e) =>
-                            changeAccountType(
-                              accountIndex,
-                              e.target
-                                .value as AccountStateInput["accountType"],
-                            )
-                          }
-                        >
-                          <option value="bank">銀行</option>
-                          <option value="brokerage">券商</option>
-                          <option value="cash">現金</option>
-                        </select>
-                      </label>
-                      <label>
-                        預設幣別
-                        <input
-                          className="field"
-                          value={account.defaultCurrency}
-                          onChange={(e) =>
-                            updateAccount(accountIndex, {
-                              defaultCurrency: e.target.value.toUpperCase(),
-                            })
-                          }
-                        />
-                      </label>
+                      <button
+                        type="button"
+                        className="secondary shrink-0"
+                        onClick={onManageAccounts}
+                      >
+                        管理帳戶設定
+                      </button>
                     </div>
                     <div className="mt-6 flex items-center gap-2">
                       <Banknote size={15} className="text-[#3c7659]" />
@@ -1406,30 +1483,14 @@ export function SnapshotEditor({
                     {account.cashBalances.map((balance, index) => (
                       <div
                         key={index}
-                        className="mt-3 grid grid-cols-[120px_1fr_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-md:grid-cols-2"
+                        className="mt-3 grid grid-cols-[120px_minmax(0,1fr)] items-end gap-3 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-md:grid-cols-1"
                       >
-                        <label>
+                        <div>
                           幣別
-                          <input
-                            className="field"
-                            value={balance.currency}
-                            onChange={(e) =>
-                              updateAccount(accountIndex, {
-                                cashBalances: account.cashBalances.map(
-                                  (item, i) =>
-                                    i === index
-                                      ? {
-                                          ...item,
-                                          currency:
-                                            e.target.value.toUpperCase(),
-                                          fxRate: undefined,
-                                        }
-                                      : item,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
+                          <strong className="field flex items-center">
+                            {balance.currency}
+                          </strong>
+                        </div>
                         <label>
                           餘額
                           <input
@@ -1448,33 +1509,8 @@ export function SnapshotEditor({
                             }
                           />
                         </label>
-                        <button
-                          aria-label="移除現金"
-                          onClick={() =>
-                            updateAccount(accountIndex, {
-                              cashBalances: account.cashBalances.filter(
-                                (_, i) => i !== index,
-                              ),
-                            })
-                          }
-                        >
-                          <X size={17} />
-                        </button>
                       </div>
                     ))}
-                    <button
-                      className="link mt-2"
-                      onClick={() =>
-                        updateAccount(accountIndex, {
-                          cashBalances: [
-                            ...account.cashBalances,
-                            { currency: account.defaultCurrency, amount: "0" },
-                          ],
-                        })
-                      }
-                    >
-                      ＋ 新增幣別
-                    </button>
                     {account.accountType !== "cash" ? (
                       <>
                         <div className="mt-6 flex items-center gap-2">
@@ -2152,13 +2188,6 @@ export function SnapshotEditor({
                 </details>
               ))}
             </div>
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#b9c8bd] bg-white/60 px-4 py-4 text-sm font-semibold text-[#35684f]"
-              onClick={() => setAccounts((items) => [...items, emptyAccount()])}
-            >
-              <Plus size={14} />
-              新增帳戶
-            </button>
             <div
               className={`${loans.some((loan) => !mergedAccounts.some((account) => loanBelongsToAccount(loan, account))) ? "flex" : "hidden"} flex-wrap items-end justify-between gap-3 pt-3`}
             >
@@ -2613,15 +2642,8 @@ export function SnapshotEditor({
           </button>
           <button
             className="primary min-w-40"
-            disabled={
-              !hasPrepared ||
-              (accounts.length === 0 &&
-                loans.length === 0 &&
-                (!includeCreditCards || creditCardAccounts.length === 0)) ||
-              !!busy ||
-              validationWarnings.length > 0
-            }
-            onClick={save}
+            disabled={!!busy || (!hasPrepared && selectedItemCount === 0)}
+            onClick={hasPrepared ? save : startSelectedItems}
           >
             {busy === "save" ? (
               <>
@@ -2631,7 +2653,7 @@ export function SnapshotEditor({
             ) : (
               <>
                 <CheckCircle2 size={15} />
-                保存這筆紀錄
+                {hasPrepared ? "保存這筆紀錄" : "下一步：確認所選項目"}
               </>
             )}
           </button>

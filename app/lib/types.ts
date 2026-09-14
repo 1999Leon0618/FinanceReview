@@ -175,6 +175,7 @@ export interface SnapshotCreateInput {
   accounts: AccountStateInput[];
   loans?: LoanInput[];
   creditCardAccounts?: CreditCardAccountInput[];
+  creditCardUpdateMode?: "partial";
   cashFlows?: SnapshotCashFlowInput[];
 }
 

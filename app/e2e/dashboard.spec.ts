@@ -25,6 +25,15 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("頁面顯示目前部署版本", async ({ page }) => {
+  await page.goto("/investments");
+
+  const version = page.getByLabel(/^目前版本：/);
+  await expect(version).toBeVisible();
+  await expect(version).toContainText("版本");
+  await expect(version).toHaveAttribute("title", /^建置時間：/);
+});
+
 test("管理員可開啟使用者審核與唯讀範例頁", async ({ page }) => {
   await page.goto("/admin/users");
   await expect(page.getByRole("heading", { name: "使用者審核" })).toBeVisible();

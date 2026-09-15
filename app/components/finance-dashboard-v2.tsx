@@ -67,6 +67,11 @@ import {
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
 import { requestJson as request } from "@/lib/client-request";
 import {
+  buildInfo,
+  formatBuildTitle,
+  formatBuildVersion,
+} from "@/lib/build-info";
+import {
   creditCardDisplayPayment,
   creditCardPaymentHeading,
   creditCardPaymentMonthLabel,
@@ -928,6 +933,14 @@ export default function FinanceDashboard({
                     最後更新 {dateFormatter.format(new Date(latest.capturedAt))}
                   </span>
                 )}
+                <span
+                  className="build-version"
+                  title={formatBuildTitle(buildInfo)}
+                  aria-label={`目前版本：${formatBuildVersion(buildInfo)}`}
+                >
+                  <span className="mx-2 text-[#c3c9c4]">/</span>
+                  版本 {formatBuildVersion(buildInfo)}
+                </span>
               </p>
             </div>
             <div className="page-intro-actions">

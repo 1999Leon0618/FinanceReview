@@ -91,6 +91,11 @@ const value = (row: JsonRow, keys: string[]) => {
   return "";
 };
 
+const isPositiveDecimal = (input: string) =>
+  /^\d+(?:\.\d+)?$/.test(input) &&
+  Number.isFinite(Number(input)) &&
+  Number(input) > 0;
+
 function dateIso(input: unknown): string {
   if (input instanceof Date) return input.toISOString();
   if (typeof input === "number") return new Date(input * 1000).toISOString();
@@ -131,7 +136,8 @@ export function parseSitcaFundQuotes(html: string): SitcaFundQuote[] {
     const cells = [...match[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(
       (cell) => decodeHtml(cell[1]),
     );
-    if (cells.length < 10 || !cells[5] || Number(cells[7]) <= 0) continue;
+    const price = cells[7]?.replaceAll(",", "") ?? "";
+    if (cells.length < 10 || !cells[5] || !isPositiveDecimal(price)) continue;
     rows.push({
       companyId: cells[1],
       companyName: cells[2],
@@ -139,7 +145,7 @@ export function parseSitcaFundQuotes(html: string): SitcaFundQuote[] {
       fundId: cells[4],
       name: cells[5],
       currency: cells[6],
-      price: cells[7].replaceAll(",", ""),
+      price,
     });
   }
   return rows;
@@ -337,7 +343,7 @@ async function taifexFuturesQuote(symbol: string): Promise<Quote> {
   );
   if (!found) throw new Error(`TAIFEX 找不到期貨契約：${symbol}`);
   const price = found.lastPrice || found.settlementPrice;
-  if (!price || Number(price) <= 0)
+  if (!isPositiveDecimal(price))
     throw new Error(`TAIFEX 的 ${symbol} 沒有有效行情`);
   const date = html.match(/日期：\s*(\d{4})\/(\d{2})\/(\d{2})/)?.slice(1);
   const quoteAsOf = date
@@ -364,7 +370,7 @@ async function taiwanQuote(
   );
   if (!row) throw new Error(`${market} 找不到 ${symbol}`);
   const price = value(row, ["ClosingPrice", "Close", "收盤價"]);
-  if (!price || Number(price) <= 0)
+  if (!isPositiveDecimal(price))
     throw new Error(`${market} 的 ${symbol} 沒有有效收盤價`);
   const date = value(row, ["Date", "TradeDate", "資料日期"]);
   const previousClose = value(row, [
@@ -402,8 +408,11 @@ async function yahooQuote(symbol: string): Promise<Quote> {
     quote.regularMarketPrice === null
   )
     throw new Error(`Yahoo 找不到 ${symbol}`);
+  const price = String(quote.regularMarketPrice);
+  if (!isPositiveDecimal(price))
+    throw new Error(`Yahoo 的 ${symbol} 沒有有效行情`);
   return {
-    price: String(quote.regularMarketPrice),
+    price,
     currency: quote.currency ?? "USD",
     quoteAsOf: dateIso(quote.regularMarketTime),
     source: "YAHOO",
@@ -485,8 +494,8 @@ async function lastQuote(
     WHERE market = ? AND symbol = ? ORDER BY quote_as_of DESC, fetched_at DESC LIMIT 1`,
     )
     .get(market, symbol)) as JsonRow | undefined;
-  if (row)
-    return {
+  if (row) {
+    const quote = {
       price: String(row.price),
       currency: String(row.currency),
       quoteAsOf: String(row.quote_as_of),
@@ -500,6 +509,8 @@ async function lastQuote(
       marketSession:
         row.market_session == null ? null : String(row.market_session),
     };
+    return isPositiveDecimal(quote.price) ? quote : null;
+  }
   const snapshot = (await db
     .prepare(
       `SELECT sp.market_price AS price, sp.quote_currency AS currency,
@@ -510,14 +521,14 @@ async function lastQuote(
     ORDER BY s.captured_at DESC LIMIT 1`,
     )
     .get(market, symbol, ownerKey)) as JsonRow | undefined;
-  return snapshot
-    ? {
-        price: String(snapshot.price),
-        currency: String(snapshot.currency),
-        quoteAsOf: String(snapshot.quote_as_of),
-        source: String(snapshot.source) as QuoteSource,
-      }
-    : null;
+  if (!snapshot) return null;
+  const quote = {
+    price: String(snapshot.price),
+    currency: String(snapshot.currency),
+    quoteAsOf: String(snapshot.quote_as_of),
+    source: String(snapshot.source) as QuoteSource,
+  };
+  return isPositiveDecimal(quote.price) ? quote : null;
 }
 
 // 僅取得公開行情；快取與持倉備援仍由 resolveQuote 負責。

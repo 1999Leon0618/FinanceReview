@@ -1,13 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   parseSitcaFundQuotes,
   parseTaifexFuturesQuotes,
+  fetchMarketQuote,
   pickSitcaFundQuote,
   resolveAccountQuotes,
   resolveSnapshotFxRates,
   yahooCandleSymbol,
   yahooProviderSymbol,
 } from "@/lib/quotes";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("Yahoo 美股代碼", () => {
   it("將股別的句點轉成 Yahoo 使用的連字號", () => {
@@ -59,6 +62,11 @@ describe("SITCA 基金淨值", () => {
     });
   });
 
+  it("忽略沒有有效淨值的基金列", () => {
+    const unavailable = sample.replace("326.12", "--");
+    expect(parseSitcaFundQuotes(unavailable)).toHaveLength(1);
+  });
+
   it("通用名稱有多個級別時不自動選擇，也可用代碼精確指定", () => {
     const quotes = parseSitcaFundQuotes(sample);
     expect(
@@ -102,6 +110,27 @@ describe("SITCA 基金淨值", () => {
     expect(
       pickSitcaFundQuote(quotes, "不存在測試基金", "不存在測試基金"),
     ).toBeUndefined();
+  });
+});
+
+describe("臺灣市場行情", () => {
+  it("將無成交價視為行情失敗，不把無效字串送入快照", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json([
+          {
+            Code: "TEST-NO-PRICE",
+            ClosingPrice: "--",
+            Date: "20260915",
+          },
+        ]),
+      ),
+    );
+
+    await expect(fetchMarketQuote("TWSE", "TEST-NO-PRICE")).rejects.toThrow(
+      "沒有有效收盤價",
+    );
   });
 });
 

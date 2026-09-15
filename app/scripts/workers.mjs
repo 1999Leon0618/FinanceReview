@@ -64,6 +64,9 @@ const child = spawn(
     windowsHide: true,
     env: {
       ...process.env,
+      APP_DEPLOYMENT_ENVIRONMENT:
+        process.env.APP_DEPLOYMENT_ENVIRONMENT ??
+        (command === "deploy:production" ? "production" : "local"),
       WRANGLER_SEND_METRICS: "false",
       WRANGLER_LOG_PATH: path.join(root, ".wrangler", "logs"),
     },

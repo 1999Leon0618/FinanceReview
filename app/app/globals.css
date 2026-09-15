@@ -1213,6 +1213,12 @@ label {
   font-size: 0.73rem;
 }
 
+.build-version {
+  display: inline-block;
+  color: #718078;
+  font-variant-numeric: tabular-nums;
+}
+
 .page-primary-section {
   margin-top: 1.6rem;
 }

@@ -245,10 +245,14 @@ erDiagram
 data/finance-review.db
 ```
 
-| 變數                     | 用途                      |
-| ------------------------ | ------------------------- |
-| `FINANCE_REVIEW_DB_PATH` | 覆寫 SQLite 資料庫路徑    |
-| `NEXT_DIST_DIR`          | 覆寫 Next.js 建置輸出目錄 |
+| 變數                         | 用途                                              |
+| ---------------------------- | ------------------------------------------------- |
+| `FINANCE_REVIEW_DB_PATH`     | 覆寫 SQLite 資料庫路徑                            |
+| `NEXT_DIST_DIR`              | 覆寫 Next.js 建置輸出目錄                         |
+| `APP_DEPLOYMENT_ENVIRONMENT` | 指定版本標示的環境；正式部署會自動設為 production |
+| `APP_BUILD_TIME`             | 覆寫版本標示使用的 ISO 8601 建置時間              |
+
+每頁日期與最後更新時間旁會顯示目前環境、`package.json` 版本及七碼 Git commit；GitHub Actions 會從 `GITHUB_SHA` 自動帶入部署版本，滑鼠停留可查看建置時間。
 
 Workers 模式由 `wrangler.jsonc` 的 `DB` binding 連接 D1。請勿將資料庫或匯出的財務備份提交至版本控制。SQLite 原始資料未加密，應搭配作業系統帳戶權限及磁碟加密保護。
 

@@ -398,7 +398,7 @@ test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({
       accounts: [
         {
           name: "錯誤訊息測試券商",
-          institution: "測試",
+          institution: "錯誤訊息測試機構",
           accountType: "brokerage",
           defaultCurrency: "TWD",
           cashBalances: [],
@@ -421,7 +421,7 @@ test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({
       ],
     },
   });
-  expect(created.ok()).toBeTruthy();
+  expect(created.ok(), created.ok() ? undefined : await created.text()).toBeTruthy();
 
   await page.route("**/api/quotes/refresh", async (route) => {
     await route.fulfill({

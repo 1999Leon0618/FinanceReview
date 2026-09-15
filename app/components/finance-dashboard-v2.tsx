@@ -663,16 +663,21 @@ export default function FinanceDashboard({
     if (manual > 0) parts.push(`${manual} 筆手動輸入`);
     if (stale > 0) parts.push(`${stale} 筆沿用舊資料`);
 
-    await request("/api/quotes/refresh", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rawInput: `一鍵更新標的現值（${parts.join("、")}）`,
-        baseSnapshotId: preview.baseSnapshotId,
-        accounts,
-        loans: preview.loans,
-      }),
-    });
+    try {
+      await request("/api/quotes/refresh", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawInput: `一鍵更新標的現值（${parts.join("、")}）`,
+          baseSnapshotId: preview.baseSnapshotId,
+          accounts,
+          loans: preview.loans,
+        }),
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "未知錯誤";
+      throw new Error(`保存行情快照失敗：${message}`, { cause });
+    }
     const warningMessages = preview.failures
       .filter((failure) => !manualPrices[failure.positionId]?.trim())
       .map(
@@ -694,10 +699,15 @@ export default function FinanceDashboard({
     setRefreshingQuotes(true);
     setError("");
     try {
-      const preview = await request<QuoteRefreshPreview>(
-        "/api/quotes/refresh",
-        { method: "POST" },
-      );
+      let preview: QuoteRefreshPreview;
+      try {
+        preview = await request<QuoteRefreshPreview>("/api/quotes/refresh", {
+          method: "POST",
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "未知錯誤";
+        throw new Error(`取得行情失敗：${message}`, { cause });
+      }
       if (preview.failures.length > 0) {
         setPendingQuoteRefresh(preview);
         setManualQuotePrices({});

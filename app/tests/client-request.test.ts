@@ -27,4 +27,50 @@ describe("瀏覽器 API 請求", () => {
       "輸入資料格式無效",
     );
   });
+
+  it("顯示驗證失敗的欄位路徑與原因，但不包含輸入值", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: "輸入資料格式無效",
+            issues: [
+              {
+                path: ["accounts", 0, "positions", 1, "marketPrice"],
+                message: "必須大於 0",
+              },
+            ],
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+
+    await expect(requestJson("/api/quotes/refresh")).rejects.toThrow(
+      "輸入資料格式無效：accounts[0].positions[1].marketPrice：必須大於 0",
+    );
+  });
+
+  it("驗證問題過多時只顯示前三項與剩餘數量", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: "輸入資料格式無效",
+            issues: ["a", "b", "c", "d"].map((field) => ({
+              path: [field],
+              message: "格式不符",
+            })),
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+
+    await expect(requestJson("/api/quotes/refresh")).rejects.toThrow(
+      "輸入資料格式無效：a：格式不符；b：格式不符；c：格式不符（另有 1 項）",
+    );
+  });
 });

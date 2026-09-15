@@ -386,6 +386,66 @@ test("一鍵更新現值完成後使用浮動通知且不插入結果卡片", as
   await expect(notification).toHaveCount(0);
 });
 
+test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({
+  page,
+  request,
+}) => {
+  const capturedAt = new Date(Date.now() + 86_400_000).toISOString();
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立錯誤訊息測試持倉",
+      capturedAt,
+      accounts: [
+        {
+          name: "錯誤訊息測試券商",
+          institution: "測試",
+          accountType: "brokerage",
+          defaultCurrency: "TWD",
+          cashBalances: [],
+          positions: [
+            {
+              market: "TWSE",
+              symbol: "0050",
+              name: "元大台灣50",
+              securityType: "etf",
+              quoteCurrency: "TWD",
+              quantity: "1",
+              averageCost: "100",
+              marketPrice: "106.95",
+              quoteAsOf: capturedAt,
+              quoteSource: "TWSE",
+              quoteStatus: "fresh",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.route("**/api/quotes/refresh", async (route) => {
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "輸入資料格式無效",
+        issues: [
+          {
+            path: ["accounts", 0, "positions", 1, "marketPrice"],
+            message: "必須大於 0",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/investments");
+  await page.getByRole("button", { name: "一鍵更新現值" }).click();
+  await expect(page.getByText(/取得行情失敗/)).toContainText(
+    "accounts[0].positions[1].marketPrice：必須大於 0",
+  );
+});
+
 test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async ({ page }) => {
   await page.goto("/accounts");
   await page

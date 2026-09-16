@@ -111,6 +111,32 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   expect(tabs!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(16);
 });
 
+test("點選主要導覽後停在頁面最上方", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 });
+  await page.goto("/research");
+  await expect(page.locator(".research-tabs")).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    window.scrollTo(0, 500);
+  });
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page
+    .locator(".mobile-page-nav")
+    .getByRole("link", { name: "研究" })
+    .click();
+  await expect(page).toHaveURL(/\/research$/);
+  await expect(
+    page.getByRole("heading", { name: "投資研究", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", async ({
   page,
   request,
@@ -201,7 +227,7 @@ test("信用卡帳單在窄螢幕內完整顯示", async ({ page, request }) => 
   const created = await request.post("/api/snapshots", {
     data: {
       rawInput: "信用卡手機排版測試",
-      capturedAt: new Date(Date.now() + 604_800_000).toISOString(),
+      capturedAt: new Date(Date.now() + 777_600_000).toISOString(),
       accounts: [
         {
           name: "測試現金",

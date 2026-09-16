@@ -386,10 +386,13 @@ export default function FinanceDashboard({
 
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
-          const destination = target.hash
-            ? document.getElementById(target.hash.slice(1))
-            : document.getElementById("top");
-          destination?.scrollIntoView({ block: "start" });
+          if (target.hash) {
+            document
+              .getElementById(target.hash.slice(1))
+              ?.scrollIntoView({ block: "start" });
+          } else {
+            window.scrollTo({ top: 0, behavior: "instant" });
+          }
         });
       });
     },

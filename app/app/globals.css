@@ -2089,6 +2089,7 @@ label {
 }
 
 .credit-card-card {
+  min-width: 0;
   padding: 0.9rem 1rem;
 }
 
@@ -2349,6 +2350,10 @@ html.dark .dashboard-sidebar {
 html.dark .topbar {
   border-color: rgba(53, 72, 61, 0.9);
   background: rgba(14, 21, 17, 0.9);
+}
+
+html.dark .mobile-brand {
+  color: var(--foreground);
 }
 
 html.dark .mobile-page-nav {
@@ -2737,7 +2742,7 @@ html.dark .recharts-default-tooltip {
 
   .overview-stack,
   .accounts-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .net-worth-card {

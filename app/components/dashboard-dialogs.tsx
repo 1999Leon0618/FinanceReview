@@ -115,7 +115,7 @@ const emptyPosition = (
     : securityType === "future"
       ? {
           positionSide: "long" as const,
-          contractMultiplier: "50",
+          contractMultiplier: "",
           contractExpiry: "",
           quoteNote: "尚未更新行情",
         }
@@ -1596,7 +1596,7 @@ export function SnapshotEditor({
                                                       positionSide:
                                                         item.positionSide ??
                                                         ("long" as const),
-                                                      contractMultiplier: "50",
+                                                      contractMultiplier: "",
                                                       contractExpiry:
                                                         item.contractExpiry ??
                                                         "",
@@ -1668,7 +1668,7 @@ export function SnapshotEditor({
                                                       positionSide:
                                                         item.positionSide ??
                                                         ("long" as const),
-                                                      contractMultiplier: "50",
+                                                      contractMultiplier: "",
                                                       contractExpiry:
                                                         item.contractExpiry ??
                                                         "",
@@ -1924,12 +1924,13 @@ export function SnapshotEditor({
                                       className="field"
                                       inputMode="decimal"
                                       disabled={!position.symbol}
-                                      value={
-                                        position.symbol
-                                          ? (position.contractMultiplier ??
-                                            "50")
-                                          : ""
+                                      placeholder={
+                                        futuresProduct(position.symbol) ===
+                                        "OTHER"
+                                          ? "請輸入每點價值"
+                                          : "輸入代碼後自動帶入"
                                       }
+                                      value={position.contractMultiplier ?? ""}
                                       onChange={(event) =>
                                         updateAccount(accountIndex, {
                                           positions: account.positions.map(

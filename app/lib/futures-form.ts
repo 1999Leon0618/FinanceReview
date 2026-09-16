@@ -79,11 +79,17 @@ export function withFuturesCode(
   }
 
   const expiry = code.match(/^[A-Z0-9]+(\d{4})(0[1-9]|1[0-2])$/);
+  const wasKnown =
+    /^(TMF|MTX)\d{6}$/.test(position.symbol) &&
+    /^\d{6}$/.test(position.contractExpiry ?? "");
   return {
     ...position,
     symbol: code,
     providerSymbol: code || undefined,
+    name:
+      wasKnown && /^(微型|小型)臺指期/.test(position.name) ? "" : position.name,
     contractExpiry: expiry ? `${expiry[1]}${expiry[2]}` : "",
+    contractMultiplier: wasKnown || !code ? "" : position.contractMultiplier,
     quoteStatus: "manual",
     quoteSource: "MANUAL",
     quoteNote: "尚未更新行情",

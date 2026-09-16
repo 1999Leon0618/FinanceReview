@@ -386,10 +386,7 @@ test("一鍵更新現值完成後使用浮動通知且不插入結果卡片", as
   await expect(notification).toHaveCount(0);
 });
 
-test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({
-  page,
-  request,
-}) => {
+test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({ page, request }) => {
   const capturedAt = new Date(Date.now() + 86_400_000).toISOString();
   const created = await request.post("/api/snapshots", {
     data: {
@@ -421,7 +418,10 @@ test("一鍵更新現值失敗時顯示階段、欄位與原因", async ({
       ],
     },
   });
-  expect(created.ok(), created.ok() ? undefined : await created.text()).toBeTruthy();
+  expect(
+    created.ok(),
+    created.ok() ? undefined : await created.text(),
+  ).toBeTruthy();
 
   await page.route("**/api/quotes/refresh", async (route) => {
     await route.fulfill({
@@ -552,6 +552,7 @@ test("輸入券商契約代碼建立期貨並查詢行情", async ({ page, reque
   await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
   await dialog.getByLabel("契約代碼").last().fill("ABC202612");
   await expect(dialog.getByLabel("到期月份").last()).toHaveValue("2026-12");
+  await expect(dialog.getByLabel("每點價值").last()).toBeEmpty();
   await dialog.getByLabel("顯示名稱").last().fill("其他期貨");
 });
 

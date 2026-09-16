@@ -13,7 +13,7 @@ const blankFuture: PositionInput = {
   securityType: "future",
   positionSide: "long",
   contractExpiry: "",
-  contractMultiplier: "50",
+  contractMultiplier: "",
   quoteCurrency: "TWD",
   quantity: "1",
   averageCost: "46152",
@@ -51,6 +51,13 @@ describe("期貨輸入表單", () => {
       symbol: "ABC202612",
       contractExpiry: "202612",
       name: "",
+      contractMultiplier: "",
+    });
+    const micro = withFuturesCode(blankFuture, "TMZ6", 2026);
+    expect(withFuturesCode(micro, "ABC202612", 2026)).toMatchObject({
+      symbol: "ABC202612",
+      name: "",
+      contractMultiplier: "",
     });
   });
 

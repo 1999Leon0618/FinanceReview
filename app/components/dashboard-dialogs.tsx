@@ -1684,6 +1684,18 @@ export function SnapshotEditor({
                                           [key]: value,
                                           ...(key === "symbol"
                                             ? {
+                                                ...(position.securityType ===
+                                                "future"
+                                                  ? {
+                                                      contractExpiry:
+                                                        value
+                                                          .toUpperCase()
+                                                          .match(
+                                                            /^[A-Z0-9]+(\d{6})$/,
+                                                          )?.[1] ??
+                                                        position.contractExpiry,
+                                                    }
+                                                  : {}),
                                                 providerSymbol:
                                                   position.securityType ===
                                                   "fund"

@@ -480,6 +480,47 @@ test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async
   ).toBeVisible();
 });
 
+test("輸入期貨代碼時同步到期月份並送出行情查詢", async ({ page, request }) => {
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "建立期貨行情測試帳戶",
+      capturedAt: new Date(Date.now() + 129_600_000).toISOString(),
+      accounts: [
+        {
+          name: "期貨行情測試帳戶",
+          accountType: "brokerage",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "0" }],
+          positions: [],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "新增快照" }).click();
+  const dialog = page.getByRole("dialog", { name: "建立財務快照" });
+  await dialog.getByRole("checkbox", { name: /期貨行情測試帳戶/ }).click();
+  await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
+  await dialog
+    .locator("details")
+    .filter({ hasText: "期貨行情測試帳戶" })
+    .locator("summary")
+    .click();
+  await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
+
+  const quoteRequest = page.waitForRequest("**/api/quotes/resolve");
+  await dialog.getByLabel("代碼").last().fill("TMF202612");
+  const payload = (await quoteRequest).postDataJSON();
+  expect(payload.accounts[0].positions[0]).toMatchObject({
+    market: "FUTURES",
+    symbol: "TMF202612",
+    contractExpiry: "202612",
+  });
+  await expect(dialog.getByLabel("到期月份")).toHaveValue("202612");
+});
+
 test("貸款資料不合理時按保存才顯示警告", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {

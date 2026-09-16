@@ -111,6 +111,32 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   expect(tabs!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(16);
 });
 
+test("點選主要導覽後停在頁面最上方", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 700 });
+  await page.goto("/research");
+  await expect(page.locator(".research-tabs")).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    window.scrollTo(0, 500);
+  });
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page
+    .locator(".mobile-page-nav")
+    .getByRole("link", { name: "研究" })
+    .click();
+  await expect(page).toHaveURL(/\/research$/);
+  await expect(
+    page.getByRole("heading", { name: "投資研究", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", async ({
   page,
   request,

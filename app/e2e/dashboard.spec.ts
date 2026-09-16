@@ -518,7 +518,19 @@ test("輸入期貨代碼時同步到期月份並送出行情查詢", async ({ pa
     symbol: "TMF202612",
     contractExpiry: "202612",
   });
-  await expect(dialog.getByLabel("到期月份")).toHaveValue("202612");
+  const expiry = dialog.getByLabel("到期月份");
+  await expect(expiry).toHaveValue("202612");
+
+  await expiry.fill("");
+  const updatedQuoteRequest = page.waitForRequest("**/api/quotes/resolve");
+  await expiry.pressSequentially("202612");
+  const updatedPayload = (await updatedQuoteRequest).postDataJSON();
+  expect(updatedPayload.accounts[0].positions[0]).toMatchObject({
+    symbol: "TMF202612",
+    providerSymbol: "TMF202612",
+    contractExpiry: "202612",
+  });
+  await expect(dialog.getByLabel("代碼").last()).toHaveValue("TMF202612");
 });
 
 test("貸款資料不合理時按保存才顯示警告", async ({ page, request }) => {

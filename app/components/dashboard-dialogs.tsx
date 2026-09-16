@@ -1806,22 +1806,30 @@ export function SnapshotEditor({
                                       className="field"
                                       placeholder="YYYYMM"
                                       value={position.contractExpiry ?? ""}
-                                      onChange={(event) =>
+                                      onChange={(event) => {
+                                        const symbol = `${position.symbol.match(/^([A-Z0-9]*[A-Z])\d{0,6}$/)?.[1] ?? (position.name.includes("微型") ? "TMF" : "MTX")}${event.target.value}`;
+                                        const nextPosition = {
+                                          ...position,
+                                          contractExpiry: event.target.value,
+                                          symbol,
+                                          providerSymbol: symbol,
+                                          quoteStatus: "manual" as const,
+                                          quoteSource: "MANUAL" as const,
+                                          quoteNote: "尚未更新行情",
+                                        };
                                         updateAccount(accountIndex, {
                                           positions: account.positions.map(
                                             (item, i) =>
-                                              i === index
-                                                ? {
-                                                    ...item,
-                                                    contractExpiry:
-                                                      event.target.value,
-                                                    symbol: `${item.symbol.match(/^([A-Z]+)\d{6}$/)?.[1] ?? (item.name.includes("微型") ? "TMF" : "MTX")}${event.target.value}`,
-                                                    providerSymbol: `${item.symbol.match(/^([A-Z]+)\d{6}$/)?.[1] ?? (item.name.includes("微型") ? "TMF" : "MTX")}${event.target.value}`,
-                                                  }
-                                                : item,
+                                              i === index ? nextPosition : item,
                                           ),
-                                        })
-                                      }
+                                        });
+                                        schedulePositionQuote(
+                                          accountIndex,
+                                          index,
+                                          account,
+                                          nextPosition,
+                                        );
+                                      }}
                                     />
                                   </label>
                                   <label>

@@ -113,7 +113,7 @@ test("信用卡帳單在窄螢幕內完整顯示", async ({ page, request }) => 
   const created = await request.post("/api/snapshots", {
     data: {
       rawInput: "信用卡手機排版測試",
-      capturedAt: new Date(Date.now() + 432_000_000).toISOString(),
+      capturedAt: new Date(Date.now() + 604_800_000).toISOString(),
       accounts: [
         {
           name: "測試現金",

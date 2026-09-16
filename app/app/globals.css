@@ -297,6 +297,17 @@ label {
   border-color: #4d8067;
   box-shadow: 0 0 0 3px rgba(55, 118, 83, 0.09);
 }
+
+.snapshot-position-card,
+.snapshot-position-card > *,
+.snapshot-position-card label {
+  min-width: 0;
+}
+
+.snapshot-position-card .field {
+  max-width: 100%;
+}
+
 .compact {
   border: 1px solid #d7e0d9;
   border-radius: 0.6rem;
@@ -2054,6 +2065,10 @@ label {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
   margin-top: 1rem;
+}
+
+.accounts-grid > .account-card-button {
+  align-self: start;
 }
 
 .account-type {

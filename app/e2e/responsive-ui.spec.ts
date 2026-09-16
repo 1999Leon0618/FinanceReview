@@ -105,6 +105,71 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
 });
 
+test("信用卡帳單在窄螢幕內完整顯示", async ({ page, request }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.addInitScript(() =>
+    localStorage.setItem("finance-review-theme", "dark"),
+  );
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "信用卡手機排版測試",
+      capturedAt: new Date(Date.now() + 432_000_000).toISOString(),
+      accounts: [
+        {
+          name: "測試現金",
+          accountType: "cash",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "100000" }],
+          positions: [],
+        },
+      ],
+      creditCardAccounts: [
+        {
+          name: "聯邦銀行",
+          issuer: "聯邦銀行",
+          currency: "TWD",
+          sharedCreditLimit: "200000",
+          statementDayOfMonth: 3,
+          paymentDayOfMonth: 18,
+          status: "active",
+          cards: [
+            {
+              name: "測試卡",
+              lastFour: "1234",
+              network: "visa",
+              holderType: "primary",
+              status: "active",
+            },
+          ],
+          statementPeriod: "2026-08",
+          statementDate: "2026-09-03",
+          dueDate: "2026-09-18",
+          statementAmount: "7200",
+          paymentAmount: "7200",
+          paymentDate: "2026-09-17",
+          remainingInstallmentPrincipal: "0",
+          overpaymentBalance: "0",
+        },
+      ],
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  await page.goto("/credit-cards");
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator(".mobile-brand")).toHaveCSS(
+    "color",
+    "rgb(232, 239, 233)",
+  );
+  const card = page.locator(".credit-card-card").first();
+  await expect(card).toBeVisible();
+  const box = await card.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(375);
+});
+
 test("鍵盤可跳過導覽，範例帳本不顯示正式帳本快捷入口", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab");

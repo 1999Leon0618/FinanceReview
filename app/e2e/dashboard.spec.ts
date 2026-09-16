@@ -480,7 +480,7 @@ test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async
   ).toBeVisible();
 });
 
-test("輸入期貨代碼時同步到期月份並送出行情查詢", async ({ page, request }) => {
+test("依商品與月份建立期貨契約並查詢行情", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {
       rawInput: "建立期貨行情測試帳戶",
@@ -510,27 +510,56 @@ test("輸入期貨代碼時同步到期月份並送出行情查詢", async ({ pa
     .click();
   await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
 
+  await dialog.getByLabel("商品").selectOption("TMF");
+  await expect(dialog.getByLabel("每點價值")).toHaveValue("10");
   const quoteRequest = page.waitForRequest("**/api/quotes/resolve");
-  await dialog.getByLabel("代碼").last().fill("TMF202612");
+  const expiry = dialog.getByLabel("到期月份");
+  await expiry.fill("2026-12");
   const payload = (await quoteRequest).postDataJSON();
   expect(payload.accounts[0].positions[0]).toMatchObject({
     market: "FUTURES",
     symbol: "TMF202612",
+    name: "微型臺指期 2026/12",
     contractExpiry: "202612",
+    contractMultiplier: "10",
   });
-  const expiry = dialog.getByLabel("到期月份");
-  await expect(expiry).toHaveValue("202612");
+  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
+    "TMF202612",
+  );
 
-  await expiry.fill("");
   const updatedQuoteRequest = page.waitForRequest("**/api/quotes/resolve");
-  await expiry.pressSequentially("202612");
+  await expiry.fill("2026-11");
   const updatedPayload = (await updatedQuoteRequest).postDataJSON();
   expect(updatedPayload.accounts[0].positions[0]).toMatchObject({
-    symbol: "TMF202612",
-    providerSymbol: "TMF202612",
-    contractExpiry: "202612",
+    symbol: "TMF202611",
+    providerSymbol: "TMF202611",
+    contractExpiry: "202611",
   });
-  await expect(dialog.getByLabel("代碼").last()).toHaveValue("TMF202612");
+  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
+    "TMF202611",
+  );
+
+  await dialog.getByLabel("商品").selectOption("MTX");
+  await expect(dialog.getByLabel("每點價值")).toHaveValue("50");
+  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
+    "MTX202611",
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fields = await Promise.all(
+    ["商品", "到期月份", "方向", "口數", "均價（TWD）"].map((label) =>
+      dialog.getByLabel(label).boundingBox(),
+    ),
+  );
+  expect(fields.every(Boolean)).toBe(true);
+  expect(fields.map((field) => field!.y)).toEqual(
+    [...fields.map((field) => field!.y)].sort((a, b) => a - b),
+  );
+
+  await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
+  await dialog.getByLabel("代碼").last().fill("ABC202612");
+  await expect(dialog.getByLabel("到期月份").last()).toHaveValue("2026-12");
+  await dialog.getByLabel("名稱").last().fill("其他期貨");
 });
 
 test("貸款資料不合理時按保存才顯示警告", async ({ page, request }) => {

@@ -84,6 +84,7 @@ import {
   inputDate,
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
+import { futuresReferenceNotionalTwd } from "@/lib/finance";
 import type {
   AccountTrendPoint,
   AccountView,
@@ -4827,7 +4828,16 @@ function HoldingRow({
       />
       <HoldingValue
         label={item.securityType === "future" ? "參考名目價值" : "市值"}
-        value={money(item.marketValueTwd)}
+        value={money(
+          item.securityType === "future"
+            ? futuresReferenceNotionalTwd(
+                item.quantity,
+                item.marketPrice,
+                item.contractMultiplier ?? "0",
+                item.fxRate?.rate ?? "1",
+              )
+            : item.marketValueTwd,
+        )}
         align="right"
       />
       <div className="flex items-center justify-end gap-2">

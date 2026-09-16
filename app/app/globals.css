@@ -2754,18 +2754,23 @@ html.dark .recharts-default-tooltip {
   }
 
   .holding-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.85rem;
   }
 
   .holding-row > :nth-child(2),
-  .holding-row > :nth-child(3),
-  .holding-row > :nth-child(4) {
+  .holding-row > :nth-child(3) {
     display: none;
   }
 
-  .holding-row > :nth-child(5) {
+  .holding-row > :nth-child(4) {
+    display: block;
     text-align: right;
+  }
+
+  .holding-row > :nth-child(5) {
+    grid-column: 1 / -1;
+    text-align: left;
   }
 
   .holding-row > :nth-child(6) {

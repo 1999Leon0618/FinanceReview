@@ -42,7 +42,11 @@ import {
 } from "@/lib/credit-card";
 import { snapshotCreateSchema } from "@/lib/validation";
 import { requestJson as request } from "@/lib/client-request";
-import { futuresProduct, withKnownFuturesContract } from "@/lib/futures-form";
+import {
+  futuresProduct,
+  withFuturesCode,
+  withKnownFuturesContract,
+} from "@/lib/futures-form";
 
 const twd = new Intl.NumberFormat("zh-TW", {
   maximumFractionDigits: 0,
@@ -1686,37 +1690,31 @@ export function SnapshotEditor({
                               {position.securityType === "future" && (
                                 <div className="col-span-full grid grid-cols-3 gap-2 max-md:grid-cols-1">
                                   <label>
-                                    商品
-                                    <select
+                                    契約代碼
+                                    <input
                                       className="field"
-                                      value={futuresProduct(position.symbol)}
+                                      placeholder="例如 TMZ6、TMF202612"
+                                      autoCapitalize="characters"
+                                      value={position.symbol}
                                       onChange={(event) => {
-                                        const product = event.target.value;
-                                        if (
-                                          product !== "TMF" &&
-                                          product !== "MTX"
-                                        )
-                                          return;
-                                        setKnownFuturesContract(
+                                        const nextPosition = withFuturesCode(
+                                          position,
+                                          event.target.value,
+                                        );
+                                        updateAccount(accountIndex, {
+                                          positions: account.positions.map(
+                                            (item, i) =>
+                                              i === index ? nextPosition : item,
+                                          ),
+                                        });
+                                        schedulePositionQuote(
                                           accountIndex,
                                           index,
                                           account,
-                                          position,
-                                          product,
-                                          position.contractExpiry ?? "",
+                                          nextPosition,
                                         );
                                       }}
-                                    >
-                                      <option value="">
-                                        選擇商品或輸入代碼
-                                      </option>
-                                      <option value="TMF">微型臺指期</option>
-                                      <option value="MTX">小型臺指期</option>
-                                      {futuresProduct(position.symbol) ===
-                                        "OTHER" && (
-                                        <option value="OTHER">其他期貨</option>
-                                      )}
-                                    </select>
+                                    />
                                   </label>
                                   <label>
                                     到期月份
@@ -1810,10 +1808,7 @@ export function SnapshotEditor({
                                 </div>
                               )}
                               {[
-                                ...(position.securityType !== "future" ||
-                                !["TMF", "MTX"].includes(
-                                  futuresProduct(position.symbol),
-                                )
+                                ...(position.securityType !== "future"
                                   ? [
                                       ["代碼", "symbol"],
                                       ["名稱", "name"],
@@ -1903,47 +1898,26 @@ export function SnapshotEditor({
                               ))}
                               {position.securityType === "future" && (
                                 <div className="col-span-full grid grid-cols-2 gap-2 max-md:grid-cols-1">
-                                  {["TMF", "MTX"].includes(
-                                    futuresProduct(position.symbol),
-                                  ) && (
-                                    <>
-                                      <label>
-                                        契約代碼（自動產生）
-                                        <input
-                                          className="field"
-                                          readOnly
-                                          value={
-                                            /^\d{6}$/.test(
-                                              position.contractExpiry ?? "",
-                                            )
-                                              ? position.symbol
-                                              : "請先選擇商品與月份"
-                                          }
-                                        />
-                                      </label>
-                                      <label>
-                                        顯示名稱
-                                        <input
-                                          className="field"
-                                          value={position.name}
-                                          onChange={(event) =>
-                                            updateAccount(accountIndex, {
-                                              positions: account.positions.map(
-                                                (item, i) =>
-                                                  i === index
-                                                    ? {
-                                                        ...item,
-                                                        name: event.target
-                                                          .value,
-                                                      }
-                                                    : item,
-                                              ),
-                                            })
-                                          }
-                                        />
-                                      </label>
-                                    </>
-                                  )}
+                                  <label>
+                                    顯示名稱
+                                    <input
+                                      className="field"
+                                      value={position.name}
+                                      onChange={(event) =>
+                                        updateAccount(accountIndex, {
+                                          positions: account.positions.map(
+                                            (item, i) =>
+                                              i === index
+                                                ? {
+                                                    ...item,
+                                                    name: event.target.value,
+                                                  }
+                                                : item,
+                                          ),
+                                        })
+                                      }
+                                    />
+                                  </label>
                                   <label>
                                     每點價值
                                     <input

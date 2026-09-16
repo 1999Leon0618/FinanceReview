@@ -480,7 +480,7 @@ test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async
   ).toBeVisible();
 });
 
-test("依商品與月份建立期貨契約並查詢行情", async ({ page, request }) => {
+test("輸入券商契約代碼建立期貨並查詢行情", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {
       rawInput: "建立期貨行情測試帳戶",
@@ -510,11 +510,12 @@ test("依商品與月份建立期貨契約並查詢行情", async ({ page, reque
     .click();
   await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
 
-  await dialog.getByLabel("商品").selectOption("TMF");
-  await expect(dialog.getByLabel("每點價值")).toHaveValue("10");
   const quoteRequest = page.waitForRequest("**/api/quotes/resolve");
+  await dialog.getByLabel("契約代碼").fill("TMZ6");
+  await expect(dialog.getByLabel("契約代碼")).toHaveValue("TMF202612");
+  await expect(dialog.getByLabel("每點價值")).toHaveValue("10");
   const expiry = dialog.getByLabel("到期月份");
-  await expiry.fill("2026-12");
+  await expect(expiry).toHaveValue("2026-12");
   const payload = (await quoteRequest).postDataJSON();
   expect(payload.accounts[0].positions[0]).toMatchObject({
     market: "FUTURES",
@@ -523,10 +524,6 @@ test("依商品與月份建立期貨契約並查詢行情", async ({ page, reque
     contractExpiry: "202612",
     contractMultiplier: "10",
   });
-  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
-    "TMF202612",
-  );
-
   const updatedQuoteRequest = page.waitForRequest("**/api/quotes/resolve");
   await expiry.fill("2026-11");
   const updatedPayload = (await updatedQuoteRequest).postDataJSON();
@@ -535,19 +532,15 @@ test("依商品與月份建立期貨契約並查詢行情", async ({ page, reque
     providerSymbol: "TMF202611",
     contractExpiry: "202611",
   });
-  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
-    "TMF202611",
-  );
+  await expect(dialog.getByLabel("契約代碼")).toHaveValue("TMF202611");
 
-  await dialog.getByLabel("商品").selectOption("MTX");
+  await dialog.getByLabel("契約代碼").fill("MTX202611");
   await expect(dialog.getByLabel("每點價值")).toHaveValue("50");
-  await expect(dialog.getByLabel("契約代碼（自動產生）")).toHaveValue(
-    "MTX202611",
-  );
+  await expect(dialog.getByLabel("契約代碼")).toHaveValue("MTX202611");
 
   await page.setViewportSize({ width: 390, height: 844 });
   const fields = await Promise.all(
-    ["商品", "到期月份", "方向", "口數", "均價（TWD）"].map((label) =>
+    ["契約代碼", "到期月份", "方向", "口數", "均價（TWD）"].map((label) =>
       dialog.getByLabel(label).boundingBox(),
     ),
   );
@@ -557,9 +550,9 @@ test("依商品與月份建立期貨契約並查詢行情", async ({ page, reque
   );
 
   await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
-  await dialog.getByLabel("代碼").last().fill("ABC202612");
+  await dialog.getByLabel("契約代碼").last().fill("ABC202612");
   await expect(dialog.getByLabel("到期月份").last()).toHaveValue("2026-12");
-  await dialog.getByLabel("名稱").last().fill("其他期貨");
+  await dialog.getByLabel("顯示名稱").last().fill("其他期貨");
 });
 
 test("貸款資料不合理時按保存才顯示警告", async ({ page, request }) => {

@@ -1552,7 +1552,7 @@ export function SnapshotEditor({
                                 position.securityId ??
                                 index
                               }
-                              className="grid grid-cols-[95px_95px_110px_minmax(130px,1fr)_110px_110px_110px_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-xl:grid-cols-2"
+                              className="snapshot-position-card grid grid-cols-[95px_95px_110px_minmax(130px,1fr)_110px_110px_110px_42px] items-end gap-2 rounded-xl border border-[#e5ebe6] bg-[#fafcf9] p-3 max-xl:grid-cols-2"
                             >
                               <label>
                                 類型

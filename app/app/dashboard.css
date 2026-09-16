@@ -885,6 +885,10 @@ html.dark .page-intro .page-description {
 }
 
 @media (max-width: 700px) {
+  .research-workspace {
+    margin-top: 1.25rem;
+  }
+
   .topbar {
     display: flex;
     height: 64px;

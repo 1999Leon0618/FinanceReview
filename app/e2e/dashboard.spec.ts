@@ -258,6 +258,58 @@ test("資產淨值圖表期間由下拉選單設定並保留", async ({ page, re
   await expect(range).toHaveAccessibleName(/目前為近 1 年/);
 });
 
+test("期貨持倉顯示參考名目價值但總資產不重複計入", async ({
+  page,
+  request,
+}) => {
+  const capturedAt = new Date(Date.now() + 129_600_000).toISOString();
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "期貨參考名目價值測試",
+      capturedAt,
+      accounts: [
+        {
+          name: "期貨名目價值測試帳戶",
+          accountType: "brokerage",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "300000" }],
+          positions: [
+            {
+              market: "FUTURES",
+              symbol: "TMF202612",
+              name: "微型臺指期 2026/12",
+              securityType: "future",
+              positionSide: "long",
+              contractMultiplier: "10",
+              contractExpiry: "202612",
+              quoteCurrency: "TWD",
+              quantity: "3",
+              averageCost: "46152",
+              marketPrice: "45998",
+              quoteAsOf: capturedAt,
+              quoteSource: "MANUAL",
+              quoteStatus: "manual",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+
+  await page.goto("/investments");
+  const holding = page.getByRole("button", {
+    name: "檢視 TMF202612 的標的資訊",
+  });
+  await expect(holding).toContainText("參考名目價值");
+  await expect(holding).toContainText("NT$1,379,940");
+
+  const dashboard = await request.get("/api/dashboard");
+  expect(dashboard.ok()).toBeTruthy();
+  const data = await dashboard.json();
+  expect(data.latest.totalAssetValueTwd).toBe("300000");
+});
+
 test("建立快照後可從介面完成全部賣出", async ({ page, request }) => {
   const created = await request.post("/api/snapshots", {
     data: {

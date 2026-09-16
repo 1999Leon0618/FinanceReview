@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateFuturesPosition,
   calculatePosition,
+  futuresReferenceNotionalTwd,
   toTaiwanShares,
 } from "@/lib/finance";
 import {
@@ -42,6 +43,17 @@ describe("財務計算", () => {
       unrealizedPnlTwd: "-17000",
       unrealizedReturnPct: "-0.767494",
     });
+  });
+
+  it("期貨參考名目價值依現價、口數與每點價值計算，不加入持倉市值", () => {
+    expect(futuresReferenceNotionalTwd("3", "45998", "10")).toBe("1379940");
+    expect(futuresReferenceNotionalTwd("2", "100.5", "50", "32")).toBe(
+      "321600",
+    );
+    expect(
+      calculateFuturesPosition("3", "46152", "45998", "10", "long")
+        .marketValueTwd,
+    ).toBe("0");
   });
 
   it("可確定性解析小型臺指期與期貨帳戶權益", async () => {

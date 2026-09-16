@@ -78,6 +78,20 @@ export function calculateFuturesPosition(
   };
 }
 
+export function futuresReferenceNotionalTwd(
+  contracts: string,
+  marketPrice: string,
+  multiplier: string,
+  fxRate = "1",
+): string {
+  return money(
+    decimal(contracts)
+      .mul(decimal(marketPrice))
+      .mul(decimal(multiplier))
+      .mul(decimal(fxRate)),
+  );
+}
+
 export function toTaiwanShares(
   value: string,
   unit: "share" | "lot" = "share",

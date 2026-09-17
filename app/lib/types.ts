@@ -421,6 +421,42 @@ export interface WatchlistItem {
   quote: MarketQuoteView;
   createdAt: string;
   updatedAt: string;
+  removedAt: string | null;
+}
+
+export type ResearchReportLanguage = "zh-TW" | "en" | "ja";
+export interface ResearchPreferences {
+  reportLanguage: ResearchReportLanguage;
+  investmentGoal: string | null;
+  investmentHorizon: "short" | "medium" | "long" | null;
+  riskTolerance: "low" | "medium" | "high" | null;
+  hasApiKey: boolean;
+}
+
+export interface WeeklyResearchContent {
+  summary: string;
+  marketReview: string;
+  allocationAdvice: Array<{ action: string; rationale: string; risk: string }>;
+  securityAdvice: Array<{
+    symbol: string;
+    direction: "watch" | "buy" | "add" | "reduce" | "sell";
+    rationale: string;
+    condition: string;
+    risk: string;
+  }>;
+  caveats: string[];
+}
+
+export interface WeeklyResearchReport {
+  id: string;
+  weekStart: string;
+  periodEnd: string;
+  generatedAt: string;
+  triggerType: "scheduled" | "manual";
+  language: ResearchReportLanguage;
+  model: string;
+  content: WeeklyResearchContent;
+  evidence: Record<string, unknown>;
 }
 
 export interface CandlePoint {
@@ -507,6 +543,18 @@ export interface ResearchNote {
   quoteSnapshots: ResearchQuoteSnapshot[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ResearchNoteRevision {
+  revision: number;
+  savedAt: string;
+  title: string;
+  subtitle: string | null;
+  summary: string | null;
+  noRelevantContent: boolean;
+  document: ResearchNoteDocumentV1;
+  sources: ResearchSource[];
+  quoteSnapshots: ResearchQuoteSnapshot[];
 }
 
 export interface ResearchTodo {

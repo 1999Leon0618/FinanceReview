@@ -15,6 +15,7 @@ import type {
   CandlePoint,
   MarketQuoteView,
   ResearchNote,
+  ResearchNoteRevision,
   ResearchQuoteSnapshot,
   ResearchSource,
   ResearchTodo,
@@ -74,6 +75,7 @@ function watchlistFromRow(row: Row): WatchlistItem {
     quote: quoteFromRow(row),
     createdAt: text(row.created_at),
     updatedAt: text(row.updated_at),
+    removedAt: nullableText(row.removed_at),
   };
 }
 
@@ -111,7 +113,9 @@ async function syncHoldingWatchlist(database?: FinanceDatabase) {
   }
 }
 
-export async function listWatchlist(): Promise<WatchlistItem[]> {
+export async function listWatchlist(
+  includeRemoved = false,
+): Promise<WatchlistItem[]> {
   const db = await getDatabase();
   await syncHoldingWatchlist(db);
   const ownerKey = getDataOwner().key;
@@ -146,10 +150,10 @@ export async function listWatchlist(): Promise<WatchlistItem[]> {
         WHERE position.security_id = item.security_id AND snapshot.owner_key = ?
         ORDER BY snapshot.captured_at DESC LIMIT 1
       )
-      WHERE item.owner_key = ?
+      WHERE item.owner_key = ? AND (? = 1 OR item.removed_at IS NULL)
       ORDER BY item.is_enabled DESC, is_held DESC, security.market, security.symbol`,
     )
-    .all(ownerKey, ownerKey, ownerKey)) as Row[];
+    .all(ownerKey, ownerKey, ownerKey, includeRemoved ? 1 : 0)) as Row[];
   return rows.map(watchlistFromRow);
 }
 
@@ -201,7 +205,13 @@ export async function addWatchlistItem(input: {
         "SELECT id FROM watchlist_items WHERE owner_key = ? AND security_id = ?",
       )
       .get(ownerKey, securityId);
-    if (!existing)
+    if (existing)
+      await db
+        .prepare(
+          "UPDATE watchlist_items SET removed_at = NULL, is_enabled = 1, updated_at = ? WHERE id = ? AND owner_key = ?",
+        )
+        .run(now, text(existing.id), ownerKey);
+    else
       await db
         .prepare(
           `INSERT INTO watchlist_items(
@@ -231,11 +241,22 @@ export async function setWatchlistEnabled(id: string, enabled: boolean) {
   const ownerKey = getDataOwner().key;
   const result = await db
     .prepare(
-      "UPDATE watchlist_items SET is_enabled = ?, updated_at = ? WHERE id = ? AND owner_key = ?",
+      "UPDATE watchlist_items SET is_enabled = ?, updated_at = ? WHERE id = ? AND owner_key = ? AND removed_at IS NULL",
     )
     .run(enabled ? 1 : 0, new Date().toISOString(), id, ownerKey);
   if (!result.changes) throw new Error("找不到自選標的");
   return (await listWatchlist()).find((item) => item.id === id)!;
+}
+
+export async function removeWatchlistItem(id: string) {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  const result = await db
+    .prepare(
+      "UPDATE watchlist_items SET removed_at = ?, is_enabled = 0, updated_at = ? WHERE id = ? AND owner_key = ? AND removed_at IS NULL",
+    )
+    .run(now, now, id, getDataOwner().key);
+  if (!result.changes) throw new Error("找不到自選標的");
 }
 
 export async function getWatchlistCandles(id: string, months: 1 | 3 | 6 | 12) {
@@ -562,6 +583,52 @@ export async function getResearchNote(id: string) {
     .prepare("SELECT * FROM research_notes WHERE id = ? AND owner_key = ?")
     .get(id, getDataOwner().key)) as Row | undefined;
   return row ? noteFromRow(db, row) : null;
+}
+
+export async function listResearchNoteRevisions(
+  id: string,
+): Promise<ResearchNoteRevision[]> {
+  const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
+  const note = await db
+    .prepare("SELECT id FROM research_notes WHERE id = ? AND owner_key = ?")
+    .get(id, ownerKey);
+  if (!note) throw new Error("找不到研究報告");
+  const rows = await db
+    .prepare(
+      "SELECT * FROM research_note_revisions WHERE note_id = ? AND owner_key = ? ORDER BY revision DESC",
+    )
+    .all(id, ownerKey);
+  return Promise.all(
+    rows.map(async (row) => {
+      const revision = Number(row.revision);
+      const [sources, snapshots] = await Promise.all([
+        db
+          .prepare(
+            "SELECT * FROM research_note_sources WHERE note_id = ? AND revision = ? AND owner_key = ? ORDER BY published_at DESC",
+          )
+          .all(id, revision, ownerKey),
+        db
+          .prepare(
+            "SELECT * FROM research_quote_snapshots WHERE note_id = ? AND revision = ? AND owner_key = ? ORDER BY created_at",
+          )
+          .all(id, revision, ownerKey),
+      ]);
+      return {
+        revision,
+        savedAt: text(row.saved_at),
+        title: text(row.title),
+        subtitle: nullableText(row.subtitle),
+        summary: nullableText(row.summary),
+        noRelevantContent: Boolean(row.no_relevant_content),
+        document: researchDocumentSchema.parse(
+          JSON.parse(text(row.content_json)),
+        ),
+        sources: sources.map(sourceFromRow),
+        quoteSnapshots: snapshots.map(snapshotFromRow),
+      };
+    }),
+  );
 }
 
 export async function createResearchNote(input: ResearchNoteInput) {

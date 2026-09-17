@@ -5,9 +5,13 @@ import { watchlistCreateSchema } from "@/lib/research-validation";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    return NextResponse.json(await listWatchlist());
+    return NextResponse.json(
+      await listWatchlist(
+        request.nextUrl.searchParams.get("includeRemoved") === "true",
+      ),
+    );
   } catch (error) {
     return apiError(error);
   }

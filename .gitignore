@@ -7,3 +7,10 @@ _workspace-test.txt
 
 # Local Wrangler cache created when commands run from the repository root
 /.wrangler/
+
+# Local secrets
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+!.env.example

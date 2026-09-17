@@ -45,3 +45,14 @@ test("可建立三種研究報告並以有效報告完成待辦", async ({ page 
   await todo.getByRole("button", { name: "標記完成" }).click();
   await expect(todo.getByText("已完成")).toBeVisible();
 });
+
+test("每週報告未設定金鑰時提供設定與提示", async ({ page }) => {
+  await page.goto("/research");
+  await page.getByRole("button", { name: "每週報告 AI 研究與建議" }).click();
+  await expect(page.getByText("尚未設定 OpenAI API Key").last()).toBeVisible();
+  await page.getByRole("button", { name: "立即產生報告" }).click();
+  await expect(page.locator("p[role='alert']")).toContainText(
+    "尚未設定 OpenAI API Key",
+  );
+  await expect(page.getByLabel("報告語言")).toBeVisible();
+});

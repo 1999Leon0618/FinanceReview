@@ -1,0 +1,233 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { closeDatabaseForTests, getDatabase } from "@/lib/db";
+import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
+import { ensureCurrentAppUser } from "@/lib/app-users";
+import { createSnapshot, exportBackup } from "@/lib/repository";
+import { listWatchlist, removeWatchlistItem } from "@/lib/research-repository";
+import {
+  buildWeeklyEvidence,
+  deleteResearchApiKey,
+  generateScheduledReports,
+  generateWeeklyReport,
+  getResearchPreferences,
+  listWeeklyReports,
+  saveResearchApiKey,
+  saveResearchPreferences,
+  weeklyWindow,
+} from "@/lib/research-weekly";
+
+const temp = mkdtempSync(path.join(tmpdir(), "finance-review-weekly-"));
+process.env.FINANCE_REVIEW_DB_PATH = path.join(temp, "weekly.db");
+process.env.RESEARCH_KEY_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
+  "base64",
+);
+const ownerA = dataOwnerFromEmail("weekly-a@example.com");
+const ownerB = dataOwnerFromEmail("weekly-b@example.com");
+const now = new Date("2026-09-20T00:00:00.000Z");
+
+beforeAll(() => closeDatabaseForTests());
+afterAll(() => {
+  closeDatabaseForTests();
+  vi.restoreAllMocks();
+  rmSync(temp, { recursive: true, force: true });
+});
+
+describe("每週研究報告", () => {
+  it("以台灣週一界定週期，且缺少金鑰時拒絕生成", async () => {
+    expect(weeklyWindow(now)).toEqual({
+      weekStart: "2026-09-14",
+      periodEnd: now.toISOString(),
+    });
+    await runWithDataOwner(ownerA, async () => {
+      await expect(generateWeeklyReport("manual", now)).rejects.toThrow(
+        "尚未設定 OpenAI API Key",
+      );
+    });
+  });
+
+  it("加密每人金鑰、僅傳比例、保存多次手動週報並隔離使用者", async () => {
+    const apiKey = "sk-test-weekly-user-key-123456789";
+    await runWithDataOwner(ownerA, async () => {
+      await ensureCurrentAppUser();
+      await saveResearchPreferences({
+        reportLanguage: "en",
+        investmentGoal: "長期增值",
+        investmentHorizon: "long",
+        riskTolerance: "medium",
+      });
+      expect((await saveResearchApiKey({ apiKey })).hasApiKey).toBe(true);
+      const db = await getDatabase();
+      const stored = await db
+        .prepare(
+          "SELECT ciphertext FROM research_credentials WHERE owner_key = ?",
+        )
+        .get(ownerA.key);
+      expect(String(stored?.ciphertext)).not.toContain(apiKey);
+      await createSnapshot({
+        rawInput: "資產測試",
+        capturedAt: now.toISOString(),
+        accounts: [
+          {
+            name: "測試券商",
+            accountType: "brokerage",
+            defaultCurrency: "TWD",
+            cashBalances: [],
+            positions: [
+              {
+                market: "TWSE",
+                symbol: "0050",
+                providerSymbol: "0050.TW",
+                name: "台灣50",
+                securityType: "etf",
+                quoteCurrency: "TWD",
+                quantity: "100",
+                averageCost: "100",
+                marketPrice: "200",
+                quoteAsOf: now.toISOString(),
+                quoteSource: "TWSE",
+                quoteStatus: "fresh",
+              },
+              {
+                market: "US",
+                symbol: "AAPL",
+                name: "Apple",
+                securityType: "stock",
+                quoteCurrency: "TWD",
+                quantity: "50",
+                averageCost: "100",
+                marketPrice: "200",
+                quoteAsOf: now.toISOString(),
+                quoteSource: "YAHOO",
+                quoteStatus: "fresh",
+              },
+            ],
+          },
+        ],
+      });
+      const evidence = await buildWeeklyEvidence(now);
+      expect(
+        Object.fromEntries(
+          evidence.allocation.map((item) => [item.symbol, item.weightPct]),
+        ),
+      ).toEqual({ AAPL: 33.3, "0050": 66.7 });
+      expect(JSON.stringify(evidence)).not.toContain("20000");
+      expect(JSON.stringify(evidence)).not.toContain("10000");
+      expect(JSON.stringify(evidence)).not.toContain("測試券商");
+      const content = {
+        summary: "Weekly summary",
+        marketReview: "Markets reviewed",
+        allocationAdvice: [
+          {
+            action: "Diversify",
+            rationale: "Concentration",
+            risk: "Volatility",
+          },
+        ],
+        securityAdvice: [
+          {
+            symbol: "AAPL",
+            direction: "watch",
+            rationale: "Price action",
+            condition: "Confirm earnings",
+            risk: "Volatility",
+          },
+        ],
+        caveats: [],
+      };
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(async (_url, init) => {
+          const request = JSON.parse(String(init?.body)) as {
+            input: string;
+            store: boolean;
+          };
+          expect(request.store).toBe(false);
+          expect(request.input).not.toContain("20000");
+          expect(request.input).not.toContain("測試券商");
+          return new Response(
+            JSON.stringify({ output_text: JSON.stringify(content) }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        });
+      const first = await generateWeeklyReport("manual", now);
+      const second = await generateWeeklyReport(
+        "manual",
+        new Date(now.getTime() + 1000),
+      );
+      const scheduled = await generateWeeklyReport("scheduled", now);
+      const duplicate = await generateWeeklyReport(
+        "scheduled",
+        new Date(now.getTime() + 1000),
+      );
+      expect(first.id).not.toBe(second.id);
+      expect(scheduled.id).toBe(duplicate.id);
+      expect(first.language).toBe("en");
+      expect(await listWeeklyReports()).toHaveLength(3);
+      expect(await generateScheduledReports(now)).toEqual({
+        total: 1,
+        failed: 0,
+      });
+      fetchMock.mockRestore();
+      const watchlist = await listWatchlist();
+      await removeWatchlistItem(
+        watchlist.find((item) => item.symbol === "AAPL")!.id,
+      );
+      expect((await listWatchlist()).map((item) => item.symbol)).toEqual([
+        "0050",
+      ]);
+      expect(
+        (await listWatchlist(true)).find((item) => item.symbol === "AAPL")
+          ?.removedAt,
+      ).not.toBeNull();
+      const backup = await exportBackup();
+      expect(backup.data.weekly_research_reports).toHaveLength(3);
+      expect(JSON.stringify(backup)).not.toContain(apiKey);
+      expect(JSON.stringify(backup)).not.toContain("ciphertext");
+    });
+    await runWithDataOwner(ownerB, async () => {
+      expect(await listWeeklyReports()).toHaveLength(0);
+      expect((await getResearchPreferences()).hasApiKey).toBe(false);
+    });
+    await runWithDataOwner(ownerA, async () => {
+      expect((await deleteResearchApiKey()).hasApiKey).toBe(false);
+      expect(await listWeeklyReports()).toHaveLength(3);
+    });
+  });
+
+  it("投資背景未填齊時不保存個人化建議", async () => {
+    await runWithDataOwner(ownerB, async () => {
+      await saveResearchApiKey({ apiKey: "sk-test-second-user-key-123456789" });
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({
+              summary: "市場整理",
+              marketReview: "行情整理",
+              allocationAdvice: [
+                { action: "買入", rationale: "測試", risk: "測試" },
+              ],
+              securityAdvice: [
+                {
+                  symbol: "AAPL",
+                  direction: "buy",
+                  rationale: "測試",
+                  condition: "測試",
+                  risk: "測試",
+                },
+              ],
+              caveats: [],
+            }),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      const report = await generateWeeklyReport("manual", now);
+      expect(report.content.allocationAdvice).toEqual([]);
+      expect(report.content.securityAdvice).toEqual([]);
+      vi.restoreAllMocks();
+    });
+  });
+});

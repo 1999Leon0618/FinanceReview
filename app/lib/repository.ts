@@ -1942,6 +1942,8 @@ const backupTables = [
   "research_quote_snapshots",
   "research_todos",
   "research_todo_watchlist_items",
+  "research_preferences",
+  "weekly_research_reports",
   "app_settings",
 ] as const;
 
@@ -2188,6 +2190,7 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "first_seen_at",
       "created_at",
       "updated_at",
+      "removed_at",
     ],
     research_notes: [
       "id",
@@ -2270,6 +2273,25 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "updated_at",
     ],
     research_todo_watchlist_items: ["id", "todo_id", "watchlist_item_id"],
+    research_preferences: [
+      "id",
+      "report_language",
+      "investment_goal",
+      "investment_horizon",
+      "risk_tolerance",
+      "updated_at",
+    ],
+    weekly_research_reports: [
+      "id",
+      "week_start",
+      "period_end",
+      "generated_at",
+      "trigger_type",
+      "language",
+      "model",
+      "content_json",
+      "evidence_json",
+    ],
     app_settings: ["key", "value_json", "updated_at"],
   };
 
@@ -2284,6 +2306,8 @@ const ownerBackupTables = new Set<(typeof backupTables)[number]>([
   "research_note_sources",
   "research_quote_snapshots",
   "research_todos",
+  "research_preferences",
+  "weekly_research_reports",
 ]);
 
 const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
@@ -2348,6 +2372,9 @@ const ownedBackupFrom: Record<(typeof backupTables)[number], string> = {
   research_todo_watchlist_items: `research_todo_watchlist_items item
     JOIN research_todos todo ON todo.id = item.todo_id
     WHERE todo.owner_key = ?`,
+  research_preferences: "research_preferences item WHERE item.owner_key = ?",
+  weekly_research_reports:
+    "weekly_research_reports item WHERE item.owner_key = ?",
   app_settings: "app_settings item WHERE ? IS NOT NULL",
 };
 
@@ -2487,7 +2514,7 @@ function parseBackup(payload: unknown): BackupPayload {
     schemaVersion?: number;
     data?: Record<string, Row[]>;
   };
-  if (![1, 2, 3].includes(backup.schemaVersion ?? 0) || !backup.data)
+  if (![1, 2, 3, 4].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
 
   for (const table of backupTables) {
@@ -2609,7 +2636,7 @@ export async function exportBackup() {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     exportedAt: new Date().toISOString(),
     data: Object.fromEntries(
       await Promise.all(

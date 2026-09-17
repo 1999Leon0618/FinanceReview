@@ -28,18 +28,21 @@ import {
 } from "recharts";
 import { requestJson } from "@/lib/client-request";
 import { createResearchTemplate } from "@/lib/research-templates";
+import WeeklyResearchPanel from "./weekly-research-panel";
 import type {
   CandlePoint,
   ResearchMarketScope,
   ResearchNote,
+  ResearchNoteRevision,
   ResearchNoteBlock,
   ResearchNoteType,
   ResearchSource,
   ResearchTodo,
   WatchlistItem,
+  ResearchPreferences,
 } from "@/lib/types";
 
-type ResearchTab = "watchlist" | "TW" | "US" | "todos";
+type ResearchTab = "watchlist" | "TW" | "US" | "todos" | "weekly";
 type EditableSource = Omit<ResearchSource, "id" | "noteId" | "accessedAt"> & {
   id?: string;
   publishedLocal: string;
@@ -150,11 +153,13 @@ function QuoteCard({
   selected,
   onToggle,
   onOpenChart,
+  onRemove,
 }: {
   item: WatchlistItem;
   selected?: boolean;
   onToggle?: () => void;
   onOpenChart?: () => void;
+  onRemove?: () => void;
 }) {
   const change = Number(item.quote.changePercent ?? 0);
   const changeValue = Number(item.quote.changeValue);
@@ -216,7 +221,7 @@ function QuoteCard({
               })
             : "尚未更新"}
         </time>
-        {(onToggle || onOpenChart) && (
+        {(onToggle || onOpenChart || onRemove) && (
           <div>
             {onToggle && (
               <button className="research-card-action" onClick={onToggle}>
@@ -231,6 +236,11 @@ function QuoteCard({
               >
                 <BarChart3 size={14} />
                 走勢
+              </button>
+            )}
+            {onRemove && (
+              <button className="research-card-action" onClick={onRemove}>
+                移除
               </button>
             )}
           </div>
@@ -411,7 +421,15 @@ function WatchlistPanel({
     setBusy(true);
     setError("");
     try {
-      await requestJson("/api/watchlist/refresh", { method: "POST" });
+      const result = await requestJson<{
+        failures: Array<{ symbol: string; reason: string }>;
+      }>("/api/watchlist/refresh", { method: "POST" });
+      if (result.failures.length > 0)
+        setError(
+          result.failures
+            .map((item) => `${item.symbol}：${item.reason}`)
+            .join("；"),
+        );
       await reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "行情更新失敗");
@@ -421,12 +439,25 @@ function WatchlistPanel({
   };
 
   const toggle = async (item: WatchlistItem) => {
-    await requestJson(`/api/watchlist/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !item.enabled }),
-    });
-    await reload();
+    try {
+      await requestJson(`/api/watchlist/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !item.enabled }),
+      });
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "更新自選標的失敗");
+    }
+  };
+  const remove = async (item: WatchlistItem) => {
+    try {
+      await requestJson(`/api/watchlist/${item.id}`, { method: "DELETE" });
+      if (selectedId === item.id) setSelectedId(null);
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "移除自選標的失敗");
+    }
   };
 
   const showKline = async (
@@ -642,6 +673,7 @@ function WatchlistPanel({
                 selected={selectedId === item.id}
                 onToggle={() => toggle(item)}
                 onOpenChart={() => showKline(item)}
+                onRemove={() => remove(item)}
               />
             ))}
           </div>
@@ -651,15 +683,22 @@ function WatchlistPanel({
   );
 }
 
-function ReportPreview({ note }: { note: ResearchNote }) {
+function ReportPreview({
+  note,
+  historicalSavedAt,
+}: {
+  note: ResearchNote;
+  historicalSavedAt?: string;
+}) {
   const snapshots = new Map(
     note.quoteSnapshots.map((item) => [item.blockId, item]),
   );
   return (
     <article className="rounded-3xl border border-[#e3dfd4] bg-[#fbfaf5] p-6 shadow-sm dark:border-white/10 dark:bg-white/5 md:p-9">
       <p className="text-xs font-bold uppercase tracking-[.16em] text-[#98483e]">
-        {note.marketScope === "TW" ? "台股" : "美股"}
-        {noteTypeLabel(note.noteType)} · {note.tradingDate}
+        {historicalSavedAt
+          ? `歷史修訂 · ${new Date(historicalSavedAt).toLocaleString("zh-TW")}`
+          : `${note.marketScope === "TW" ? "台股" : "美股"}${noteTypeLabel(note.noteType)} · ${note.tradingDate}`}
       </p>
       <h2 className="mt-3 text-3xl font-bold tracking-tight">{note.title}</h2>
       {note.subtitle && <p className="mt-3 text-[#68746d]">{note.subtitle}</p>}
@@ -738,6 +777,7 @@ function ReportPreview({ note }: { note: ResearchNote }) {
             quote: snapshot,
             createdAt: "",
             updatedAt: "",
+            removedAt: null,
           };
           return (
             <div key={block.id}>
@@ -780,8 +820,9 @@ function ReportPreview({ note }: { note: ResearchNote }) {
         )}
       </section>
       <p className="mt-6 text-xs text-[#849088]">
-        資料截止 {new Date(note.asOf).toLocaleString("zh-TW")} · 修訂{" "}
-        {note.revision}
+        {historicalSavedAt ? "儲存時間" : "資料截止"}{" "}
+        {new Date(historicalSavedAt ?? note.asOf).toLocaleString("zh-TW")} ·
+        修訂 {note.revision}
       </p>
     </article>
   );
@@ -1467,20 +1508,50 @@ function ReportsPanel({
   reload: () => Promise<void>;
 }) {
   const marketNotes = notes.filter((note) => note.marketScope === market);
+  const [showArchived, setShowArchived] = useState(false);
+  const visibleNotes = marketNotes.filter(
+    (note) => showArchived || !note.archivedAt,
+  );
   const [selected, setSelected] = useState<string | null>(
     marketNotes[0]?.id ?? null,
   );
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [revisions, setRevisions] = useState<ResearchNoteRevision[] | null>(
+    null,
+  );
+  const [historyRevision, setHistoryRevision] = useState<number | null>(null);
   const current =
-    marketNotes.find((note) => note.id === selected) ?? marketNotes[0];
-  const archive = async (note: ResearchNote) => {
-    await requestJson(`/api/research-notes/${note.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ archived: !note.archivedAt }),
-    });
-    await reload();
+    visibleNotes.find((note) => note.id === selected) ?? visibleNotes[0];
+  const historical = revisions?.find(
+    (item) => item.revision === historyRevision,
+  );
+  const previewNote =
+    current && historical ? { ...current, ...historical } : current;
+  const openHistory = async () => {
+    if (!current) return;
+    try {
+      const items = await requestJson<ResearchNoteRevision[]>(
+        `/api/research-notes/${current.id}/revisions`,
+      );
+      setRevisions(items);
+      setHistoryRevision(items[0]?.revision ?? null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "修訂歷史載入失敗");
+    }
   };
+  const archive = async (note: ResearchNote) => {
+    try {
+      await requestJson(`/api/research-notes/${note.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: !note.archivedAt }),
+      });
+      await reload();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "封存狀態更新失敗");
+    }
+  };
+  const [error, setError] = useState("");
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
@@ -1497,18 +1568,31 @@ function ReportsPanel({
           ),
         )}
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(event) => setShowArchived(event.target.checked)}
+        />
+        顯示已封存報告
+      </label>
+      {error && <p className="notice error">{error}</p>}
       <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
         <aside className="space-y-2">
-          {marketNotes.length === 0 ? (
+          {visibleNotes.length === 0 ? (
             <p className="rounded-xl border border-dashed p-5 text-sm text-[#718078]">
               尚無研究報告。
             </p>
           ) : (
-            marketNotes.map((note) => (
+            visibleNotes.map((note) => (
               <button
                 key={note.id}
                 className={`w-full rounded-xl border p-4 text-left ${current?.id === note.id ? "border-[#75904f] bg-[#eef5dc]" : "border-[#dce4dd] bg-white dark:border-white/10 dark:bg-white/5"}`}
-                onClick={() => setSelected(note.id)}
+                onClick={() => {
+                  setSelected(note.id);
+                  setRevisions(null);
+                  setHistoryRevision(null);
+                }}
               >
                 <p className="text-xs font-bold text-[#718078]">
                   {note.tradingDate} · {noteTypeLabel(note.noteType)}
@@ -1524,6 +1608,9 @@ function ReportsPanel({
           {current ? (
             <>
               <div className="mb-3 flex justify-end gap-2">
+                <button className="secondary" onClick={openHistory}>
+                  修訂歷史
+                </button>
                 <button
                   className="secondary"
                   onClick={() => setEditor(noteEditor(current))}
@@ -1540,7 +1627,36 @@ function ReportsPanel({
                   {current.archivedAt ? "還原" : "封存"}
                 </button>
               </div>
-              <ReportPreview note={current} />
+              {revisions && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                  檢視版本：
+                  {revisions.map((item) => (
+                    <button
+                      key={item.revision}
+                      className="secondary"
+                      onClick={() => setHistoryRevision(item.revision)}
+                      aria-pressed={historyRevision === item.revision}
+                    >
+                      修訂 {item.revision}
+                    </button>
+                  ))}
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      setRevisions(null);
+                      setHistoryRevision(null);
+                    }}
+                  >
+                    返回最新版
+                  </button>
+                </div>
+              )}
+              {previewNote && (
+                <ReportPreview
+                  note={previewNote}
+                  historicalSavedAt={historical?.savedAt}
+                />
+              )}
             </>
           ) : (
             <div className="rounded-2xl border border-dashed p-16 text-center text-[#718078]">
@@ -1678,8 +1794,12 @@ function TodosPanel({
           <legend className="text-xs font-semibold">關聯標的（選填）</legend>
           <div className="mt-2 flex flex-wrap gap-3">
             {watchlist
-              .filter((item) =>
-                market === "US" ? item.market === "US" : item.market !== "US",
+              .filter(
+                (item) =>
+                  !item.removedAt &&
+                  (market === "US"
+                    ? item.market === "US"
+                    : item.market !== "US"),
               )
               .map((item) => (
                 <label
@@ -1814,11 +1934,12 @@ export default function ResearchWorkspace() {
   const [todos, setTodos] = useState<ResearchTodo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const reload = useCallback(async () => {
     setError("");
     try {
       const [nextWatchlist, nextNotes, nextTodos] = await Promise.all([
-        requestJson<WatchlistItem[]>("/api/watchlist"),
+        requestJson<WatchlistItem[]>("/api/watchlist?includeRemoved=true"),
         requestJson<ResearchNote[]>("/api/research-notes?archived=true"),
         requestJson<ResearchTodo[]>("/api/research-todos"),
       ]);
@@ -1834,7 +1955,7 @@ export default function ResearchWorkspace() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      requestJson<WatchlistItem[]>("/api/watchlist"),
+      requestJson<WatchlistItem[]>("/api/watchlist?includeRemoved=true"),
       requestJson<ResearchNote[]>("/api/research-notes?archived=true"),
       requestJson<ResearchTodo[]>("/api/research-todos"),
     ])
@@ -1855,12 +1976,18 @@ export default function ResearchWorkspace() {
       cancelled = true;
     };
   }, []);
+  useEffect(() => {
+    requestJson<ResearchPreferences>("/api/research-preferences")
+      .then((value) => setHasApiKey(value.hasApiKey))
+      .catch(() => setHasApiKey(null));
+  }, []);
   const tabs = useMemo(
     () => [
       { id: "watchlist" as const, label: "行情面板", detail: "自選與走勢" },
       { id: "TW" as const, label: "台股研究", detail: "盤前、盤中、盤後" },
       { id: "US" as const, label: "美股研究", detail: "事件與報告" },
       { id: "todos" as const, label: "研究待辦", detail: "追蹤下一步" },
+      { id: "weekly" as const, label: "每週報告", detail: "AI 研究與建議" },
     ],
     [],
   );
@@ -1873,6 +2000,14 @@ export default function ResearchWorkspace() {
   return (
     <div className="research-workspace">
       {error && <p className="notice error">{error}</p>}
+      {hasApiKey === false && (
+        <div className="notice">
+          尚未設定 OpenAI API Key。
+          <button className="ml-2 underline" onClick={() => setTab("weekly")}>
+            前往每週報告設定
+          </button>
+        </div>
+      )}
       <nav className="research-tabs" aria-label="投資研究分頁">
         {tabs.map((item) => (
           <button
@@ -1896,13 +2031,16 @@ export default function ResearchWorkspace() {
         ))}
       </nav>
       {tab === "watchlist" && (
-        <WatchlistPanel items={watchlist} reload={reload} />
+        <WatchlistPanel
+          items={watchlist.filter((item) => !item.removedAt)}
+          reload={reload}
+        />
       )}
       {tab === "TW" && (
         <ReportsPanel
           market="TW"
           notes={notes}
-          watchlist={watchlist}
+          watchlist={watchlist.filter((item) => !item.removedAt)}
           reload={reload}
         />
       )}
@@ -1910,7 +2048,7 @@ export default function ResearchWorkspace() {
         <ReportsPanel
           market="US"
           notes={notes}
-          watchlist={watchlist}
+          watchlist={watchlist.filter((item) => !item.removedAt)}
           reload={reload}
         />
       )}
@@ -1921,6 +2059,9 @@ export default function ResearchWorkspace() {
           watchlist={watchlist}
           reload={reload}
         />
+      )}
+      {tab === "weekly" && (
+        <WeeklyResearchPanel onKeyStatusChange={setHasApiKey} />
       )}
     </div>
   );

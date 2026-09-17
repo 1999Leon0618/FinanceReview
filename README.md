@@ -20,6 +20,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 - 啟動時顯示資料更新時效，並檢查總額、行情、匯率、貸款還款與期貨契約月份。
 - 透過 JSON 匯出／匯入備份，並可在畫面上暫時隱藏財務數字。
 - 提供私人「研究」工作區：追蹤台美股自選標的與 K 線，人工建立盤前簡報、盤中快報、盤後研究，保存來源、研究當下行情、修訂紀錄與關聯待辦。
+- 每位使用者可自行設定 OpenAI API Key、報告語言與投資背景；每週日產生台美股研究週報，亦可手動產生並保留歷次結果。
 
 ## 啟動
 
@@ -161,9 +162,17 @@ sequenceDiagram
 
 `quote_cache` 保存可重新取得的行情以減少重複請求；它不包含在 JSON 備份中。
 
+### 研究週報與 API Key
+
+研究頁面的「每週報告」分頁提供繁體中文、英文、日文選項，以及投資目標、期限和風險承受度設定。未設定 API Key 時仍可使用人工研究功能；產生週報時會提示先設定金鑰。正式環境每週日 07:00（台灣時間）自動產生一份，手動按鈕則每按一次另存一份。
+
+送至 OpenAI 的資料僅有自選標的、公開行情、研究報告、待辦，以及從最新快照計算的股票／ETF／基金持倉比例；不包含結構化的帳戶餘額、持倉數量或金額。若使用者自行在研究摘要或待辦文字寫入金額，該文字仍會傳送。投資背景未填齊時仍會整理市場，但不輸出個人化買賣方向。報告記錄產生時的語言、資料期間與使用的證據；AI 建議包含依據、觸發條件與風險，並不會自動下單。OpenAI API 的費用由使用者金鑰所屬帳戶承擔。
+
+使用者金鑰在伺服器端以 AES-GCM 加密後保存，不會回傳至瀏覽器或包含在 JSON 備份。管理員必須先設定 32 位元組的 Base64 `RESEARCH_KEY_ENCRYPTION_KEY`：本機放在 `app/.env.local`，Workers 放在對應環境的 Cloudflare Secret。金鑰需持續保管；遺失後既有加密的使用者金鑰無法解密，使用者必須重新設定。備份還原後也需重新設定 API Key。部署方式見 [Workers＋D1 說明](app/WORKERS.md)。
+
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 15。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 16。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 
@@ -211,32 +220,40 @@ erDiagram
 | `research_note_sources`         | 來源標題、媒體、網址、發布／查閱時間與關聯標的                         |
 | `research_quote_snapshots`      | 研究儲存當下引用的 card／kline 行情快照                                |
 | `research_todos`                | 台美股研究事項、預定時間、完成狀態與關聯研究報告                       |
+| `research_preferences`          | 每位使用者的報告語言與投資背景                                         |
+| `research_credentials`          | 每位使用者的加密 OpenAI API Key；不列入 JSON 備份                      |
+| `weekly_research_reports`       | 已生成週報、語言、期間與當次使用的非金額證據                           |
 
 刪除快照會受外鍵關係保護；快照內容使用 `ON DELETE CASCADE` 清理，主檔與持倉生命週期則多採 `RESTRICT`，避免歷史參照失效。建立快照、全部賣出與匯入備份等重要寫入在兩種資料庫都會原子提交，失敗時整批 rollback。
 
 ### API 一覽
 
-| Method                | Route                        | 用途                                 |
-| --------------------- | ---------------------------- | ------------------------------------ |
-| `GET`                 | `/api/dashboard`             | 最新快照、歷史、淨值趨勢與已售出部位 |
-| `GET`／`POST`         | `/api/snapshots`             | 列出或建立快照                       |
-| `GET`／`DELETE`       | `/api/snapshots/:id`         | 讀取或刪除單一快照                   |
-| `POST`                | `/api/snapshot-proposals`    | 將自然語言轉成待確認提案             |
-| `POST`                | `/api/quotes/resolve`        | 解析確認表中的行情與匯率             |
-| `POST`／`PUT`         | `/api/quotes/refresh`        | 預覽全部行情更新／確認建立新快照     |
-| `POST`                | `/api/positions/:id/sell`    | 全部賣出並建立結果快照               |
-| `GET`                 | `/api/trends/accounts/:id`   | 帳戶歷史走勢                         |
-| `GET`                 | `/api/trends/securities/:id` | 標的數量、成本與市值走勢             |
-| `GET`                 | `/api/performance`           | 投資績效、最大回撤與基準比較         |
-| `GET`／`POST`         | `/api/backup`                | 匯出或合併匯入 JSON 備份             |
-| `GET`／`POST`         | `/api/watchlist`             | 查詢或新增自選標的                   |
-| `PATCH`               | `/api/watchlist/:id`         | 啟用或停用自選追蹤                   |
-| `GET`                 | `/api/watchlist/:id/candles` | 取得自選標的 K 線                    |
-| `POST`                | `/api/watchlist/refresh`     | 更新自選行情快取                     |
-| `GET`／`POST`         | `/api/research-notes`        | 查詢或建立研究報告                   |
-| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`    | 讀取、修訂、封存或還原研究報告       |
-| `GET`／`POST`         | `/api/research-todos`        | 查詢或建立研究待辦                   |
-| `PATCH`               | `/api/research-todos/:id`    | 關聯報告、完成或重開研究待辦         |
+| Method                | Route                               | 用途                                 |
+| --------------------- | ----------------------------------- | ------------------------------------ |
+| `GET`                 | `/api/dashboard`                    | 最新快照、歷史、淨值趨勢與已售出部位 |
+| `GET`／`POST`         | `/api/snapshots`                    | 列出或建立快照                       |
+| `GET`／`DELETE`       | `/api/snapshots/:id`                | 讀取或刪除單一快照                   |
+| `POST`                | `/api/snapshot-proposals`           | 將自然語言轉成待確認提案             |
+| `POST`                | `/api/quotes/resolve`               | 解析確認表中的行情與匯率             |
+| `POST`／`PUT`         | `/api/quotes/refresh`               | 預覽全部行情更新／確認建立新快照     |
+| `POST`                | `/api/positions/:id/sell`           | 全部賣出並建立結果快照               |
+| `GET`                 | `/api/trends/accounts/:id`          | 帳戶歷史走勢                         |
+| `GET`                 | `/api/trends/securities/:id`        | 標的數量、成本與市值走勢             |
+| `GET`                 | `/api/performance`                  | 投資績效、最大回撤與基準比較         |
+| `GET`／`POST`         | `/api/backup`                       | 匯出或合併匯入 JSON 備份             |
+| `GET`／`POST`         | `/api/watchlist`                    | 查詢或新增自選標的                   |
+| `PATCH`／`DELETE`     | `/api/watchlist/:id`                | 啟用、停用或隱藏自選標的             |
+| `GET`                 | `/api/watchlist/:id/candles`        | 取得自選標的 K 線                    |
+| `POST`                | `/api/watchlist/refresh`            | 更新自選行情快取                     |
+| `GET`／`POST`         | `/api/research-notes`               | 查詢或建立研究報告                   |
+| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`           | 讀取、修訂、封存或還原研究報告       |
+| `GET`                 | `/api/research-notes/:id/revisions` | 檢視唯讀修訂歷史                     |
+| `GET`／`POST`         | `/api/research-todos`               | 查詢或建立研究待辦                   |
+| `PATCH`               | `/api/research-todos/:id`           | 關聯報告、完成或重開研究待辦         |
+| `GET`／`PUT`          | `/api/research-preferences`         | 讀取或更新語言與投資背景             |
+| `PUT`／`DELETE`       | `/api/research-preferences/key`     | 設定、更換或刪除個人 API Key         |
+| `GET`／`POST`         | `/api/weekly-reports`               | 列出或手動產生每週研究報告           |
+| `GET`                 | `/api/weekly-reports/:id`           | 讀取單份每週研究報告                 |
 
 ## 資料位置與環境變數
 
@@ -321,11 +338,11 @@ CI 會分開執行五組測試，全部通過後才允許正式部署，失敗�
 
 ## 已知限制
 
-- 目前僅設計給單一使用者；正式 Workers 站點尚未建立，登入保護將由 Cloudflare Access 提供。
+- 每位使用者以 Cloudflare Access 登入並使用獨立帳本；新帳號須先經管理員核准。
 - 部分賣出不做交易推算，需直接輸入剩餘數量與新的平均成本。
 - 變動歸因依賴使用者正確填寫已反映在餘額中的資金流；未填項目會歸入「市場與匯率等」。
 - 目前資金流未記錄期間內的精確發生時間，因此績效以期間中點估算，不是逐日精確 TWR。
 - 第一階段信用卡功能不包含消費明細、未出帳金額、銀行自動對帳或自然語言解析；需在信用卡編輯器於每月期限前手動更新繳款結果。
 - 基準比較依賴 Yahoo Finance 歷史行情；來源不可用時仍會顯示自身績效，但暫不顯示基準。
 - 行情依外部來源可用性而定；無法取得時需人工補價。
-- SQLite 與 D1 都未提供應用層欄位加密。
+- 財務快照欄位未提供應用層加密；使用者 OpenAI API Key 會另以應用層 AES-GCM 加密。

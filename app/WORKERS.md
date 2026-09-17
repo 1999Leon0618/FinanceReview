@@ -4,6 +4,8 @@
 
 `wrangler.jsonc` 的頂層設定是 `finance-staging.hsun.dev` 與測試 D1；`production` 環境使用獨立的 `finance-review-production` Worker、`finance.hsun.dev` 與正式 D1。兩個環境不共用資料。
 
+研究週報的 production Worker 設有每週六 23:00 UTC（台灣時間週日 07:00）的 Cron Trigger。它只替已核准且已設定個人 OpenAI API Key 的使用者產生週報。部署前需在 production Worker 設定 `RESEARCH_KEY_ENCRYPTION_KEY` Cloudflare Secret，其值為 32 位元組隨機資料的 Base64 編碼；staging 應使用不同值。本機 Next.js 使用 `app/.env.local`，本機 Worker 使用 `app/.dev.vars`，兩者均須加入 Git 忽略。此密鑰用於加密使用者自行輸入的 API Key，不能放在 `wrangler.jsonc`、GitHub 倉庫或 JSON 備份。輪替密鑰前必須重新加密既有金鑰；直接更換會使既有金鑰無法使用。
+
 `workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過 Access 與自訂網域入口。正式 Worker、D1 與 Cloudflare Access 已上線；真實資料搬移、驗收與切換演練仍須依下列流程完成。
 
 ## 指令

@@ -38,9 +38,11 @@
     "not_found_handling": "none",
     "binding": "ASSETS",
   },
+  "triggers": { "crons": [] },
   "env": {
     "production": {
       "name": "finance-review-production",
+      "triggers": { "crons": ["0 23 * * SAT"] },
       "vars": {
         "TEAM_DOMAIN": "https://white-leaf-f24d.cloudflareaccess.com",
         "POLICY_AUD": "573f022375260a915558d3af0e7d1a73e9358a3814198b11700ce390eefa5219",

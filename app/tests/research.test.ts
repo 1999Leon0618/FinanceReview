@@ -9,6 +9,7 @@ import {
   createResearchNote,
   createResearchTodo,
   listResearchNotes,
+  listResearchNoteRevisions,
   listResearchTodos,
   listWatchlist,
   setWatchlistEnabled,
@@ -136,6 +137,13 @@ describe("投資研究工作區", () => {
         summary: "更新後的研究判讀。",
       });
       expect(updated.sources[0].id).not.toBe(note.sources[0].id);
+      const revisions = await listResearchNoteRevisions(note.id);
+      expect(revisions.map((item) => item.revision)).toEqual([2, 1]);
+      expect(revisions[0].summary).toBe("更新後的研究判讀。");
+      expect(revisions[1].summary).toBe("市場量縮整理。");
+      expect(revisions[1].sources[0].url).toBe(
+        "https://example.com/market-close",
+      );
 
       const todo = await createResearchTodo({
         marketScope: "TW",
@@ -156,7 +164,7 @@ describe("投資研究工作區", () => {
 
   it("隔離使用者並完整備份研究資料", async () => {
     const backup = await runWithDataOwner(ownerA, () => exportBackup());
-    expect(backup.schemaVersion).toBe(3);
+    expect(backup.schemaVersion).toBe(4);
     expect(backup.data.watchlist_items).toHaveLength(1);
     expect(backup.data.research_notes).toHaveLength(1);
     expect(backup.data.research_note_revisions).toHaveLength(2);

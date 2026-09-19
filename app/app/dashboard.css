@@ -200,6 +200,7 @@ html.dark .sidebar-nav a.active {
 .research-workspace {
   display: grid;
   gap: 1.5rem;
+  margin-top: 2rem;
 }
 
 .research-tabs {
@@ -886,7 +887,7 @@ html.dark .page-intro .page-description {
 
 @media (max-width: 700px) {
   .research-workspace {
-    margin-top: 1.25rem;
+    margin-top: 2rem;
   }
 
   .topbar {
@@ -1043,13 +1044,14 @@ html.dark .page-intro .page-description {
 .settings-sections {
   display: grid;
   gap: 1.25rem;
-  max-width: 880px;
+  width: 100%;
   margin-top: 2rem;
 }
 .settings-panel {
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: 1.2rem;
   background: var(--surface);
+  box-shadow: 0 10px 34px rgba(24, 42, 32, 0.035);
   padding: 1.5rem;
 }
 .settings-panel h2 {

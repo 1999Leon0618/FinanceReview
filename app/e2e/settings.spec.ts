@@ -1,5 +1,30 @@
 import { expect, test } from "@playwright/test";
 
+test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "報告設定" })).toBeVisible();
+  const reportSettings = page.locator("#research-report-settings");
+  await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
+  await reportSettings.getByLabel("報告語言").selectOption("en");
+  await reportSettings.getByRole("button", { name: "儲存設定" }).click();
+  await expect(reportSettings.getByRole("status")).toContainText(
+    "報告設定已儲存",
+  );
+  await page.reload();
+  await expect(reportSettings.getByLabel("報告語言")).toHaveValue("en");
+  const settingsWidth = await page
+    .locator(".settings-sections")
+    .evaluate((element) => element.getBoundingClientRect().width);
+  expect(settingsWidth).toBeGreaterThan(1000);
+
+  await page.goto("/research");
+  await expect(page.getByRole("heading", { name: "報告設定" })).toHaveCount(0);
+  await page.getByRole("link", { name: "前往報告設定" }).click();
+  await expect(page).toHaveURL(/\/settings#research-report-settings$/);
+  await expect(page.getByRole("heading", { name: "報告設定" })).toBeVisible();
+});
+
 test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -34,6 +59,7 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
 
 test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, request }) => {
   await page.goto("/settings");
+  await expect(page.getByLabel("OpenAI API Key")).toBeVisible();
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("link", { name: "匯出資料" }).click();
   const download = await downloadEvent;

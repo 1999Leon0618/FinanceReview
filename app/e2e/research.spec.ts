@@ -54,5 +54,8 @@ test("每週報告未設定金鑰時提供設定與提示", async ({ page }) => 
   await expect(page.locator("p[role='alert']")).toContainText(
     "尚未設定 OpenAI API Key",
   );
+  await expect(page.getByLabel("報告語言")).toHaveCount(0);
+  await page.getByRole("link", { name: "前往報告設定" }).click();
+  await expect(page).toHaveURL(/\/settings#research-report-settings$/);
   await expect(page.getByLabel("報告語言")).toBeVisible();
 });

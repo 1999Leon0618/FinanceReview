@@ -122,6 +122,12 @@ const ResearchWorkspace = dynamic(
     loading: () => <p className="empty-state">正在載入研究工作區…</p>,
   },
 );
+const ResearchReportSettings = dynamic(
+  () => import("@/components/research-report-settings"),
+  {
+    loading: () => <p className="empty-state">正在載入報告設定…</p>,
+  },
+);
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
 export type { FinancePage } from "@/lib/dashboard-navigation";
@@ -1096,6 +1102,7 @@ export default function FinanceDashboard({
                   </button>
                 </div>
               </section>
+              {!demoMode && <ResearchReportSettings />}
               {!demoMode && (
                 <section
                   className="settings-panel"
@@ -1409,7 +1416,7 @@ export default function FinanceDashboard({
                   {latest.accounts.length === 0 ? (
                     <div className="page-empty-state">目前沒有帳戶資料</div>
                   ) : (
-                    <div className="accounts-grid">
+                    <AccountMasonryGrid>
                       {latest.accounts.map((account) => (
                         <AccountCard
                           key={account.accountId}
@@ -1417,7 +1424,7 @@ export default function FinanceDashboard({
                           onOpen={() => setSelectedAccount(account)}
                         />
                       ))}
-                    </div>
+                    </AccountMasonryGrid>
                   )}
                 </section>
               )}
@@ -1543,7 +1550,7 @@ export default function FinanceDashboard({
               {latest.accounts.length === 0 ? (
                 <p className="view-all-empty">目前沒有帳戶資料</p>
               ) : (
-                <div className="accounts-grid view-all-grid">
+                <AccountMasonryGrid className="view-all-grid">
                   {latest.accounts.map((account) => (
                     <AccountCard
                       key={account.accountId}
@@ -1551,7 +1558,7 @@ export default function FinanceDashboard({
                       onOpen={() => setSelectedAccount(account)}
                     />
                   ))}
-                </div>
+                </AccountMasonryGrid>
               )}
             </ViewAllDialog>
           )}
@@ -2904,6 +2911,56 @@ function AccountCard({
         <ChevronRight size={14} aria-hidden="true" />
       </span>
     </button>
+  );
+}
+
+function AccountMasonryGrid({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || typeof ResizeObserver === "undefined") return;
+
+    const layout = () => {
+      const styles = window.getComputedStyle(grid);
+      const rowHeight = Number.parseFloat(styles.gridAutoRows);
+      const rowGap = Number.parseFloat(styles.rowGap);
+      if (!Number.isFinite(rowHeight) || !Number.isFinite(rowGap)) return;
+
+      const items = Array.from(grid.children).filter(
+        (child): child is HTMLElement => child instanceof HTMLElement,
+      );
+      const spans = items.map((item) =>
+        Math.ceil(
+          (item.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap),
+        ),
+      );
+      items.forEach((item, index) => {
+        item.style.gridRowEnd = `span ${spans[index]}`;
+      });
+      grid.dataset.masonryReady = "true";
+    };
+
+    const observer = new ResizeObserver(layout);
+    Array.from(grid.children).forEach((item) => observer.observe(item));
+    layout();
+
+    return () => observer.disconnect();
+  }, [children]);
+
+  return (
+    <div
+      ref={gridRef}
+      className={`accounts-grid accounts-masonry-grid ${className}`.trim()}
+    >
+      {children}
+    </div>
   );
 }
 

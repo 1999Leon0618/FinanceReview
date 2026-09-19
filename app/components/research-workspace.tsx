@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -2003,9 +2004,12 @@ export default function ResearchWorkspace() {
       {hasApiKey === false && (
         <div className="notice">
           尚未設定 OpenAI API Key。
-          <button className="ml-2 underline" onClick={() => setTab("weekly")}>
-            前往每週報告設定
-          </button>
+          <Link
+            className="ml-2 underline"
+            href="/settings#research-report-settings"
+          >
+            前往報告設定
+          </Link>
         </div>
       )}
       <nav className="research-tabs" aria-label="投資研究分頁">

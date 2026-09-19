@@ -1,7 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { closeDatabaseForTests, getDatabase } from "@/lib/db";
 import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
 import { ensureCurrentAppUser } from "@/lib/app-users";
@@ -32,9 +40,9 @@ const ownerC = dataOwnerFromEmail("weekly-c@example.com");
 const now = new Date("2026-09-20T00:00:00.000Z");
 
 beforeAll(() => closeDatabaseForTests());
+afterEach(() => vi.restoreAllMocks());
 afterAll(() => {
   closeDatabaseForTests();
-  vi.restoreAllMocks();
   rmSync(temp, { recursive: true, force: true });
 });
 
@@ -238,11 +246,42 @@ describe("每週研究報告", () => {
     });
   });
 
-  it("投資背景未填齊時不保存個人化建議", async () => {
+  it("投資背景未填齊時仍保留客觀風險並標記研究失敗", async () => {
     await runWithDataOwner(ownerB, async () => {
+      await createSnapshot({
+        rawInput: "客觀風險測試",
+        capturedAt: now.toISOString(),
+        accounts: [
+          {
+            name: "測試帳戶",
+            accountType: "brokerage",
+            defaultCurrency: "TWD",
+            cashBalances: [],
+            positions: [
+              {
+                market: "US",
+                symbol: "AAPL",
+                name: "Apple",
+                securityType: "stock",
+                quoteCurrency: "TWD",
+                quantity: "1",
+                averageCost: "100",
+                marketPrice: "200",
+                quoteAsOf: now.toISOString(),
+                quoteSource: "YAHOO",
+                quoteStatus: "fresh",
+              },
+            ],
+          },
+        ],
+      });
       await saveResearchApiKey({ apiKey: "sk-test-second-user-key-123456789" });
-      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-        new Response(
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/agents/sessions"))
+          return new Response("Agents unavailable", { status: 503 });
+        expect(url).toBe("https://api.openai.com/v1/responses");
+        return new Response(
           JSON.stringify({
             output_text: JSON.stringify({
               portfolioSnapshot: "投資組合摘要",
@@ -266,15 +305,14 @@ describe("每週研究報告", () => {
             }),
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+        );
+      });
       const report = await generateWeeklyReport("manual", now);
-      expect(report.content.portfolioRisk).toEqual([]);
+      expect(report.content.portfolioRisk).toHaveLength(1);
       expect(report.content.nextWeekWatch).toHaveLength(1);
       expect(report.content.dataQuality).toContain(
-        "投資背景未填齊，未產生個人化 Portfolio Risk。",
+        "本週主動網路研究未完成；市場與事件內容僅使用本地既有資料。",
       );
-      vi.restoreAllMocks();
     });
   });
 

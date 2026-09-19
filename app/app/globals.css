@@ -2071,6 +2071,12 @@ label {
   align-self: start;
 }
 
+.accounts-masonry-grid {
+  grid-auto-flow: row dense;
+  grid-auto-rows: 1px;
+  align-items: start;
+}
+
 .account-type {
   border-radius: 999px;
   padding: 0.3rem 0.55rem;

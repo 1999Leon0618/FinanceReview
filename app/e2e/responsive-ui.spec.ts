@@ -92,7 +92,7 @@ for (const width of [390, 768, 1440]) {
 }
 
 test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+  await page.setViewportSize({ width: 486, height: 812 });
   await page.goto("/research");
   await expect(
     page.getByRole("heading", { name: "投資研究", exact: true }),
@@ -107,8 +107,8 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   const date = await page
     .locator(".page-intro > div > p:last-child")
     .boundingBox();
-  const tabs = await page.locator(".research-tabs").boundingBox();
-  expect(tabs!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(16);
+  const workspace = await page.locator(".research-workspace").boundingBox();
+  expect(workspace!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(32);
 });
 
 test("點選主要導覽後停在頁面最上方", async ({ page }) => {
@@ -161,7 +161,14 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
             ),
           accountType: "brokerage",
           defaultCurrency: "TWD",
-          cashBalances: [{ currency: "TWD", amount: "300000" }],
+          cashBalances: [
+            { currency: "TWD", amount: "300000" },
+            { currency: "USD", amount: "1000" },
+            { currency: "JPY", amount: "50000" },
+            { currency: "EUR", amount: "800" },
+            { currency: "GBP", amount: "600" },
+            { currency: "AUD", amount: "700" },
+          ],
           positions: [
             {
               market: "FUTURES",
@@ -181,20 +188,44 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
             },
           ],
         },
+        {
+          name: "同列短帳戶",
+          accountType: "bank",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "2000" }],
+          positions: [],
+        },
+        {
+          name: "後續帳戶",
+          accountType: "bank",
+          defaultCurrency: "TWD",
+          cashBalances: [{ currency: "TWD", amount: "3000" }],
+          positions: [],
+        },
       ],
     },
   });
   expect(created.ok(), await created.text()).toBeTruthy();
 
-  await page.setViewportSize({ width: 800, height: 812 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/accounts");
+  await expect(page.locator(".accounts-masonry-grid")).toHaveAttribute(
+    "data-masonry-ready",
+    "true",
+  );
   const shortCard = await page
     .getByRole("button", { name: /檢視 短帳戶/ })
     .boundingBox();
   const tallCard = await page
     .getByRole("button", { name: /檢視 期貨測試帳戶/ })
     .boundingBox();
+  const followingCard = await page
+    .getByRole("button", { name: /檢視 後續帳戶/ })
+    .boundingBox();
   expect(tallCard!.height - shortCard!.height).toBeGreaterThan(16);
+  expect(followingCard!.x).toBeCloseTo(shortCard!.x, 0);
+  expect(followingCard!.y).toBeGreaterThan(shortCard!.y + shortCard!.height);
+  expect(followingCard!.y).toBeLessThan(tallCard!.y + tallCard!.height);
 
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");

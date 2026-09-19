@@ -59,6 +59,7 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
 
 test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, request }) => {
   await page.goto("/settings");
+  await expect(page.getByLabel("OpenAI API Key")).toBeVisible();
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("link", { name: "匯出資料" }).click();
   const download = await downloadEvent;

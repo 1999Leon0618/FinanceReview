@@ -167,6 +167,35 @@ test("每週報告顯示配置、績效與歸因圖表並適應窄螢幕", async
           },
         ],
       },
+      etfLookThrough: {
+        topUnderlyingExposures: [
+          {
+            symbol: "AAPL",
+            directPct: 30,
+            indirectPct: 4,
+            dailyNominalIndirectPct: 5,
+            totalDailyNominalExposurePct: 35,
+          },
+          {
+            symbol: "2330",
+            directPct: 0,
+            indirectPct: 14.5,
+            dailyNominalIndirectPct: 14.5,
+            totalDailyNominalExposurePct: 14.5,
+          },
+        ],
+        overlaps: [
+          {
+            left: "0050",
+            right: "006208",
+            overlapByWeightPct: 86.5,
+            commonHoldingsCount: 42,
+          },
+        ],
+        indexFamilyDailyNominalExposure: [
+          { indexName: "Nasdaq-100", exposurePct: 28.1 },
+        ],
+      },
     }),
   });
   const imported = await request.post("/api/backup", {
@@ -181,7 +210,15 @@ test("每週報告顯示配置、績效與歸因圖表並適應窄螢幕", async
   await expect(page.getByText("主要持倉", { exact: true })).toBeVisible();
   await expect(page.getByText("本週績效比較", { exact: true })).toBeVisible();
   await expect(page.getByText("主要正負貢獻", { exact: true })).toBeVisible();
+  await expect(page.getByText("資產類型占比", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("底層標的穿透曝險", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("ETF 重疊", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Nasdaq-100 每日目標名目曝險/)).toBeVisible();
   await expect(page.getByText("其他", { exact: true })).toBeVisible();
+  await page.getByText("檢視當次使用的資料", { exact: true }).click();
+  await expect(page.getByText(/US AAPL：30\.000%/)).toBeVisible();
   await page.evaluate(() =>
     localStorage.setItem("finance-review-theme", "dark"),
   );

@@ -38,6 +38,11 @@ const ownerA = dataOwnerFromEmail("weekly-a@example.com");
 const ownerB = dataOwnerFromEmail("weekly-b@example.com");
 const ownerC = dataOwnerFromEmail("weekly-c@example.com");
 const now = new Date("2026-09-20T00:00:00.000Z");
+const emptyWeeklyMarketData = async () => ({
+  benchmarks: [],
+  missing: [],
+  sources: [],
+});
 
 beforeAll(() => closeDatabaseForTests());
 afterEach(() => vi.restoreAllMocks());
@@ -139,7 +144,9 @@ describe("每週研究報告", () => {
           },
         ],
       });
-      const evidence = await buildWeeklyEvidence(now);
+      const evidence = await buildWeeklyEvidence(now, {
+        marketDataLoader: emptyWeeklyMarketData,
+      });
       expect(
         Object.fromEntries(
           evidence.allocation.map((item) => [item.symbol, item.weightPct]),
@@ -188,7 +195,14 @@ describe("每週研究報告", () => {
       };
       const fetchMock = vi
         .spyOn(globalThis, "fetch")
-        .mockImplementation(async (_url, init) => {
+        .mockImplementation(async (input, init) => {
+          const url = String(input);
+          if (url.startsWith("https://query1.finance.yahoo.com")) {
+            return new Response(JSON.stringify({ chart: { result: [] } }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
           const request = JSON.parse(String(init?.body)) as {
             input: string;
             store: boolean;
@@ -278,6 +292,12 @@ describe("每週研究報告", () => {
       await saveResearchApiKey({ apiKey: "sk-test-second-user-key-123456789" });
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
         const url = String(input);
+        if (url.startsWith("https://query1.finance.yahoo.com")) {
+          return new Response(JSON.stringify({ chart: { result: [] } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         if (url.endsWith("/agents/sessions"))
           return new Response("Agents unavailable", { status: 503 });
         expect(url).toBe("https://api.openai.com/v1/responses");
@@ -311,7 +331,110 @@ describe("每週研究報告", () => {
       expect(report.content.portfolioRisk).toHaveLength(1);
       expect(report.content.nextWeekWatch).toHaveLength(1);
       expect(report.content.dataQuality).toContain(
-        "本週主動網路研究未完成；市場與事件內容僅使用本地既有資料。",
+        "本週外部即時研究來源不足；事件內容僅使用既有研究資料。",
+      );
+    });
+  });
+
+  it("保存 Agent 結構化來源並以確定性排序事件", async () => {
+    await runWithDataOwner(ownerB, async () => {
+      const research = {
+        sources: [
+          {
+            id: "src-aapl",
+            title: "Apple quarterly results",
+            publisher: "Apple Investor Relations",
+            url: "https://investor.apple.com/results",
+            publishedAt: "2026-09-18",
+            qualityScore: 5,
+          },
+        ],
+        marketFindings: [],
+        securityEvents: [
+          {
+            symbol: "AAPL",
+            event: "Apple 公布季度財報",
+            eventDate: "2026-09-18",
+            category: "earnings",
+            materialityScore: 5,
+            directnessScore: 5,
+            financialImpactScore: 5,
+            sourceQualityScore: 5,
+            sourceIds: ["src-aapl"],
+            portfolioRelevance: "直接影響現有持倉",
+            risk: "財測可能造成波動",
+            classification: "security_event",
+          },
+        ],
+        nextWeekEvents: [],
+        etfHoldings: [],
+      };
+      const finalContent = {
+        portfolioSnapshot: "投資組合摘要",
+        weeklyMarket: "本週市場整理",
+        portfolioAttribution: [],
+        portfolioRisk: [
+          { risk: "集中度", evidence: "單一持倉", response: "持續觀察" },
+        ],
+        securityEvents: [
+          {
+            symbol: "OTHER",
+            event: "不應覆蓋排序結果",
+            portfolioRelevance: "無",
+            risk: "無",
+          },
+        ],
+        nextWeekWatch: [],
+        dataQuality: [],
+      };
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.startsWith("https://query1.finance.yahoo.com")) {
+          return new Response(JSON.stringify({ chart: { result: [] } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.endsWith("/agents/sessions")) {
+          const outputEvent = JSON.stringify({
+            session_id: "session-1",
+            type: "agent.session.turn.output_text.done",
+            text: JSON.stringify(research),
+          });
+          const completedEvent = JSON.stringify({
+            type: "agent.session.turn.completed",
+          });
+          return new Response(
+            `data: ${outputEvent}\n\ndata: ${completedEvent}\n\n`,
+            { status: 200, headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        if (url.endsWith("/agents/sessions/session-1")) {
+          expect(init?.method).toBe("DELETE");
+          return new Response(null, { status: 204 });
+        }
+        expect(url).toBe("https://api.openai.com/v1/responses");
+        return new Response(
+          JSON.stringify({ output_text: JSON.stringify(finalContent) }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const report = await generateWeeklyReport(
+        "manual",
+        new Date("2026-09-20T00:00:02.000Z"),
+      );
+      expect(report.content.securityEvents).toHaveLength(1);
+      expect(report.content.securityEvents[0]).toMatchObject({
+        symbol: "AAPL",
+        event: "Apple 公布季度財報 [src-aapl]",
+      });
+      expect(JSON.stringify(report.content)).not.toContain("https://");
+      expect(report.evidence.researchSources).toContainEqual(
+        expect.objectContaining({
+          id: "src-aapl",
+          url: "https://investor.apple.com/results",
+        }),
       );
     });
   });

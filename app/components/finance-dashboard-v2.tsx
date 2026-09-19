@@ -1416,7 +1416,7 @@ export default function FinanceDashboard({
                   {latest.accounts.length === 0 ? (
                     <div className="page-empty-state">目前沒有帳戶資料</div>
                   ) : (
-                    <AccountMasonryGrid>
+                    <div className="accounts-grid">
                       {latest.accounts.map((account) => (
                         <AccountCard
                           key={account.accountId}
@@ -1424,7 +1424,7 @@ export default function FinanceDashboard({
                           onOpen={() => setSelectedAccount(account)}
                         />
                       ))}
-                    </AccountMasonryGrid>
+                    </div>
                   )}
                 </section>
               )}
@@ -1550,7 +1550,7 @@ export default function FinanceDashboard({
               {latest.accounts.length === 0 ? (
                 <p className="view-all-empty">目前沒有帳戶資料</p>
               ) : (
-                <AccountMasonryGrid className="view-all-grid">
+                <div className="accounts-grid view-all-grid">
                   {latest.accounts.map((account) => (
                     <AccountCard
                       key={account.accountId}
@@ -1558,7 +1558,7 @@ export default function FinanceDashboard({
                       onOpen={() => setSelectedAccount(account)}
                     />
                   ))}
-                </AccountMasonryGrid>
+                </div>
               )}
             </ViewAllDialog>
           )}
@@ -2846,6 +2846,12 @@ function AccountCard({
   account: AccountView;
   onOpen: () => void;
 }) {
+  const loans = account.loans ?? [];
+  const visibleBalanceCount = loans.length > 0 ? 1 : 2;
+  const visibleBalances = account.cashBalances.slice(0, visibleBalanceCount);
+  const hiddenBalanceCount =
+    account.cashBalances.length - visibleBalances.length;
+
   return (
     <button
       type="button"
@@ -2869,34 +2875,43 @@ function AccountCard({
               : "現金"}
         </span>
       </div>
-      <div className="mt-5">
-        <h3 className="font-semibold">{account.name}</h3>
-        <p className="mt-1 text-xs text-[#879189]">
+      <div className="account-card-identity">
+        <h3 className="truncate font-semibold">{account.name}</h3>
+        <p className="mt-1 truncate text-xs text-[#879189]">
           {account.institution || "未設定機構"}
         </p>
       </div>
       <div className="account-balances">
         {account.cashBalances.length ? (
-          account.cashBalances.map((balance) => (
-            <div key={balance.currency}>
-              <span>{balance.currency}</span>
-              <strong>{number.format(Number(balance.amount))}</strong>
-            </div>
-          ))
+          <>
+            {visibleBalances.map((balance) => (
+              <div key={balance.currency}>
+                <span>
+                  {balance.currency}
+                  {loans.length > 0 && hiddenBalanceCount > 0
+                    ? ` · 另 ${hiddenBalanceCount} 種`
+                    : ""}
+                </span>
+                <strong>{number.format(Number(balance.amount))}</strong>
+              </div>
+            ))}
+            {loans.length === 0 && hiddenBalanceCount > 0 && (
+              <p className="account-balance-overflow">
+                另有 {hiddenBalanceCount} 種幣別
+              </p>
+            )}
+          </>
         ) : (
           <p>沒有現金餘額</p>
         )}
       </div>
-      {(account.loans?.length ?? 0) > 0 && (
-        <div className="mt-4 border-t border-[#e4e9e5] pt-3">
+      {loans.length > 0 && (
+        <div className="account-liabilities">
           <p className="text-[10px] font-semibold tracking-[.08em] text-[#956d5d]">
-            貸款與負債
+            貸款與負債{loans.length > 1 ? ` · 共 ${loans.length} 筆` : ""}
           </p>
-          {account.loans?.map((loan) => (
-            <div
-              className="mt-2 flex items-center justify-between gap-3 text-xs"
-              key={loan.loanId}
-            >
+          {loans.slice(0, 1).map((loan) => (
+            <div className="account-liability-row" key={loan.loanId}>
               <span className="text-[#69766e]">{loan.name}</span>
               <strong className="text-[#7d503d]">
                 {loan.currency}{" "}
@@ -2911,56 +2926,6 @@ function AccountCard({
         <ChevronRight size={14} aria-hidden="true" />
       </span>
     </button>
-  );
-}
-
-function AccountMasonryGrid({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const gridRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const grid = gridRef.current;
-    if (!grid || typeof ResizeObserver === "undefined") return;
-
-    const layout = () => {
-      const styles = window.getComputedStyle(grid);
-      const rowHeight = Number.parseFloat(styles.gridAutoRows);
-      const rowGap = Number.parseFloat(styles.rowGap);
-      if (!Number.isFinite(rowHeight) || !Number.isFinite(rowGap)) return;
-
-      const items = Array.from(grid.children).filter(
-        (child): child is HTMLElement => child instanceof HTMLElement,
-      );
-      const spans = items.map((item) =>
-        Math.ceil(
-          (item.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap),
-        ),
-      );
-      items.forEach((item, index) => {
-        item.style.gridRowEnd = `span ${spans[index]}`;
-      });
-      grid.dataset.masonryReady = "true";
-    };
-
-    const observer = new ResizeObserver(layout);
-    Array.from(grid.children).forEach((item) => observer.observe(item));
-    layout();
-
-    return () => observer.disconnect();
-  }, [children]);
-
-  return (
-    <div
-      ref={gridRef}
-      className={`accounts-grid accounts-masonry-grid ${className}`.trim()}
-    >
-      {children}
-    </div>
   );
 }
 

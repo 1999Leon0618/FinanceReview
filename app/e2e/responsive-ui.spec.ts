@@ -203,16 +203,31 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
           positions: [],
         },
       ],
+      loans: [
+        {
+          accountName: "期貨測試帳戶",
+          name: "第一筆測試負債",
+          loanType: "personal",
+          currency: "TWD",
+          outstandingPrincipal: "180000",
+        },
+        {
+          accountName: "期貨測試帳戶",
+          name: "第二筆測試負債",
+          loanType: "other",
+          currency: "TWD",
+          outstandingPrincipal: "50000",
+        },
+      ],
     },
   });
   expect(created.ok(), await created.text()).toBeTruthy();
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/accounts");
-  await expect(page.locator(".accounts-masonry-grid")).toHaveAttribute(
-    "data-masonry-ready",
-    "true",
-  );
+  const accountCards = page.locator(".accounts-grid > .account-card-button");
+  await expect(accountCards).toHaveCount(4);
+  await expect(page.locator(".accounts-masonry-grid")).toHaveCount(0);
   const shortCard = await page
     .getByRole("button", { name: /檢視 短帳戶/ })
     .boundingBox();
@@ -222,10 +237,25 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
   const followingCard = await page
     .getByRole("button", { name: /檢視 後續帳戶/ })
     .boundingBox();
-  expect(tallCard!.height - shortCard!.height).toBeGreaterThan(16);
+  const cardSizes = await accountCards.evaluateAll((cards) =>
+    cards.map((card) => ({
+      clientHeight: card.clientHeight,
+      scrollHeight: card.scrollHeight,
+    })),
+  );
+  expect(new Set(cardSizes.map(({ clientHeight }) => clientHeight)).size).toBe(
+    1,
+  );
+  expect(cardSizes[0].clientHeight).toBeLessThanOrEqual(256);
+  for (const { clientHeight, scrollHeight } of cardSizes) {
+    expect(scrollHeight, JSON.stringify(cardSizes)).toBeLessThanOrEqual(
+      clientHeight,
+    );
+  }
+  expect(tallCard!.height).toBeCloseTo(shortCard!.height, 0);
+  expect(tallCard!.y).toBeCloseTo(shortCard!.y, 0);
   expect(followingCard!.x).toBeCloseTo(shortCard!.x, 0);
   expect(followingCard!.y).toBeGreaterThan(shortCard!.y + shortCard!.height);
-  expect(followingCard!.y).toBeLessThan(tallCard!.y + tallCard!.height);
 
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
@@ -237,6 +267,7 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
     .locator("details")
     .filter({ hasText: "期貨測試帳戶" })
     .locator("summary")
+    .first()
     .click();
   const position = dialog
     .locator(".snapshot-position-card")

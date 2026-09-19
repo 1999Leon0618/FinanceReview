@@ -2,8 +2,30 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  LabelList,
+  Legend,
+  Pie,
+  PieChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { ResearchPreferences, WeeklyResearchReport } from "@/lib/types";
 import { requestJson } from "@/lib/client-request";
+import {
+  attributionChartData,
+  concentrationMetrics,
+  marketAllocationChartData,
+  topHoldingsChartData,
+  weeklyPerformanceChartData,
+} from "@/lib/research-chart-data";
 
 const emptyPreferences: ResearchPreferences = {
   reportLanguage: "zh-TW",
@@ -18,6 +40,256 @@ const attributionEffectLabels = {
   neutral: "中性",
   unknown: "無法判定",
 };
+const chartColors = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--muted)",
+];
+
+const percentTooltip = (value: unknown): [string, string] => [
+  `${Number(value ?? 0).toFixed(2)}%`,
+  "占比",
+];
+
+function PortfolioSnapshotCharts({
+  evidence,
+}: {
+  evidence: Record<string, unknown>;
+}) {
+  const marketData = marketAllocationChartData(evidence);
+  const holdingsData = topHoldingsChartData(evidence);
+  const concentration = concentrationMetrics(evidence);
+  if (
+    marketData.length === 0 &&
+    holdingsData.length === 0 &&
+    concentration.length === 0
+  )
+    return null;
+  return (
+    <section className="mt-5" aria-label="投資組合配置圖表">
+      {concentration.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {concentration.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-xl bg-[#f4f7ef] p-3 dark:bg-white/5"
+            >
+              <p className="text-xs text-[#718078]">{item.label} 集中度</p>
+              <strong className="mt-1 block text-lg">{item.value}%</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        {marketData.length > 0 && (
+          <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+            <figcaption className="font-bold">市場占比</figcaption>
+            <p className="text-xs text-[#718078]">證券部位內占比</p>
+            <div className="h-64" aria-label="各市場證券部位占比圓環圖">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={marketData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius="48%"
+                    outerRadius="72%"
+                    paddingAngle={2}
+                    isAnimationActive={false}
+                  >
+                    {marketData.map((item, index) => (
+                      <Cell
+                        key={item.name}
+                        fill={chartColors[index % chartColors.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={percentTooltip} />
+                  <Legend verticalAlign="bottom" iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </figure>
+        )}
+        {holdingsData.length > 0 && (
+          <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+            <figcaption className="font-bold">主要持倉</figcaption>
+            <p className="text-xs text-[#718078]">
+              前十大持倉；其餘標的合併為「其他」
+            </p>
+            <div
+              style={{ height: Math.max(256, holdingsData.length * 30) }}
+              aria-label="主要持倉占比水平長條圖"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={holdingsData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 46, bottom: 8, left: 8 }}
+                >
+                  <CartesianGrid horizontal={false} stroke="var(--line)" />
+                  <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={58}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <Tooltip formatter={percentTooltip} />
+                  <Bar
+                    dataKey="value"
+                    name="持倉占比"
+                    fill="var(--chart-1)"
+                    radius={[0, 4, 4, 0]}
+                    isAnimationActive={false}
+                  >
+                    <LabelList
+                      dataKey="value"
+                      position="right"
+                      formatter={(value: unknown) => `${Number(value)}%`}
+                      fill="var(--foreground)"
+                      fontSize={11}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </figure>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function WeeklyPerformanceChart({
+  evidence,
+}: {
+  evidence: Record<string, unknown>;
+}) {
+  const data = weeklyPerformanceChartData(evidence);
+  if (data.length === 0) return null;
+  return (
+    <figure className="mt-4 rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+      <figcaption className="font-bold">本週績效比較</figcaption>
+      <p className="text-xs text-[#718078]">
+        前一交易週最後收盤至本交易週最後收盤
+      </p>
+      <div
+        style={{ height: Math.max(220, data.length * 42) }}
+        aria-label="投資組合與市場基準本週績效比較圖"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 12, right: 52, bottom: 8, left: 8 }}
+          >
+            <CartesianGrid horizontal={false} stroke="var(--line)" />
+            <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={122}
+              tick={{ fontSize: 11 }}
+            />
+            <ReferenceLine x={0} stroke="var(--muted)" />
+            <Tooltip
+              formatter={(value) => [
+                `${Number(value ?? 0) >= 0 ? "+" : ""}${Number(value ?? 0).toFixed(2)}%`,
+                "週報酬",
+              ]}
+            />
+            <Bar dataKey="value" name="週報酬" isAnimationActive={false}>
+              {data.map((item) => (
+                <Cell
+                  key={item.name}
+                  fill={
+                    item.value >= 0
+                      ? "var(--chart-positive)"
+                      : "var(--chart-negative)"
+                  }
+                />
+              ))}
+              <LabelList
+                dataKey="value"
+                position="right"
+                formatter={(value: unknown) => {
+                  const number = Number(value);
+                  return `${number >= 0 ? "+" : ""}${number}%`;
+                }}
+                fill="var(--foreground)"
+                fontSize={11}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </figure>
+  );
+}
+
+function AttributionChart({ evidence }: { evidence: Record<string, unknown> }) {
+  const data = attributionChartData(evidence);
+  if (data.length === 0) return null;
+  return (
+    <figure className="mt-4 rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+      <figcaption className="font-bold">主要正負貢獻</figcaption>
+      <p className="text-xs text-[#718078]">估算貢獻＝期初權重 × 週報酬</p>
+      <div
+        style={{ height: Math.max(220, data.length * 42) }}
+        aria-label="主要持倉正負貢獻水平長條圖"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 12, right: 52, bottom: 8, left: 8 }}
+          >
+            <CartesianGrid horizontal={false} stroke="var(--line)" />
+            <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={62}
+              tick={{ fontSize: 11 }}
+            />
+            <ReferenceLine x={0} stroke="var(--muted)" />
+            <Tooltip
+              formatter={(value, _name, entry) => [
+                `${Number(value ?? 0) >= 0 ? "+" : ""}${Number(value ?? 0).toFixed(2)}%（期初權重 ${entry.payload.beginningWeightPct}%，週報酬 ${entry.payload.weeklyReturnPct}%）`,
+                "估算貢獻",
+              ]}
+            />
+            <Bar dataKey="value" name="估算貢獻" isAnimationActive={false}>
+              {data.map((item) => (
+                <Cell
+                  key={item.name}
+                  fill={
+                    item.value >= 0
+                      ? "var(--chart-positive)"
+                      : "var(--chart-negative)"
+                  }
+                />
+              ))}
+              <LabelList
+                dataKey="value"
+                position="right"
+                formatter={(value: unknown) => {
+                  const number = Number(value);
+                  return `${number >= 0 ? "+" : ""}${number}%`;
+                }}
+                fill="var(--foreground)"
+                fontSize={11}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </figure>
+  );
+}
 
 type StructuredSource = {
   id: string;
@@ -82,7 +354,7 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
     market: string;
     symbol: string;
     weightPct: number;
-    quoteAsOf: string;
+    quoteAsOf?: string | null;
   }>;
   const watchlist = (evidence.watchlist ?? []) as Array<{
     market: string;
@@ -106,7 +378,7 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
           {allocation.map((item, index) => (
             <li key={`${item.market}-${item.symbol}-${index}`}>
               {item.market} {item.symbol}：{item.weightPct}%（行情{" "}
-              {item.quoteAsOf.slice(0, 10)}）
+              {item.quoteAsOf?.slice(0, 10) ?? "日期不明"}）
             </li>
           ))}
         </ul>
@@ -327,17 +599,20 @@ export default function WeeklyResearchPanel({
                 {selected.content.portfolioSnapshot}
               </SourceText>
             </p>
+            <PortfolioSnapshotCharts evidence={selected.evidence} />
             <h3 className="mt-7 text-lg font-bold">本週市場</h3>
             <p className="mt-2 whitespace-pre-wrap leading-7">
               <SourceText sources={selectedSources}>
                 {selected.content.weeklyMarket}
               </SourceText>
             </p>
+            <WeeklyPerformanceChart evidence={selected.evidence} />
             {selected.content.portfolioAttribution.length > 0 && (
               <>
                 <h3 className="mt-7 text-lg font-bold">
                   Portfolio Attribution
                 </h3>
+                <AttributionChart evidence={selected.evidence} />
                 <ul className="mt-2 space-y-3">
                   {selected.content.portfolioAttribution.map((item, index) => (
                     <li

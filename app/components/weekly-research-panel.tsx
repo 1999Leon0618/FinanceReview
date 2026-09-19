@@ -60,7 +60,7 @@ const lookThroughColors = {
 };
 
 const percentTooltip = (value: unknown): [string, string] => [
-  `${Number(value ?? 0).toFixed(2)}%`,
+  `${Number(value ?? 0).toFixed(3)}%`,
   "占比",
 ];
 type PieTooltipProps = {
@@ -208,7 +208,9 @@ function PortfolioSnapshotCharts({
                     <LabelList
                       dataKey="value"
                       position="right"
-                      formatter={(value: unknown) => `${Number(value)}%`}
+                      formatter={(value: unknown) =>
+                        `${Number(value).toFixed(3)}%`
+                      }
                       fill="var(--foreground)"
                       fontSize={11}
                     />

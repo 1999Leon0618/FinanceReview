@@ -79,7 +79,7 @@ export function marketAllocationChartData(evidence: Evidence) {
     totals.set(label, (totals.get(label) ?? 0) + weight);
   }
   return [...totals]
-    .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))
+    .map(([name, value]) => ({ name, value: Number(value.toFixed(3)) }))
     .sort((left, right) => right.value - left.value);
 }
 
@@ -94,7 +94,7 @@ export function securityTypeAllocationChartData(evidence: Evidence) {
     totals.set(label, (totals.get(label) ?? 0) + weight);
   }
   return [...totals]
-    .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))
+    .map(([name, value]) => ({ name, value: Number(value.toFixed(3)) }))
     .sort((left, right) => right.value - left.value);
 }
 
@@ -107,7 +107,7 @@ export function topHoldingsChartData(evidence: Evidence, limit = 10) {
       return [
         {
           name: item.symbol.toUpperCase(),
-          value: Number(value.toFixed(1)),
+          value: Number(value.toFixed(3)),
           type: typeof item.type === "string" ? item.type : "security",
         },
       ];
@@ -120,7 +120,7 @@ export function topHoldingsChartData(evidence: Evidence, limit = 10) {
     .reduce((total, item) => total + item.value, 0);
   return [
     ...visible,
-    { name: "其他", value: Number(other.toFixed(1)), type: "other" },
+    { name: "其他", value: Number(other.toFixed(3)), type: "other" },
   ];
 }
 
@@ -193,7 +193,7 @@ export function concentrationMetrics(evidence: Evidence) {
     const value = finiteNumber(summary[`top${count}WeightPct`]);
     return value === null
       ? []
-      : [{ label: `Top ${count}`, value: Number(value.toFixed(1)) }];
+      : [{ label: `Top ${count}`, value: Number(value.toFixed(3)) }];
   });
 }
 

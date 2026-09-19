@@ -112,6 +112,28 @@ describe("週報圖表資料", () => {
     ]);
   });
 
+  it("配置圖表保留計算後的三位小數精度", () => {
+    const preciseEvidence = {
+      allocation: [
+        { market: "US", symbol: "AAPL", type: "stock", weightPct: 66.667 },
+        { market: "TWSE", symbol: "0050", type: "etf", weightPct: 33.333 },
+      ],
+    };
+
+    expect(marketAllocationChartData(preciseEvidence)).toEqual([
+      { name: "美股", value: 66.667 },
+      { name: "台股上市", value: 33.333 },
+    ]);
+    expect(securityTypeAllocationChartData(preciseEvidence)).toEqual([
+      { name: "股票", value: 66.667 },
+      { name: "ETF", value: 33.333 },
+    ]);
+    expect(topHoldingsChartData(preciseEvidence)).toEqual([
+      { name: "AAPL", value: 66.667, type: "stock" },
+      { name: "0050", value: 33.333, type: "etf" },
+    ]);
+  });
+
   it("依股票、ETF 與基金彙總資產類型", () => {
     expect(securityTypeAllocationChartData(evidence)).toEqual([
       { name: "股票", value: 55 },

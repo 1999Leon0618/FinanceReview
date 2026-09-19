@@ -122,6 +122,12 @@ const ResearchWorkspace = dynamic(
     loading: () => <p className="empty-state">正在載入研究工作區…</p>,
   },
 );
+const ResearchReportSettings = dynamic(
+  () => import("@/components/research-report-settings"),
+  {
+    loading: () => <p className="empty-state">正在載入報告設定…</p>,
+  },
+);
 
 type ViewAllSection = "accounts" | "loans" | "holdings" | "history" | "sold";
 export type { FinancePage } from "@/lib/dashboard-navigation";
@@ -1096,6 +1102,7 @@ export default function FinanceDashboard({
                   </button>
                 </div>
               </section>
+              {!demoMode && <ResearchReportSettings />}
               {!demoMode && (
                 <section
                   className="settings-panel"

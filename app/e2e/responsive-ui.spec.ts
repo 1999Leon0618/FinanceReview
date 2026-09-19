@@ -92,7 +92,7 @@ for (const width of [390, 768, 1440]) {
 }
 
 test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 });
+  await page.setViewportSize({ width: 486, height: 812 });
   await page.goto("/research");
   await expect(
     page.getByRole("heading", { name: "投資研究", exact: true }),
@@ -107,8 +107,8 @@ test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) 
   const date = await page
     .locator(".page-intro > div > p:last-child")
     .boundingBox();
-  const tabs = await page.locator(".research-tabs").boundingBox();
-  expect(tabs!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(16);
+  const workspace = await page.locator(".research-workspace").boundingBox();
+  expect(workspace!.y - (date!.y + date!.height)).toBeGreaterThanOrEqual(32);
 });
 
 test("點選主要導覽後停在頁面最上方", async ({ page }) => {

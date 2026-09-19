@@ -166,7 +166,28 @@ sequenceDiagram
 
 「設定」頁面的「報告設定」提供繁體中文、英文、日文選項，以及投資目標、期限、風險承受度與 API Key 管理。未設定 API Key 時仍可使用人工研究功能；產生週報時會提示先前往設定頁儲存金鑰。正式環境每週日 07:00（台灣時間）自動產生一份，手動按鈕則每按一次另存一份。
 
-週報依序呈現 `Portfolio Snapshot`、本週市場、`Portfolio Attribution`、`Portfolio Risk`、個股重要事件、下週觀察與 `Data Quality`。投資組合歸因只使用相鄰快照已記錄的資金流、市場與匯率變動比例；證據不足時不推測原因。超過單次上限的自選標的、研究報告或待辦會先依關聯標的的持倉占比由高到低排序，優先省略低占比與未持有標的；同占比才沿用既有順序。省略筆數會列在 `Data Quality`。
+週報依序呈現 `Portfolio Snapshot`、本週市場、`Portfolio Attribution`、`Portfolio Risk`、個股重要事件、下週觀察與 `Data Quality`。沒有有效內容的歸因、風險、事件、觀察或資料品質區段不顯示。超過單次上限的自選標的、研究報告或待辦會先依關聯標的的持倉占比由高到低排序，優先省略低占比與未持有標的；同占比才沿用既有順序。省略筆數只留在報告證據供除錯，不會成為一般使用者的 `Data Quality` 內容。
+
+週報管線保留既有四個研究 Agent 與最終撰稿者，不增加 Agent 數量；可確定計算的數學則由應用程式完成：
+
+```mermaid
+flowchart LR
+    DB[Portfolio Database] --> DA[Deterministic Analytics]
+    DA --> MD[Weekly Market Data]
+    MD --> ETF[ETF Holdings / Look-through]
+    ETF --> AG[4 Research Agents]
+    AG --> SCORE[Event Relevance Scoring]
+    SCORE --> WRITER[Coordinator / Final Writer]
+    WRITER --> REPORT[Structured Weekly Report]
+    REPORT --> UI[UI]
+```
+
+- `Weekly Performance` 使用結構化日行情，以「前一交易週最後收盤至本交易週最後收盤」計算 QQQ、SPY、臺灣加權指數與 0050；不會將自選清單的單日漲跌當成週報酬。市場報酬、資金流調整後的投資組合估算報酬與任兩次快照的變動會分開表達。
+- `Portfolio Attribution` 只在週初、週末快照為相鄰快照且間隔 3～10 天時產生，並用期初權重乘上標的週報酬估算貢獻；資料不足時回傳空陣列並省略區段。
+- ETF 穿透目前辨識 QQQ、VOO、0050、006208 與 TQQQ。Agent 只取得具日期與來源的成分資料，應用程式計算直接／間接底層曝險、ETF 重疊及主要重複持股。TQQQ 以三倍「每日目標名目曝險」表示，並保留每日重設、路徑相依、波動耗損與複利差異警語；不視為長期固定三倍曝險。
+- 個股事件由 Agent 判斷重要性、直接性、財務關聯與來源品質，再由應用程式結合持倉權重計算 0～100 分、每檔最多保留兩則並取全體前五則。ETF 管理公司或關係企業的交易會標成 `Manager-related activity` 並降權。下週事件也會依持倉關聯與事件類別排序後取前五則。
+- 外部研究來源以結構化物件保存；正文只能引用 `[sourceId]`，畫面再依已驗證的來源物件建立連結。模型產生的 Markdown 連結及裸網址會被移除，避免錯誤或串接網址。
+- `Data Quality` 最多顯示五項會影響解讀的限制，不顯示省略筆數、重試、Agent 執行或其他內部狀態。投資背景未填齊時仍可產生集中度、地域、ETF 重疊、穿透與槓桿等描述性風險，但不會產生個人化配置或交易建議。
 
 送至 OpenAI 的資料僅有自選標的、公開行情、研究報告、待辦，以及從最新快照計算的股票／ETF／基金持倉比例；不包含結構化的帳戶餘額、持倉數量或金額。若使用者自行在研究摘要或待辦文字寫入金額，該文字仍會傳送。投資背景未填齊時仍會整理市場，但不輸出個人化買賣方向。報告記錄產生時的語言、資料期間與使用的證據；AI 建議包含依據、觸發條件與風險，並不會自動下單。OpenAI API 的費用由使用者金鑰所屬帳戶承擔。
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { ResearchPreferences, WeeklyResearchReport } from "@/lib/types";
 import { requestJson } from "@/lib/client-request";
 
@@ -18,7 +19,65 @@ const attributionEffectLabels = {
   unknown: "無法判定",
 };
 
+type StructuredSource = {
+  id: string;
+  title: string;
+  publisher: string;
+  url: string;
+  publishedAt: string | null;
+};
+
+function evidenceSources(evidence: Record<string, unknown>) {
+  if (!Array.isArray(evidence.researchSources)) return [];
+  return evidence.researchSources.filter((value): value is StructuredSource => {
+    if (!value || typeof value !== "object") return false;
+    const source = value as Partial<StructuredSource>;
+    if (
+      typeof source.id !== "string" ||
+      typeof source.title !== "string" ||
+      typeof source.publisher !== "string" ||
+      typeof source.url !== "string" ||
+      !(typeof source.publishedAt === "string" || source.publishedAt === null)
+    )
+      return false;
+    try {
+      return new URL(source.url).protocol === "https:";
+    } catch {
+      return false;
+    }
+  });
+}
+
+function SourceText({
+  children,
+  sources,
+}: {
+  children: string;
+  sources: StructuredSource[];
+}) {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const parts = children.split(/(\[[A-Za-z0-9_-]+])/g);
+  return parts.map((part, index): ReactNode => {
+    const id = part.match(/^\[([A-Za-z0-9_-]+)]$/)?.[1];
+    const source = id ? byId.get(id) : null;
+    if (!source) return part;
+    return (
+      <a
+        key={`${source.id}-${index}`}
+        className="underline"
+        href={source.url}
+        target="_blank"
+        rel="noreferrer"
+        title={`${source.publisher}${source.publishedAt ? ` · ${source.publishedAt}` : ""}`}
+      >
+        [{source.title}]
+      </a>
+    );
+  });
+}
+
 function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
+  const structuredSources = evidenceSources(evidence);
   const allocation = (evidence.allocation ?? []) as Array<{
     market: string;
     symbol: string;
@@ -93,6 +152,27 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
           ))}
         </ul>
       )}
+      {structuredSources.length > 0 && (
+        <>
+          <p className="mt-4 font-semibold">外部結構化來源</p>
+          <ul className="mt-1 space-y-1">
+            {structuredSources.map((source) => (
+              <li key={source.id}>
+                <a
+                  className="underline"
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {source.title}
+                </a>
+                （{source.publisher}
+                {source.publishedAt ? `，${source.publishedAt}` : ""}）
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </details>
   );
 }
@@ -112,6 +192,7 @@ export default function WeeklyResearchPanel({
   const [message, setMessage] = useState("");
   const selected =
     reports.find((report) => report.id === selectedId) ?? reports[0];
+  const selectedSources = selected ? evidenceSources(selected.evidence) : [];
   const reload = useCallback(async () => {
     const [nextPreferences, nextReports] = await Promise.all([
       requestJson<ResearchPreferences>("/api/research-preferences"),
@@ -242,93 +323,128 @@ export default function WeeklyResearchPanel({
             </p>
             <h2 className="mt-3 text-2xl font-bold">Portfolio Snapshot</h2>
             <p className="mt-4 whitespace-pre-wrap leading-7">
-              {selected.content.portfolioSnapshot}
+              <SourceText sources={selectedSources}>
+                {selected.content.portfolioSnapshot}
+              </SourceText>
             </p>
             <h3 className="mt-7 text-lg font-bold">本週市場</h3>
             <p className="mt-2 whitespace-pre-wrap leading-7">
-              {selected.content.weeklyMarket}
+              <SourceText sources={selectedSources}>
+                {selected.content.weeklyMarket}
+              </SourceText>
             </p>
-            <h3 className="mt-7 text-lg font-bold">Portfolio Attribution</h3>
-            {selected.content.portfolioAttribution.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有足夠資料進行投資組合歸因。</p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {selected.content.portfolioAttribution.map((item, index) => (
-                  <li
-                    key={index}
-                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
-                  >
-                    <strong>
-                      {item.driver} · {attributionEffectLabels[item.effect]}
-                    </strong>
-                    <p>{item.explanation}</p>
-                  </li>
-                ))}
-              </ul>
+            {selected.content.portfolioAttribution.length > 0 && (
+              <>
+                <h3 className="mt-7 text-lg font-bold">
+                  Portfolio Attribution
+                </h3>
+                <ul className="mt-2 space-y-3">
+                  {selected.content.portfolioAttribution.map((item, index) => (
+                    <li
+                      key={index}
+                      className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                    >
+                      <strong>
+                        {item.driver} · {attributionEffectLabels[item.effect]}
+                      </strong>
+                      <p>
+                        <SourceText sources={selectedSources}>
+                          {item.explanation}
+                        </SourceText>
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
-            <h3 className="mt-7 text-lg font-bold">Portfolio Risk</h3>
-            {selected.content.portfolioRisk.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有個人化投資組合風險分析。</p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {selected.content.portfolioRisk.map((item, index) => (
-                  <li
-                    key={index}
-                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
-                  >
-                    <strong>{item.risk}</strong>
-                    <p>依據：{item.evidence}</p>
-                    <p className="text-sm">應對：{item.response}</p>
-                  </li>
-                ))}
-              </ul>
+            {selected.content.portfolioRisk.length > 0 && (
+              <>
+                <h3 className="mt-7 text-lg font-bold">Portfolio Risk</h3>
+                <ul className="mt-2 space-y-3">
+                  {selected.content.portfolioRisk.map((item, index) => (
+                    <li
+                      key={index}
+                      className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                    >
+                      <strong>
+                        <SourceText sources={selectedSources}>
+                          {item.risk}
+                        </SourceText>
+                      </strong>
+                      <p>
+                        依據：
+                        <SourceText sources={selectedSources}>
+                          {item.evidence}
+                        </SourceText>
+                      </p>
+                      <p className="text-sm">
+                        應對：
+                        <SourceText sources={selectedSources}>
+                          {item.response}
+                        </SourceText>
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
-            <h3 className="mt-7 text-lg font-bold">個股重要事件</h3>
-            {selected.content.securityEvents.length === 0 ? (
-              <p className="mt-2 text-sm">本週研究資料沒有可確認的個股事件。</p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {selected.content.securityEvents.map((item, index) => (
-                  <li
-                    key={`${item.symbol}-${index}`}
-                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
-                  >
-                    <strong>{item.symbol}</strong>
-                    <p>{item.event}</p>
-                    <p className="text-sm">
-                      投資組合關聯：{item.portfolioRelevance}
-                    </p>
-                    <p className="text-sm text-[#805b4e]">風險：{item.risk}</p>
-                  </li>
-                ))}
-              </ul>
+            {selected.content.securityEvents.length > 0 && (
+              <>
+                <h3 className="mt-7 text-lg font-bold">個股重要事件</h3>
+                <ul className="mt-2 space-y-3">
+                  {selected.content.securityEvents.map((item, index) => (
+                    <li
+                      key={`${item.symbol}-${index}`}
+                      className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                    >
+                      <strong>{item.symbol}</strong>
+                      <p>
+                        <SourceText sources={selectedSources}>
+                          {item.event}
+                        </SourceText>
+                      </p>
+                      <p className="text-sm">
+                        投資組合關聯：{item.portfolioRelevance}
+                      </p>
+                      <p className="text-sm text-[#805b4e]">
+                        風險：{item.risk}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
-            <h3 className="mt-7 text-lg font-bold">下週觀察</h3>
-            {selected.content.nextWeekWatch.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有下週觀察項目。</p>
-            ) : (
-              <ul className="mt-2 space-y-3">
-                {selected.content.nextWeekWatch.map((item, index) => (
-                  <li
-                    key={index}
-                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
-                  >
-                    <strong>{item.focus}</strong>
-                    <p>觀察條件：{item.condition}</p>
-                    <p className="text-sm">原因：{item.reason}</p>
-                  </li>
-                ))}
-              </ul>
+            {selected.content.nextWeekWatch.length > 0 && (
+              <>
+                <h3 className="mt-7 text-lg font-bold">下週觀察</h3>
+                <ul className="mt-2 space-y-3">
+                  {selected.content.nextWeekWatch.map((item, index) => (
+                    <li
+                      key={index}
+                      className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                    >
+                      <strong>{item.focus}</strong>
+                      <p>
+                        觀察條件：
+                        <SourceText sources={selectedSources}>
+                          {item.condition}
+                        </SourceText>
+                      </p>
+                      <p className="text-sm">原因：{item.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
-            <h3 className="mt-7 text-lg font-bold">Data Quality</h3>
-            {selected.content.dataQuality.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有已知的資料品質限制。</p>
-            ) : (
-              <ul className="mt-2 list-disc pl-5 text-sm">
-                {selected.content.dataQuality.map((item, index) => (
-                  <li key={index}>{item}</li>
-                ))}
-              </ul>
+            {selected.content.dataQuality.length > 0 && (
+              <>
+                <h3 className="mt-7 text-lg font-bold">Data Quality</h3>
+                <ul className="mt-2 list-disc pl-5 text-sm">
+                  {selected.content.dataQuality.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              </>
             )}
             <WeeklyEvidence evidence={selected.evidence} />
           </article>

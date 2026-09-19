@@ -18,16 +18,38 @@ export type AttributionChartItem = AllocationChartItem & {
   weeklyReturnPct: number;
 };
 
+export type LookThroughChartItem = {
+  name: string;
+  directPct: number;
+  etfIndirectPct: number;
+  leveragedAdjustmentPct: number;
+  totalDailyNominalExposurePct: number;
+};
+
+export type EtfOverlapChartItem = AllocationChartItem & {
+  commonHoldingsCount: number;
+};
+
 const marketLabels: Record<string, string> = {
   US: "美股",
   TWSE: "台股上市",
   TPEX: "台股上櫃",
+};
+const securityTypeLabels: Record<string, string> = {
+  stock: "股票",
+  etf: "ETF",
+  fund: "基金",
 };
 
 const finiteNumber = (value: unknown) => {
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
 };
+
+export function allocationTooltipText(name: unknown, value: unknown) {
+  const number = finiteNumber(value) ?? 0;
+  return `${typeof name === "string" && name ? name : "未分類"}占比：${number.toFixed(3)}%`;
+}
 
 function records(value: unknown) {
   return Array.isArray(value)
@@ -45,6 +67,21 @@ export function marketAllocationChartData(evidence: Evidence) {
     const weight = finiteNumber(item.weightPct);
     if (weight === null || weight <= 0) continue;
     const label = marketLabels[market.toUpperCase()] ?? market.toUpperCase();
+    totals.set(label, (totals.get(label) ?? 0) + weight);
+  }
+  return [...totals]
+    .map(([name, value]) => ({ name, value: Number(value.toFixed(1)) }))
+    .sort((left, right) => right.value - left.value);
+}
+
+export function securityTypeAllocationChartData(evidence: Evidence) {
+  const totals = new Map<string, number>();
+  for (const item of records(evidence.allocation)) {
+    const type =
+      typeof item.type === "string" ? item.type.toLowerCase() : "other";
+    const weight = finiteNumber(item.weightPct);
+    if (weight === null || weight <= 0) continue;
+    const label = securityTypeLabels[type] ?? "其他";
     totals.set(label, (totals.get(label) ?? 0) + weight);
   }
   return [...totals]
@@ -149,4 +186,89 @@ export function concentrationMetrics(evidence: Evidence) {
       ? []
       : [{ label: `Top ${count}`, value: Number(value.toFixed(1)) }];
   });
+}
+
+function etfLookThrough(evidence: Evidence) {
+  return evidence.etfLookThrough && typeof evidence.etfLookThrough === "object"
+    ? (evidence.etfLookThrough as Record<string, unknown>)
+    : null;
+}
+
+export function lookThroughExposureChartData(evidence: Evidence) {
+  const lookThrough = etfLookThrough(evidence);
+  if (!lookThrough) return [];
+  return records(lookThrough.topUnderlyingExposures)
+    .flatMap((item): LookThroughChartItem[] => {
+      const directPct = finiteNumber(item.directPct);
+      const etfIndirectPct = finiteNumber(item.indirectPct);
+      const dailyNominalIndirectPct = finiteNumber(
+        item.dailyNominalIndirectPct,
+      );
+      const total = finiteNumber(item.totalDailyNominalExposurePct);
+      if (
+        typeof item.symbol !== "string" ||
+        directPct === null ||
+        etfIndirectPct === null ||
+        dailyNominalIndirectPct === null ||
+        total === null ||
+        total <= 0
+      )
+        return [];
+      return [
+        {
+          name: item.symbol.toUpperCase(),
+          directPct: Number(directPct.toFixed(2)),
+          etfIndirectPct: Number(etfIndirectPct.toFixed(2)),
+          leveragedAdjustmentPct: Number(
+            Math.max(0, dailyNominalIndirectPct - etfIndirectPct).toFixed(2),
+          ),
+          totalDailyNominalExposurePct: Number(total.toFixed(2)),
+        },
+      ];
+    })
+    .sort(
+      (left, right) =>
+        right.totalDailyNominalExposurePct - left.totalDailyNominalExposurePct,
+    )
+    .slice(0, 10);
+}
+
+export function etfOverlapChartData(evidence: Evidence) {
+  const lookThrough = etfLookThrough(evidence);
+  if (!lookThrough) return [];
+  return records(lookThrough.overlaps)
+    .flatMap((item): EtfOverlapChartItem[] => {
+      const value = finiteNumber(item.overlapByWeightPct);
+      const commonHoldingsCount = finiteNumber(item.commonHoldingsCount);
+      if (
+        typeof item.left !== "string" ||
+        typeof item.right !== "string" ||
+        value === null ||
+        commonHoldingsCount === null ||
+        value <= 0
+      )
+        return [];
+      return [
+        {
+          name: `${item.left.toUpperCase()} × ${item.right.toUpperCase()}`,
+          value: Number(value.toFixed(2)),
+          commonHoldingsCount: Math.round(commonHoldingsCount),
+        },
+      ];
+    })
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 8);
+}
+
+export function indexExposureMetrics(evidence: Evidence) {
+  const lookThrough = etfLookThrough(evidence);
+  if (!lookThrough) return [];
+  return records(lookThrough.indexFamilyDailyNominalExposure).flatMap(
+    (item) => {
+      const value = finiteNumber(item.exposurePct);
+      return typeof item.indexName === "string" && value !== null && value > 0
+        ? [{ label: item.indexName, value: Number(value.toFixed(2)) }]
+        : [];
+    },
+  );
 }

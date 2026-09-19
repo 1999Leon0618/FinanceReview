@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocationTooltipText,
   attributionChartData,
   concentrationMetrics,
+  etfOverlapChartData,
+  indexExposureMetrics,
+  lookThroughExposureChartData,
   marketAllocationChartData,
+  securityTypeAllocationChartData,
   topHoldingsChartData,
   weeklyPerformanceChartData,
 } from "@/lib/research-chart-data";
@@ -52,6 +57,35 @@ describe("週報圖表資料", () => {
         },
       ],
     },
+    etfLookThrough: {
+      topUnderlyingExposures: [
+        {
+          symbol: "AAPL",
+          directPct: 30,
+          indirectPct: 4,
+          dailyNominalIndirectPct: 5,
+          totalDailyNominalExposurePct: 35,
+        },
+        {
+          symbol: "2330",
+          directPct: 0,
+          indirectPct: 14.5,
+          dailyNominalIndirectPct: 14.5,
+          totalDailyNominalExposurePct: 14.5,
+        },
+      ],
+      overlaps: [
+        {
+          left: "0050",
+          right: "006208",
+          overlapByWeightPct: 86.5,
+          commonHoldingsCount: 42,
+        },
+      ],
+      indexFamilyDailyNominalExposure: [
+        { indexName: "Nasdaq-100", exposurePct: 28.1 },
+      ],
+    },
   };
 
   it("依市場彙總證券部位占比", () => {
@@ -59,6 +93,17 @@ describe("週報圖表資料", () => {
       { name: "美股", value: 55 },
       { name: "台股上市", value: 40 },
       { name: "台股上櫃", value: 5 },
+    ]);
+  });
+
+  it("圓環圖提示同時顯示分類名稱與三位小數", () => {
+    expect(allocationTooltipText("美股", 77.9)).toBe("美股占比：77.900%");
+  });
+
+  it("依股票、ETF 與基金彙總資產類型", () => {
+    expect(securityTypeAllocationChartData(evidence)).toEqual([
+      { name: "股票", value: 55 },
+      { name: "ETF", value: 45 },
     ]);
   });
 
@@ -107,13 +152,46 @@ describe("週報圖表資料", () => {
     ]);
   });
 
+  it("整理 ETF 穿透、槓桿增額、重疊與指數名目曝險", () => {
+    expect(lookThroughExposureChartData(evidence)).toEqual([
+      {
+        name: "AAPL",
+        directPct: 30,
+        etfIndirectPct: 4,
+        leveragedAdjustmentPct: 1,
+        totalDailyNominalExposurePct: 35,
+      },
+      {
+        name: "2330",
+        directPct: 0,
+        etfIndirectPct: 14.5,
+        leveragedAdjustmentPct: 0,
+        totalDailyNominalExposurePct: 14.5,
+      },
+    ]);
+    expect(etfOverlapChartData(evidence)).toEqual([
+      {
+        name: "0050 × 006208",
+        value: 86.5,
+        commonHoldingsCount: 42,
+      },
+    ]);
+    expect(indexExposureMetrics(evidence)).toEqual([
+      { label: "Nasdaq-100", value: 28.1 },
+    ]);
+  });
+
   it("缺少或異常 evidence 時不產生誤導圖表", () => {
     expect(
       marketAllocationChartData({ allocation: [{ weightPct: "bad" }] }),
     ).toEqual([]);
+    expect(securityTypeAllocationChartData({})).toEqual([]);
     expect(topHoldingsChartData({})).toEqual([]);
     expect(weeklyPerformanceChartData({})).toEqual([]);
     expect(attributionChartData({})).toEqual([]);
     expect(concentrationMetrics({})).toEqual([]);
+    expect(lookThroughExposureChartData({})).toEqual([]);
+    expect(etfOverlapChartData({})).toEqual([]);
+    expect(indexExposureMetrics({})).toEqual([]);
   });
 });

@@ -20,9 +20,14 @@ import {
 import type { ResearchPreferences, WeeklyResearchReport } from "@/lib/types";
 import { requestJson } from "@/lib/client-request";
 import {
+  allocationTooltipText,
   attributionChartData,
   concentrationMetrics,
+  etfOverlapChartData,
+  indexExposureMetrics,
+  lookThroughExposureChartData,
   marketAllocationChartData,
+  securityTypeAllocationChartData,
   topHoldingsChartData,
   weeklyPerformanceChartData,
 } from "@/lib/research-chart-data";
@@ -52,6 +57,23 @@ const percentTooltip = (value: unknown): [string, string] => [
   `${Number(value ?? 0).toFixed(2)}%`,
   "占比",
 ];
+type PieTooltipProps = {
+  active?: boolean;
+  payload?: Array<{
+    value?: number | string;
+    payload?: { name?: string };
+  }>;
+};
+
+function MarketPieTooltip({ active, payload }: PieTooltipProps) {
+  const item = payload?.[0];
+  if (!active || !item) return null;
+  return (
+    <div className="rounded-lg border border-[#dce4dd] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm dark:border-white/10">
+      {allocationTooltipText(item.payload?.name, item.value)}
+    </div>
+  );
+}
 
 function PortfolioSnapshotCharts({
   evidence,
@@ -59,10 +81,12 @@ function PortfolioSnapshotCharts({
   evidence: Record<string, unknown>;
 }) {
   const marketData = marketAllocationChartData(evidence);
+  const securityTypeData = securityTypeAllocationChartData(evidence);
   const holdingsData = topHoldingsChartData(evidence);
   const concentration = concentrationMetrics(evidence);
   if (
     marketData.length === 0 &&
+    securityTypeData.length === 0 &&
     holdingsData.length === 0 &&
     concentration.length === 0
   )
@@ -106,7 +130,37 @@ function PortfolioSnapshotCharts({
                       />
                     ))}
                   </Pie>
-                  <Tooltip formatter={percentTooltip} />
+                  <Tooltip content={<MarketPieTooltip />} />
+                  <Legend verticalAlign="bottom" iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </figure>
+        )}
+        {securityTypeData.length > 0 && (
+          <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+            <figcaption className="font-bold">資產類型占比</figcaption>
+            <p className="text-xs text-[#718078]">股票、ETF 與基金配置</p>
+            <div className="h-64" aria-label="各類型證券部位占比圓環圖">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={securityTypeData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius="48%"
+                    outerRadius="72%"
+                    paddingAngle={2}
+                    isAnimationActive={false}
+                  >
+                    {securityTypeData.map((item, index) => (
+                      <Cell
+                        key={item.name}
+                        fill={chartColors[index % chartColors.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<MarketPieTooltip />} />
                   <Legend verticalAlign="bottom" iconType="circle" />
                 </PieChart>
               </ResponsiveContainer>
@@ -114,7 +168,7 @@ function PortfolioSnapshotCharts({
           </figure>
         )}
         {holdingsData.length > 0 && (
-          <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+          <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10 lg:col-span-2">
             <figcaption className="font-bold">主要持倉</figcaption>
             <p className="text-xs text-[#718078]">
               前十大持倉；其餘標的合併為「其他」
@@ -159,6 +213,149 @@ function PortfolioSnapshotCharts({
           </figure>
         )}
       </div>
+    </section>
+  );
+}
+
+function portfolioRiskChartData(evidence: Record<string, unknown>) {
+  return {
+    lookThrough: lookThroughExposureChartData(evidence),
+    overlaps: etfOverlapChartData(evidence),
+    indexExposure: indexExposureMetrics(evidence),
+  };
+}
+
+function PortfolioRiskCharts({
+  evidence,
+}: {
+  evidence: Record<string, unknown>;
+}) {
+  const { lookThrough, overlaps, indexExposure } =
+    portfolioRiskChartData(evidence);
+  if (
+    lookThrough.length === 0 &&
+    overlaps.length === 0 &&
+    indexExposure.length === 0
+  )
+    return null;
+  return (
+    <section className="mt-4 space-y-4" aria-label="投資組合穿透與重疊圖表">
+      {indexExposure.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {indexExposure.map((item) => (
+            <div
+              key={item.label}
+              className="rounded-xl bg-[#f4f7ef] p-3 dark:bg-white/5"
+            >
+              <p className="text-xs text-[#718078]">
+                {item.label} 每日目標名目曝險
+              </p>
+              <strong className="mt-1 block text-lg">{item.value}%</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      {lookThrough.length > 0 && (
+        <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+          <figcaption className="font-bold">底層標的穿透曝險</figcaption>
+          <p className="text-xs text-[#718078]">
+            直接持有＋ETF 間接曝險＋槓桿 ETF 每日名目增額
+          </p>
+          <div
+            style={{ height: Math.max(240, lookThrough.length * 42) }}
+            aria-label="底層標的直接與間接曝險堆疊圖"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={lookThrough}
+                layout="vertical"
+                margin={{ top: 12, right: 52, bottom: 8, left: 8 }}
+              >
+                <CartesianGrid horizontal={false} stroke="var(--line)" />
+                <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={62}
+                  tick={{ fontSize: 11 }}
+                />
+                <Tooltip formatter={percentTooltip} />
+                <Legend />
+                <Bar
+                  dataKey="directPct"
+                  name="直接持有"
+                  stackId="exposure"
+                  fill="var(--chart-1)"
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="etfIndirectPct"
+                  name="ETF 間接"
+                  stackId="exposure"
+                  fill="var(--chart-2)"
+                  isAnimationActive={false}
+                />
+                <Bar
+                  dataKey="leveragedAdjustmentPct"
+                  name="槓桿每日增額"
+                  stackId="exposure"
+                  fill="var(--chart-4)"
+                  radius={[0, 4, 4, 0]}
+                  isAnimationActive={false}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </figure>
+      )}
+      {overlaps.length > 0 && (
+        <figure className="rounded-xl border border-[#dce4dd] p-3 dark:border-white/10">
+          <figcaption className="font-bold">ETF 重疊</figcaption>
+          <p className="text-xs text-[#718078]">依共同成分權重估算</p>
+          <div
+            style={{ height: Math.max(200, overlaps.length * 46) }}
+            aria-label="ETF 配對重疊比例圖"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={overlaps}
+                layout="vertical"
+                margin={{ top: 12, right: 52, bottom: 8, left: 8 }}
+              >
+                <CartesianGrid horizontal={false} stroke="var(--line)" />
+                <XAxis type="number" unit="%" tick={{ fontSize: 11 }} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={108}
+                  tick={{ fontSize: 11 }}
+                />
+                <Tooltip
+                  formatter={(value, _name, entry) => [
+                    `${Number(value ?? 0).toFixed(2)}%（${entry.payload.commonHoldingsCount} 檔共同持股）`,
+                    "重疊比例",
+                  ]}
+                />
+                <Bar
+                  dataKey="value"
+                  name="重疊比例"
+                  fill="var(--chart-2)"
+                  radius={[0, 4, 4, 0]}
+                  isAnimationActive={false}
+                >
+                  <LabelList
+                    dataKey="value"
+                    position="right"
+                    formatter={(value: unknown) => `${Number(value)}%`}
+                    fill="var(--foreground)"
+                    fontSize={11}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </figure>
+      )}
     </section>
   );
 }
@@ -377,8 +574,8 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
         <ul className="mt-1 space-y-1">
           {allocation.map((item, index) => (
             <li key={`${item.market}-${item.symbol}-${index}`}>
-              {item.market} {item.symbol}：{item.weightPct}%（行情{" "}
-              {item.quoteAsOf?.slice(0, 10) ?? "日期不明"}）
+              {item.market} {item.symbol}：{Number(item.weightPct).toFixed(3)}%
+              （行情 {item.quoteAsOf?.slice(0, 10) ?? "日期不明"}）
             </li>
           ))}
         </ul>
@@ -465,6 +662,13 @@ export default function WeeklyResearchPanel({
   const selected =
     reports.find((report) => report.id === selectedId) ?? reports[0];
   const selectedSources = selected ? evidenceSources(selected.evidence) : [];
+  const selectedRiskCharts = selected
+    ? portfolioRiskChartData(selected.evidence)
+    : { lookThrough: [], overlaps: [], indexExposure: [] };
+  const hasSelectedRiskCharts =
+    selectedRiskCharts.lookThrough.length > 0 ||
+    selectedRiskCharts.overlaps.length > 0 ||
+    selectedRiskCharts.indexExposure.length > 0;
   const reload = useCallback(async () => {
     const [nextPreferences, nextReports] = await Promise.all([
       requestJson<ResearchPreferences>("/api/research-preferences"),
@@ -632,35 +836,39 @@ export default function WeeklyResearchPanel({
                 </ul>
               </>
             )}
-            {selected.content.portfolioRisk.length > 0 && (
+            {(selected.content.portfolioRisk.length > 0 ||
+              hasSelectedRiskCharts) && (
               <>
                 <h3 className="mt-7 text-lg font-bold">Portfolio Risk</h3>
-                <ul className="mt-2 space-y-3">
-                  {selected.content.portfolioRisk.map((item, index) => (
-                    <li
-                      key={index}
-                      className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
-                    >
-                      <strong>
-                        <SourceText sources={selectedSources}>
-                          {item.risk}
-                        </SourceText>
-                      </strong>
-                      <p>
-                        依據：
-                        <SourceText sources={selectedSources}>
-                          {item.evidence}
-                        </SourceText>
-                      </p>
-                      <p className="text-sm">
-                        應對：
-                        <SourceText sources={selectedSources}>
-                          {item.response}
-                        </SourceText>
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <PortfolioRiskCharts evidence={selected.evidence} />
+                {selected.content.portfolioRisk.length > 0 && (
+                  <ul className="mt-2 space-y-3">
+                    {selected.content.portfolioRisk.map((item, index) => (
+                      <li
+                        key={index}
+                        className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                      >
+                        <strong>
+                          <SourceText sources={selectedSources}>
+                            {item.risk}
+                          </SourceText>
+                        </strong>
+                        <p>
+                          依據：
+                          <SourceText sources={selectedSources}>
+                            {item.evidence}
+                          </SourceText>
+                        </p>
+                        <p className="text-sm">
+                          應對：
+                          <SourceText sources={selectedSources}>
+                            {item.response}
+                          </SourceText>
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
             {selected.content.securityEvents.length > 0 && (

@@ -38,6 +38,7 @@ import type {
 
 type Row = Record<string, unknown>;
 const model = "gpt-5.6-terra";
+const allocationDecimalPlaces = 3;
 const languageSchema = z.enum(["zh-TW", "en", "ja"]);
 const preferencesSchema = z.object({
   reportLanguage: languageSchema,
@@ -563,7 +564,11 @@ export async function buildWeeklyEvidence(
     weightPct: denominator.isZero()
       ? 0
       : Number(
-          item.value.div(denominator).mul(100).toDecimalPlaces(1).toString(),
+          item.value
+            .div(denominator)
+            .mul(100)
+            .toDecimalPlaces(allocationDecimalPlaces)
+            .toString(),
         ),
     quoteAsOf: item.asOf,
     quoteStatus: item.status,
@@ -576,7 +581,7 @@ export async function buildWeeklyEvidence(
       allocationByWeight
         .slice(0, count)
         .reduce((sum, item) => sum.plus(item.weightPct), new Decimal(0))
-        .toDecimalPlaces(1)
+        .toDecimalPlaces(allocationDecimalPlaces)
         .toString(),
     );
   const marketWeightPct = Object.fromEntries(
@@ -586,7 +591,7 @@ export async function buildWeeklyEvidence(
         allocation
           .filter((item) => item.market === market)
           .reduce((sum, item) => sum.plus(item.weightPct), new Decimal(0))
-          .toDecimalPlaces(1)
+          .toDecimalPlaces(allocationDecimalPlaces)
           .toString(),
       ),
     ]),
@@ -596,7 +601,7 @@ export async function buildWeeklyEvidence(
     listedWeightPct: Number(
       allocation
         .reduce((sum, item) => sum.plus(item.weightPct), new Decimal(0))
-        .toDecimalPlaces(1)
+        .toDecimalPlaces(allocationDecimalPlaces)
         .toString(),
     ),
     top1WeightPct: sumTopWeights(1),

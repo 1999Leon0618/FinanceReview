@@ -151,7 +151,13 @@ describe("每週研究報告", () => {
         Object.fromEntries(
           evidence.allocation.map((item) => [item.symbol, item.weightPct]),
         ),
-      ).toEqual({ AAPL: 66.7, "0050": 33.3 });
+      ).toEqual({ AAPL: 66.667, "0050": 33.333 });
+      expect(evidence.portfolioSummary).toMatchObject({
+        listedWeightPct: 100,
+        top1WeightPct: 66.667,
+        top3WeightPct: 100,
+        marketWeightPct: { US: 66.667, TWSE: 33.333 },
+      });
       expect(evidence.watchlist.map((item) => item.symbol)).toEqual([
         "AAPL",
         "0050",

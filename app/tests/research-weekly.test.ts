@@ -15,6 +15,7 @@ import {
   getWeeklyReport,
   getResearchPreferences,
   listWeeklyReports,
+  prioritizeByPortfolioWeight,
   saveResearchApiKey,
   saveResearchPreferences,
   weeklyWindow,
@@ -38,6 +39,27 @@ afterAll(() => {
 });
 
 describe("每週研究報告", () => {
+  it("超過上限時優先保留高占比項目，且同占比維持原順序", () => {
+    const items = Array.from({ length: 51 }, (_, index) => ({
+      id: `item-${index}`,
+      weight: index === 50 ? 80 : index === 49 ? 0.1 : 0,
+    }));
+
+    const retained = prioritizeByPortfolioWeight(
+      items,
+      (item) => item.weight,
+    ).slice(0, 50);
+
+    expect(retained[0].id).toBe("item-50");
+    expect(retained[1].id).toBe("item-49");
+    expect(retained.map((item) => item.id)).not.toContain("item-48");
+    expect(retained.slice(2, 5).map((item) => item.id)).toEqual([
+      "item-0",
+      "item-1",
+      "item-2",
+    ]);
+  });
+
   it("以台灣週一界定週期，且缺少金鑰時拒絕生成", async () => {
     expect(weeklyWindow(now)).toEqual({
       weekStart: "2026-09-14",
@@ -85,7 +107,7 @@ describe("每週研究報告", () => {
                 name: "台灣50",
                 securityType: "etf",
                 quoteCurrency: "TWD",
-                quantity: "100",
+                quantity: "50",
                 averageCost: "100",
                 marketPrice: "200",
                 quoteAsOf: now.toISOString(),
@@ -98,7 +120,7 @@ describe("每週研究報告", () => {
                 name: "Apple",
                 securityType: "stock",
                 quoteCurrency: "TWD",
-                quantity: "50",
+                quantity: "100",
                 averageCost: "100",
                 marketPrice: "200",
                 quoteAsOf: now.toISOString(),
@@ -114,7 +136,11 @@ describe("每週研究報告", () => {
         Object.fromEntries(
           evidence.allocation.map((item) => [item.symbol, item.weightPct]),
         ),
-      ).toEqual({ AAPL: 33.3, "0050": 66.7 });
+      ).toEqual({ AAPL: 66.7, "0050": 33.3 });
+      expect(evidence.watchlist.map((item) => item.symbol)).toEqual([
+        "AAPL",
+        "0050",
+      ]);
       expect(JSON.stringify(evidence)).not.toContain("20000");
       expect(JSON.stringify(evidence)).not.toContain("10000");
       expect(JSON.stringify(evidence)).not.toContain("測試券商");

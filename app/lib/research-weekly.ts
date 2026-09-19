@@ -230,6 +230,18 @@ export function weeklyWindow(date: Date) {
   };
 }
 
+export function prioritizeByPortfolioWeight<T>(
+  items: T[],
+  weightOf: (item: T) => number,
+) {
+  return items
+    .map((item, index) => ({ item, index, weight: weightOf(item) }))
+    .sort(
+      (left, right) => right.weight - left.weight || left.index - right.index,
+    )
+    .map(({ item }) => item);
+}
+
 export async function buildWeeklyEvidence(now: Date) {
   const { weekStart, periodEnd } = weeklyWindow(now);
   const [snapshot, watchlist, notes, todos] = await Promise.all([
@@ -292,6 +304,33 @@ export async function buildWeeklyEvidence(now: Date) {
       note.asOf < periodEnd,
   );
   const enabledWatchlist = watchlist.filter((item) => item.enabled);
+  const allocationWeight = new Map(
+    allocation.map((item) => [`${item.market}:${item.symbol}`, item.weightPct]),
+  );
+  const watchlistWeight = new Map(
+    watchlist.map((item) => [
+      item.id,
+      allocationWeight.get(`${item.market}:${item.symbol}`) ?? 0,
+    ]),
+  );
+  const prioritizedWatchlist = prioritizeByPortfolioWeight(
+    enabledWatchlist,
+    (item) => watchlistWeight.get(item.id) ?? 0,
+  );
+  const prioritizedNotes = prioritizeByPortfolioWeight(eligibleNotes, (note) =>
+    Math.max(
+      0,
+      ...note.quoteSnapshots.map(
+        (quote) => allocationWeight.get(`${quote.market}:${quote.symbol}`) ?? 0,
+      ),
+    ),
+  );
+  const prioritizedTodos = prioritizeByPortfolioWeight(todos, (todo) =>
+    Math.max(
+      0,
+      ...todo.watchlistItemIds.map((id) => watchlistWeight.get(id) ?? 0),
+    ),
+  );
   const previousSnapshot = snapshot?.baseSnapshotId
     ? await getSnapshotDetail(snapshot.baseSnapshotId)
     : null;
@@ -353,7 +392,7 @@ export async function buildWeeklyEvidence(now: Date) {
       researchNotes: Math.max(0, eligibleNotes.length - 30),
       todos: Math.max(0, todos.length - 50),
     },
-    watchlist: enabledWatchlist.slice(0, 50).map((item) => ({
+    watchlist: prioritizedWatchlist.slice(0, 50).map((item) => ({
       symbol: item.symbol,
       market: item.market,
       held: item.held,
@@ -362,7 +401,7 @@ export async function buildWeeklyEvidence(now: Date) {
       quoteAsOf: item.quote.quoteAsOf,
       status: item.quote.status,
     })),
-    researchNotes: eligibleNotes.slice(0, 30).map((note) => ({
+    researchNotes: prioritizedNotes.slice(0, 30).map((note) => ({
       id: note.id,
       title: note.title,
       summary: note.summary,
@@ -377,7 +416,7 @@ export async function buildWeeklyEvidence(now: Date) {
         publishedAt: source.publishedAt,
       })),
     })),
-    todos: todos.slice(0, 50).map((todo) => ({
+    todos: prioritizedTodos.slice(0, 50).map((todo) => ({
       title: todo.title,
       details: todo.details,
       status: todo.status,

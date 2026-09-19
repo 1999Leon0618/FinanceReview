@@ -27,6 +27,7 @@ import {
   indexExposureMetrics,
   lookThroughExposureChartData,
   marketAllocationChartData,
+  namedPercentTooltip,
   securityTypeAllocationChartData,
   topHoldingsChartData,
   weeklyPerformanceChartData,
@@ -52,6 +53,11 @@ const chartColors = [
   "var(--chart-4)",
   "var(--muted)",
 ];
+const lookThroughColors = {
+  direct: "#2563eb",
+  indirect: "#f59e0b",
+  leveraged: "#db2777",
+};
 
 const percentTooltip = (value: unknown): [string, string] => [
   `${Number(value ?? 0).toFixed(2)}%`,
@@ -279,27 +285,27 @@ function PortfolioRiskCharts({
                   width={62}
                   tick={{ fontSize: 11 }}
                 />
-                <Tooltip formatter={percentTooltip} />
+                <Tooltip formatter={namedPercentTooltip} />
                 <Legend />
                 <Bar
                   dataKey="directPct"
                   name="直接持有"
                   stackId="exposure"
-                  fill="var(--chart-1)"
+                  fill={lookThroughColors.direct}
                   isAnimationActive={false}
                 />
                 <Bar
                   dataKey="etfIndirectPct"
                   name="ETF 間接"
                   stackId="exposure"
-                  fill="var(--chart-2)"
+                  fill={lookThroughColors.indirect}
                   isAnimationActive={false}
                 />
                 <Bar
                   dataKey="leveragedAdjustmentPct"
                   name="槓桿每日增額"
                   stackId="exposure"
-                  fill="var(--chart-4)"
+                  fill={lookThroughColors.leveraged}
                   radius={[0, 4, 4, 0]}
                   isAnimationActive={false}
                 />

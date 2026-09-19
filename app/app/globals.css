@@ -176,6 +176,12 @@
   --muted: #647369;
   --brand: #1b382b;
   --accent: #d8f07a;
+  --chart-1: #315d48;
+  --chart-2: #668559;
+  --chart-3: #9db46f;
+  --chart-4: #d8f07a;
+  --chart-positive: #2f7a4f;
+  --chart-negative: #b85555;
   color-scheme: light;
 }
 
@@ -186,6 +192,12 @@ html.dark {
   --line: #2a3a30;
   --muted: #99a79e;
   --brand: #d8f07a;
+  --chart-1: #d8f07a;
+  --chart-2: #a9c889;
+  --chart-3: #78a17b;
+  --chart-4: #4f7664;
+  --chart-positive: #7fc99a;
+  --chart-negative: #e58a8a;
   color-scheme: dark;
 }
 

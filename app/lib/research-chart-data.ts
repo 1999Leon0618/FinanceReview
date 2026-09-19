@@ -51,6 +51,15 @@ export function allocationTooltipText(name: unknown, value: unknown) {
   return `${typeof name === "string" && name ? name : "未分類"}占比：${number.toFixed(3)}%`;
 }
 
+export function namedPercentTooltip(
+  value: unknown,
+  name: unknown,
+): [string, string] {
+  const number = finiteNumber(value) ?? 0;
+  const source = typeof name === "string" && name ? name : "占比";
+  return [`${number.toFixed(3)}%`, source];
+}
+
 function records(value: unknown) {
   return Array.isArray(value)
     ? value.filter(

@@ -7,6 +7,7 @@ import {
   indexExposureMetrics,
   lookThroughExposureChartData,
   marketAllocationChartData,
+  namedPercentTooltip,
   securityTypeAllocationChartData,
   topHoldingsChartData,
   weeklyPerformanceChartData,
@@ -98,6 +99,17 @@ describe("週報圖表資料", () => {
 
   it("圓環圖提示同時顯示分類名稱與三位小數", () => {
     expect(allocationTooltipText("美股", 77.9)).toBe("美股占比：77.900%");
+  });
+
+  it("穿透曝險提示保留資料來源名稱", () => {
+    expect(namedPercentTooltip(11.5, "直接持有")).toEqual([
+      "11.500%",
+      "直接持有",
+    ]);
+    expect(namedPercentTooltip(0.87, "ETF 間接")).toEqual([
+      "0.870%",
+      "ETF 間接",
+    ]);
   });
 
   it("配置圖表保留計算後的三位小數精度", () => {

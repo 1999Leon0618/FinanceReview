@@ -12,8 +12,10 @@ import {
   deleteResearchApiKey,
   generateScheduledReports,
   generateWeeklyReport,
+  getWeeklyReport,
   getResearchPreferences,
   listWeeklyReports,
+  prioritizeByPortfolioWeight,
   saveResearchApiKey,
   saveResearchPreferences,
   weeklyWindow,
@@ -26,6 +28,7 @@ process.env.RESEARCH_KEY_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
 );
 const ownerA = dataOwnerFromEmail("weekly-a@example.com");
 const ownerB = dataOwnerFromEmail("weekly-b@example.com");
+const ownerC = dataOwnerFromEmail("weekly-c@example.com");
 const now = new Date("2026-09-20T00:00:00.000Z");
 
 beforeAll(() => closeDatabaseForTests());
@@ -36,6 +39,27 @@ afterAll(() => {
 });
 
 describe("每週研究報告", () => {
+  it("超過上限時優先保留高占比項目，且同占比維持原順序", () => {
+    const items = Array.from({ length: 51 }, (_, index) => ({
+      id: `item-${index}`,
+      weight: index === 50 ? 80 : index === 49 ? 0.1 : 0,
+    }));
+
+    const retained = prioritizeByPortfolioWeight(
+      items,
+      (item) => item.weight,
+    ).slice(0, 50);
+
+    expect(retained[0].id).toBe("item-50");
+    expect(retained[1].id).toBe("item-49");
+    expect(retained.map((item) => item.id)).not.toContain("item-48");
+    expect(retained.slice(2, 5).map((item) => item.id)).toEqual([
+      "item-0",
+      "item-1",
+      "item-2",
+    ]);
+  });
+
   it("以台灣週一界定週期，且缺少金鑰時拒絕生成", async () => {
     expect(weeklyWindow(now)).toEqual({
       weekStart: "2026-09-14",
@@ -83,7 +107,7 @@ describe("每週研究報告", () => {
                 name: "台灣50",
                 securityType: "etf",
                 quoteCurrency: "TWD",
-                quantity: "100",
+                quantity: "50",
                 averageCost: "100",
                 marketPrice: "200",
                 quoteAsOf: now.toISOString(),
@@ -96,7 +120,7 @@ describe("每週研究報告", () => {
                 name: "Apple",
                 securityType: "stock",
                 quoteCurrency: "TWD",
-                quantity: "50",
+                quantity: "100",
                 averageCost: "100",
                 marketPrice: "200",
                 quoteAsOf: now.toISOString(),
@@ -112,30 +136,47 @@ describe("每週研究報告", () => {
         Object.fromEntries(
           evidence.allocation.map((item) => [item.symbol, item.weightPct]),
         ),
-      ).toEqual({ AAPL: 33.3, "0050": 66.7 });
+      ).toEqual({ AAPL: 66.7, "0050": 33.3 });
+      expect(evidence.watchlist.map((item) => item.symbol)).toEqual([
+        "AAPL",
+        "0050",
+      ]);
       expect(JSON.stringify(evidence)).not.toContain("20000");
       expect(JSON.stringify(evidence)).not.toContain("10000");
       expect(JSON.stringify(evidence)).not.toContain("測試券商");
       const content = {
-        summary: "Weekly summary",
-        marketReview: "Markets reviewed",
-        allocationAdvice: [
+        portfolioSnapshot: "Weekly snapshot",
+        weeklyMarket: "Markets reviewed",
+        portfolioAttribution: [
           {
-            action: "Diversify",
-            rationale: "Concentration",
-            risk: "Volatility",
+            driver: "AAPL",
+            effect: "positive",
+            explanation: "Positive contribution",
           },
         ],
-        securityAdvice: [
+        portfolioRisk: [
+          {
+            risk: "Concentration",
+            evidence: "Top holding weight",
+            response: "Review allocation",
+          },
+        ],
+        securityEvents: [
           {
             symbol: "AAPL",
-            direction: "watch",
-            rationale: "Price action",
-            condition: "Confirm earnings",
+            event: "Earnings announcement",
+            portfolioRelevance: "Held security",
             risk: "Volatility",
           },
         ],
-        caveats: [],
+        nextWeekWatch: [
+          {
+            focus: "AAPL earnings",
+            condition: "Guidance changes",
+            reason: "May affect valuation",
+          },
+        ],
+        dataQuality: [],
       };
       const fetchMock = vi
         .spyOn(globalThis, "fetch")
@@ -204,30 +245,84 @@ describe("每週研究報告", () => {
         new Response(
           JSON.stringify({
             output_text: JSON.stringify({
-              summary: "市場整理",
-              marketReview: "行情整理",
-              allocationAdvice: [
-                { action: "買入", rationale: "測試", risk: "測試" },
+              portfolioSnapshot: "投資組合摘要",
+              weeklyMarket: "行情整理",
+              portfolioAttribution: [],
+              portfolioRisk: [
+                { risk: "集中度", evidence: "測試", response: "測試" },
               ],
-              securityAdvice: [
+              securityEvents: [
                 {
                   symbol: "AAPL",
-                  direction: "buy",
-                  rationale: "測試",
-                  condition: "測試",
+                  event: "財報",
+                  portfolioRelevance: "測試",
                   risk: "測試",
                 },
               ],
-              caveats: [],
+              nextWeekWatch: [
+                { focus: "利率", condition: "數據公布", reason: "測試" },
+              ],
+              dataQuality: [],
             }),
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
       );
       const report = await generateWeeklyReport("manual", now);
-      expect(report.content.allocationAdvice).toEqual([]);
-      expect(report.content.securityAdvice).toEqual([]);
+      expect(report.content.portfolioRisk).toEqual([]);
+      expect(report.content.nextWeekWatch).toHaveLength(1);
+      expect(report.content.dataQuality).toContain(
+        "投資背景未填齊，未產生個人化 Portfolio Risk。",
+      );
       vi.restoreAllMocks();
+    });
+  });
+
+  it("讀取舊版週報時轉換為新版七段結構", async () => {
+    await runWithDataOwner(ownerC, async () => {
+      const db = await getDatabase();
+      const id = "legacy-weekly-report";
+      await db
+        .prepare(
+          `INSERT INTO weekly_research_reports(id, owner_key, week_start, period_end,
+          generated_at, trigger_type, language, model, content_json, evidence_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          ownerC.key,
+          "2026-09-14",
+          now.toISOString(),
+          now.toISOString(),
+          "manual",
+          "zh-TW",
+          "legacy-model",
+          JSON.stringify({
+            summary: "舊摘要",
+            marketReview: "舊市場回顧",
+            allocationAdvice: [
+              { action: "分散", rationale: "集中度", risk: "波動" },
+            ],
+            securityAdvice: [
+              {
+                symbol: "AAPL",
+                direction: "watch",
+                rationale: "財報",
+                condition: "營收變化",
+                risk: "波動",
+              },
+            ],
+            caveats: ["舊資料限制"],
+          }),
+          "{}",
+        );
+
+      const report = await getWeeklyReport(id);
+      expect(report?.content.portfolioSnapshot).toBe("舊摘要");
+      expect(report?.content.weeklyMarket).toBe("舊市場回顧");
+      expect(report?.content.portfolioRisk).toHaveLength(1);
+      expect(report?.content.nextWeekWatch).toHaveLength(1);
+      expect(report?.content.dataQuality).toEqual(["舊資料限制"]);
     });
   });
 });

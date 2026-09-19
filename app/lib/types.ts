@@ -434,17 +434,30 @@ export interface ResearchPreferences {
 }
 
 export interface WeeklyResearchContent {
-  summary: string;
-  marketReview: string;
-  allocationAdvice: Array<{ action: string; rationale: string; risk: string }>;
-  securityAdvice: Array<{
+  portfolioSnapshot: string;
+  weeklyMarket: string;
+  portfolioAttribution: Array<{
+    driver: string;
+    effect: "positive" | "negative" | "neutral" | "unknown";
+    explanation: string;
+  }>;
+  portfolioRisk: Array<{
+    risk: string;
+    evidence: string;
+    response: string;
+  }>;
+  securityEvents: Array<{
     symbol: string;
-    direction: "watch" | "buy" | "add" | "reduce" | "sell";
-    rationale: string;
-    condition: string;
+    event: string;
+    portfolioRelevance: string;
     risk: string;
   }>;
-  caveats: string[];
+  nextWeekWatch: Array<{
+    focus: string;
+    condition: string;
+    reason: string;
+  }>;
+  dataQuality: string[];
 }
 
 export interface WeeklyResearchReport {

@@ -11,12 +11,11 @@ const emptyPreferences: ResearchPreferences = {
   riskTolerance: null,
   hasApiKey: false,
 };
-const directionLabels = {
-  watch: "觀察",
-  buy: "買入",
-  add: "加碼",
-  reduce: "減碼",
-  sell: "賣出",
+const attributionEffectLabels = {
+  positive: "正向",
+  negative: "負向",
+  neutral: "中性",
+  unknown: "無法判定",
 };
 
 function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
@@ -403,60 +402,95 @@ export default function WeeklyResearchPanel({
               {selected.weekStart} 當週 · 資料截止{" "}
               {new Date(selected.periodEnd).toLocaleString("zh-TW")}
             </p>
-            <h2 className="mt-3 text-2xl font-bold">研究週報</h2>
+            <h2 className="mt-3 text-2xl font-bold">Portfolio Snapshot</h2>
             <p className="mt-4 whitespace-pre-wrap leading-7">
-              {selected.content.summary}
+              {selected.content.portfolioSnapshot}
             </p>
-            <h3 className="mt-7 text-lg font-bold">市場回顧</h3>
+            <h3 className="mt-7 text-lg font-bold">本週市場</h3>
             <p className="mt-2 whitespace-pre-wrap leading-7">
-              {selected.content.marketReview}
+              {selected.content.weeklyMarket}
             </p>
-            <h3 className="mt-7 text-lg font-bold">配置與風險建議</h3>
-            {selected.content.allocationAdvice.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有個人化配置建議。</p>
+            <h3 className="mt-7 text-lg font-bold">Portfolio Attribution</h3>
+            {selected.content.portfolioAttribution.length === 0 ? (
+              <p className="mt-2 text-sm">目前沒有足夠資料進行投資組合歸因。</p>
             ) : (
               <ul className="mt-2 space-y-3">
-                {selected.content.allocationAdvice.map((item, index) => (
+                {selected.content.portfolioAttribution.map((item, index) => (
                   <li
                     key={index}
                     className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
                   >
-                    <strong>{item.action}</strong>
-                    <p>{item.rationale}</p>
-                    <p className="text-sm text-[#805b4e]">風險：{item.risk}</p>
+                    <strong>
+                      {item.driver} · {attributionEffectLabels[item.effect]}
+                    </strong>
+                    <p>{item.explanation}</p>
                   </li>
                 ))}
               </ul>
             )}
-            <h3 className="mt-7 text-lg font-bold">個別標的建議</h3>
-            {selected.content.securityAdvice.length === 0 ? (
-              <p className="mt-2 text-sm">目前沒有個人化標的建議。</p>
+            <h3 className="mt-7 text-lg font-bold">Portfolio Risk</h3>
+            {selected.content.portfolioRisk.length === 0 ? (
+              <p className="mt-2 text-sm">目前沒有個人化投資組合風險分析。</p>
             ) : (
               <ul className="mt-2 space-y-3">
-                {selected.content.securityAdvice.map((item, index) => (
+                {selected.content.portfolioRisk.map((item, index) => (
+                  <li
+                    key={index}
+                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                  >
+                    <strong>{item.risk}</strong>
+                    <p>依據：{item.evidence}</p>
+                    <p className="text-sm">應對：{item.response}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <h3 className="mt-7 text-lg font-bold">個股重要事件</h3>
+            {selected.content.securityEvents.length === 0 ? (
+              <p className="mt-2 text-sm">本週研究資料沒有可確認的個股事件。</p>
+            ) : (
+              <ul className="mt-2 space-y-3">
+                {selected.content.securityEvents.map((item, index) => (
                   <li
                     key={`${item.symbol}-${index}`}
                     className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
                   >
-                    <strong>
-                      {item.symbol} · {directionLabels[item.direction]}
-                    </strong>
-                    <p>{item.rationale}</p>
-                    <p className="text-sm">條件：{item.condition}</p>
+                    <strong>{item.symbol}</strong>
+                    <p>{item.event}</p>
+                    <p className="text-sm">
+                      投資組合關聯：{item.portfolioRelevance}
+                    </p>
                     <p className="text-sm text-[#805b4e]">風險：{item.risk}</p>
                   </li>
                 ))}
               </ul>
             )}
-            {selected.content.caveats.length > 0 && (
-              <>
-                <h3 className="mt-7 text-lg font-bold">資料限制</h3>
-                <ul className="mt-2 list-disc pl-5 text-sm">
-                  {selected.content.caveats.map((item, index) => (
-                    <li key={index}>{item}</li>
-                  ))}
-                </ul>
-              </>
+            <h3 className="mt-7 text-lg font-bold">下週觀察</h3>
+            {selected.content.nextWeekWatch.length === 0 ? (
+              <p className="mt-2 text-sm">目前沒有下週觀察項目。</p>
+            ) : (
+              <ul className="mt-2 space-y-3">
+                {selected.content.nextWeekWatch.map((item, index) => (
+                  <li
+                    key={index}
+                    className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"
+                  >
+                    <strong>{item.focus}</strong>
+                    <p>觀察條件：{item.condition}</p>
+                    <p className="text-sm">原因：{item.reason}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <h3 className="mt-7 text-lg font-bold">Data Quality</h3>
+            {selected.content.dataQuality.length === 0 ? (
+              <p className="mt-2 text-sm">目前沒有已知的資料品質限制。</p>
+            ) : (
+              <ul className="mt-2 list-disc pl-5 text-sm">
+                {selected.content.dataQuality.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
             )}
             <WeeklyEvidence evidence={selected.evidence} />
           </article>

@@ -226,6 +226,7 @@ export interface SaleView {
   accountName: string;
   symbol: string;
   securityName: string;
+  securityType: SecurityType;
   soldAt: string;
   quantity: string;
   salePrice: string | null;

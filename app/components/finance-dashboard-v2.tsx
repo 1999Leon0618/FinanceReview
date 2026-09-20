@@ -5154,7 +5154,8 @@ function SoldList({
           </div>
           <div className="text-right">
             <p className="text-xs font-semibold">
-              {number.format(Number(item.quantity))} 股
+              {number.format(Number(item.quantity))}{" "}
+              {item.securityType === "future" ? "口" : "股"}
             </p>
             <p className="mt-1 text-[10px] text-[#839087]">查看走勢</p>
             {item.realizedPnlTwd !== null && (

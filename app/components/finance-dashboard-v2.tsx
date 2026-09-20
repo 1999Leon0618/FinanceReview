@@ -68,14 +68,11 @@ import {
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
 import {
   defaultDisplayPreferences,
-  displayLocales,
   displayPreferenceStorageKey,
   displayTimeZones,
   formatDisplayDate,
   formatDisplayDateTime,
-  lastUpdatedLabel,
   parseDisplayPreferences,
-  type DisplayLocale,
   type DisplayPreferences,
   type DisplayTimeZone,
 } from "@/lib/display-preferences";
@@ -1060,7 +1057,7 @@ export default function FinanceDashboard({
                 {latest && (
                   <span className="last-updated">
                     <span className="mx-2 text-[#c3c9c4]">/</span>
-                    {lastUpdatedLabel(displayPreferences.locale)}{" "}
+                    最後更新{" "}
                     {formatDisplayDateTime(
                       new Date(latest.capturedAt),
                       displayPreferences,
@@ -1110,31 +1107,8 @@ export default function FinanceDashboard({
                 <p>偏好會儲存在此瀏覽器，並套用到所有帳本頁面。</p>
                 <div className="settings-row">
                   <div>
-                    <h3>日期與時間語言</h3>
-                    <p>調整頁首日期、星期與最後更新時間的顯示語言。</p>
-                  </div>
-                  <select
-                    className="settings-select"
-                    aria-label="日期與時間語言"
-                    value={displayPreferences.locale}
-                    onChange={(event) =>
-                      updateDisplayPreferences({
-                        ...displayPreferences,
-                        locale: event.currentTarget.value as DisplayLocale,
-                      })
-                    }
-                  >
-                    {Object.entries(displayLocales).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="settings-row">
-                  <div>
                     <h3>時區</h3>
-                    <p>所有時間仍保存原始時間點，僅依此時區轉換顯示。</p>
+                    <p>頁首日期與最後更新時間會立即依此時區轉換顯示。</p>
                   </div>
                   <select
                     className="settings-select"

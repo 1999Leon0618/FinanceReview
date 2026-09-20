@@ -86,15 +86,7 @@ function creditCardPaymentStatus(
   return "paid";
 }
 
-async function fxRateById(
-  db: FinanceDatabase,
-  id: string | null,
-): Promise<FxRateInput | undefined> {
-  if (!id) return undefined;
-  const row = (await db
-    .prepare("SELECT * FROM snapshot_fx_rates WHERE id = ?")
-    .get(id)) as Row | undefined;
-  if (!row) return undefined;
+function fxRateFromRow(row: Row): FxRateInput {
   return {
     baseCurrency: text(row.base_currency),
     quoteCurrency: "TWD",
@@ -116,47 +108,94 @@ export async function getSnapshotDetail(
     .prepare("SELECT * FROM snapshots WHERE id = ? AND owner_key = ?")
     .get(id, ownerKey)) as Row | undefined;
   if (!snapshot) return null;
-  const fxRates = new Map<string, Promise<FxRateInput | undefined>>();
-  const loadFxRate = (fxRateId: string | null) => {
-    if (!fxRateId) return Promise.resolve(undefined);
-    let rate = fxRates.get(fxRateId);
-    if (!rate) {
-      rate = fxRateById(db, fxRateId);
-      fxRates.set(fxRateId, rate);
-    }
-    return rate;
-  };
-
-  const accountRows = (await db
-    .prepare(
-      "SELECT * FROM snapshot_accounts WHERE snapshot_id = ? ORDER BY sort_order, name",
-    )
-    .all(id)) as Row[];
-  const balanceRows = (await db
-    .prepare(
-      `SELECT balance.* FROM cash_balances balance
+  const [
+    fxRateRows,
+    accountRows,
+    balanceRows,
+    positionRows,
+    loanRows,
+    creditCardRows,
+    cardRows,
+    cashFlowRows,
+    previous,
+  ] = await Promise.all([
+    db.prepare("SELECT * FROM snapshot_fx_rates WHERE snapshot_id = ?").all(id),
+    db
+      .prepare(
+        "SELECT * FROM snapshot_accounts WHERE snapshot_id = ? ORDER BY sort_order, name",
+      )
+      .all(id),
+    db
+      .prepare(
+        `SELECT balance.* FROM cash_balances balance
       JOIN snapshot_accounts account ON account.id = balance.snapshot_account_id
       WHERE account.snapshot_id = ?
       ORDER BY account.sort_order,
       CASE WHEN balance.currency = 'TWD' THEN 0 ELSE 1 END, balance.currency`,
-    )
-    .all(id)) as Row[];
-  const positionRows = (await db
-    .prepare(
-      `SELECT position.*, security.provider_symbol FROM snapshot_positions position
+      )
+      .all(id),
+    db
+      .prepare(
+        `SELECT position.*, security.provider_symbol FROM snapshot_positions position
       JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
       JOIN securities security ON security.id = position.security_id
       WHERE account.snapshot_id = ?
       ORDER BY account.sort_order, position.security_name, position.symbol`,
-    )
-    .all(id)) as Row[];
+      )
+      .all(id),
+    db
+      .prepare(
+        `SELECT sl.*, sa.account_id AS linked_account_id,
+        sa.name AS linked_account_name
+        FROM snapshot_loans sl
+        LEFT JOIN snapshot_accounts sa ON sa.id = sl.snapshot_account_id
+        WHERE sl.snapshot_id = ? ORDER BY sl.sort_order, sl.name`,
+      )
+      .all(id),
+    db
+      .prepare(
+        `SELECT * FROM snapshot_credit_card_accounts
+        WHERE snapshot_id = ? ORDER BY sort_order, name`,
+      )
+      .all(id),
+    db
+      .prepare(
+        `SELECT card.* FROM credit_cards card
+        JOIN snapshot_credit_card_accounts snapshot_account
+        ON snapshot_account.credit_card_account_id = card.credit_card_account_id
+        WHERE snapshot_account.snapshot_id = ?
+        ORDER BY snapshot_account.sort_order,
+        CASE card.status WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END,
+        card.name`,
+      )
+      .all(id),
+    db
+      .prepare(
+        "SELECT * FROM snapshot_cash_flows WHERE snapshot_id = ? ORDER BY sort_order, created_at",
+      )
+      .all(id),
+    snapshot.base_snapshot_id
+      ? db
+          .prepare(
+            `SELECT total_asset_value_twd, total_liabilities_twd, net_worth_twd
+            FROM snapshots WHERE id = ? AND owner_key = ?`,
+          )
+          .get(text(snapshot.base_snapshot_id), ownerKey)
+      : Promise.resolve(undefined),
+  ]);
+  const fxRates = new Map(
+    (fxRateRows as Row[]).map((row) => [text(row.id), fxRateFromRow(row)]),
+  );
+  const loadFxRate = (fxRateId: string | null) =>
+    Promise.resolve(fxRateId ? fxRates.get(fxRateId) : undefined);
+
   const accounts: AccountView[] = await Promise.all(
-    accountRows.map(async (account) => {
+    (accountRows as Row[]).map(async (account) => {
       const snapshotAccountId = text(account.id);
-      const balances = balanceRows.filter(
+      const balances = (balanceRows as Row[]).filter(
         (row) => text(row.snapshot_account_id) === snapshotAccountId,
       );
-      const positions = positionRows.filter(
+      const positions = (positionRows as Row[]).filter(
         (row) => text(row.snapshot_account_id) === snapshotAccountId,
       );
       return {
@@ -216,17 +255,8 @@ export async function getSnapshotDetail(
       };
     }),
   );
-  const loanRows = (await db
-    .prepare(
-      `SELECT sl.*, sa.account_id AS linked_account_id,
-      sa.name AS linked_account_name
-      FROM snapshot_loans sl
-      LEFT JOIN snapshot_accounts sa ON sa.id = sl.snapshot_account_id
-      WHERE sl.snapshot_id = ? ORDER BY sl.sort_order, sl.name`,
-    )
-    .all(id)) as Row[];
   const loans: LoanView[] = await Promise.all(
-    loanRows.map(async (loan) => ({
+    (loanRows as Row[]).map(async (loan) => ({
       id: text(loan.id),
       loanId: text(loan.loan_id),
       accountId: nullableText(loan.linked_account_id),
@@ -254,27 +284,10 @@ export async function getSnapshotDetail(
       valueTwd: text(loan.value_twd),
     })),
   );
-  const creditCardRows = (await db
-    .prepare(
-      `SELECT * FROM snapshot_credit_card_accounts
-      WHERE snapshot_id = ? ORDER BY sort_order, name`,
-    )
-    .all(id)) as Row[];
-  const cardRows = (await db
-    .prepare(
-      `SELECT card.* FROM credit_cards card
-      JOIN snapshot_credit_card_accounts snapshot_account
-      ON snapshot_account.credit_card_account_id = card.credit_card_account_id
-      WHERE snapshot_account.snapshot_id = ?
-      ORDER BY snapshot_account.sort_order,
-      CASE card.status WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END,
-      card.name`,
-    )
-    .all(id)) as Row[];
   const creditCardAccounts: CreditCardAccountView[] = await Promise.all(
-    creditCardRows.map(async (account) => {
+    (creditCardRows as Row[]).map(async (account) => {
       const accountId = text(account.credit_card_account_id);
-      const cards = cardRows
+      const cards = (cardRows as Row[])
         .filter((card) => text(card.credit_card_account_id) === accountId)
         .map((card) => ({
           cardId: text(card.id),
@@ -349,18 +362,14 @@ export async function getSnapshotDetail(
     ...account,
     loans: loans.filter((loan) => loan.accountId === account.accountId),
   }));
-  const cashFlows = (
-    (await db
-      .prepare(
-        "SELECT * FROM snapshot_cash_flows WHERE snapshot_id = ? ORDER BY sort_order, created_at",
-      )
-      .all(id)) as Row[]
-  ).map((flow): SnapshotCashFlowView => ({
-    id: text(flow.id),
-    flowType: text(flow.flow_type) as SnapshotCashFlowView["flowType"],
-    amountTwd: text(flow.amount_twd),
-    note: nullableText(flow.note),
-  }));
+  const cashFlows = (cashFlowRows as Row[]).map(
+    (flow): SnapshotCashFlowView => ({
+      id: text(flow.id),
+      flowType: text(flow.flow_type) as SnapshotCashFlowView["flowType"],
+      amountTwd: text(flow.amount_twd),
+      note: nullableText(flow.note),
+    }),
+  );
   const flowTotal = (type: SnapshotCashFlowView["flowType"]) =>
     cashFlows
       .filter((flow) => flow.flowType === type)
@@ -370,14 +379,6 @@ export async function getSnapshotDetail(
   const income = flowTotal("income");
   const feeTax = flowTotal("fee_tax");
   const otherNet = flowTotal("other_inflow").minus(flowTotal("other_outflow"));
-  const previous = snapshot.base_snapshot_id
-    ? ((await db
-        .prepare(
-          `SELECT total_asset_value_twd, total_liabilities_twd, net_worth_twd
-          FROM snapshots WHERE id = ? AND owner_key = ?`,
-        )
-        .get(text(snapshot.base_snapshot_id), ownerKey)) as Row | undefined)
-    : undefined;
   const assetChange = previous
     ? decimal(text(snapshot.total_asset_value_twd)).minus(
         text(previous.total_asset_value_twd),
@@ -1494,10 +1495,16 @@ async function createSnapshotInDb(
   return id;
 }
 
+export async function saveSnapshot(
+  input: SnapshotCreateInput,
+): Promise<string> {
+  return withTransaction(async (db) => createSnapshotInDb(db, input));
+}
+
 export async function createSnapshot(
   input: SnapshotCreateInput,
 ): Promise<SnapshotDetail> {
-  const id = await withTransaction(async (db) => createSnapshotInDb(db, input));
+  const id = await saveSnapshot(input);
   const detail = await getSnapshotDetail(id);
   if (!detail) throw new Error("建立快照後無法讀取資料");
   return detail;

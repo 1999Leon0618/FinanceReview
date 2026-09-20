@@ -6,7 +6,7 @@ import { getDashboard } from "@/lib/repository";
 
 export default async function DashboardPage({ page }: { page?: FinancePage }) {
   const [initialData, user] = await Promise.all([
-    getDashboard("6m"),
+    page === "research" ? Promise.resolve(null) : getDashboard("6m"),
     ensureCurrentAppUser(),
   ]);
 

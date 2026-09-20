@@ -699,7 +699,7 @@ export function SnapshotEditor({
     setBusy("save");
     setError("");
     try {
-      await request("/api/snapshots", {
+      await request("/api/snapshots?response=minimal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -61,6 +61,13 @@ describe("週報圖表資料", () => {
     etfLookThrough: {
       topUnderlyingExposures: [
         {
+          symbol: "QQQ",
+          directPct: 25,
+          indirectPct: 0,
+          dailyNominalIndirectPct: 0,
+          totalDailyNominalExposurePct: 25,
+        },
+        {
           symbol: "AAPL",
           directPct: 30,
           indirectPct: 4,
@@ -186,7 +193,7 @@ describe("週報圖表資料", () => {
     ]);
   });
 
-  it("整理 ETF 穿透、槓桿增額、重疊與指數名目曝險", () => {
+  it("底層穿透排除 ETF，並整理槓桿增額、重疊與指數名目曝險", () => {
     expect(lookThroughExposureChartData(evidence)).toEqual([
       {
         name: "AAPL",

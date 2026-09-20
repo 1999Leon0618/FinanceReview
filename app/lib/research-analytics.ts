@@ -123,7 +123,13 @@ export function rankSecurityEvents(
   limit = 5,
 ) {
   const weights = allocationWeightMap(allocation);
+  const stockSymbols = new Set(
+    allocation
+      .filter((item) => item.type.toLowerCase() === "stock")
+      .map((item) => item.symbol.toUpperCase()),
+  );
   const ranked = events
+    .filter((event) => stockSymbols.has(event.symbol.toUpperCase()))
     .map((event, index) => {
       const portfolioWeight = weights.get(event.symbol.toUpperCase()) ?? 0;
       return {
@@ -135,8 +141,8 @@ export function rankSecurityEvents(
     })
     .sort(
       (left, right) =>
-        right.portfolioRelevanceScore - left.portfolioRelevanceScore ||
         right.portfolioWeight - left.portfolioWeight ||
+        right.portfolioRelevanceScore - left.portfolioRelevanceScore ||
         left.index - right.index,
     );
   const perSymbol = new Map<string, number>();
@@ -384,7 +390,7 @@ export function calculateEtfLookThrough(
     }
   >();
   for (const item of allocation) {
-    if (item.type === "etf" || item.type === "fund") continue;
+    if (["etf", "fund"].includes(item.type.toLowerCase())) continue;
     exposures.set(item.symbol.toUpperCase(), {
       symbol: item.symbol.toUpperCase(),
       name: item.symbol.toUpperCase(),

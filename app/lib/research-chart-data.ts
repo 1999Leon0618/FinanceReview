@@ -206,6 +206,14 @@ function etfLookThrough(evidence: Evidence) {
 export function lookThroughExposureChartData(evidence: Evidence) {
   const lookThrough = etfLookThrough(evidence);
   if (!lookThrough) return [];
+  const fundSymbols = new Set(
+    records(evidence.allocation).flatMap((item) => {
+      const type = typeof item.type === "string" ? item.type.toLowerCase() : "";
+      return typeof item.symbol === "string" && ["etf", "fund"].includes(type)
+        ? [item.symbol.toUpperCase()]
+        : [];
+    }),
+  );
   return records(lookThrough.topUnderlyingExposures)
     .flatMap((item): LookThroughChartItem[] => {
       const directPct = finiteNumber(item.directPct);
@@ -220,7 +228,8 @@ export function lookThroughExposureChartData(evidence: Evidence) {
         etfIndirectPct === null ||
         dailyNominalIndirectPct === null ||
         total === null ||
-        total <= 0
+        total <= 0 ||
+        fundSymbols.has(item.symbol.toUpperCase())
       )
         return [];
       return [

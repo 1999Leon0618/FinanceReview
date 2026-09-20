@@ -14,7 +14,7 @@ import {
 
 const allocation: PortfolioAllocation[] = [
   { symbol: "AAPL", market: "US", type: "stock", weightPct: 40 },
-  { symbol: "QQQ", market: "US", type: "etf", weightPct: 19.4 },
+  { symbol: "QQQ", market: "US", type: "ETF", weightPct: 19.4 },
   { symbol: "TQQQ", market: "US", type: "etf", weightPct: 2.9 },
   { symbol: "0050", market: "TWSE", type: "etf", weightPct: 20 },
   { symbol: "006208", market: "TWSE", type: "etf", weightPct: 17.7 },
@@ -154,7 +154,7 @@ describe("每週研究確定性分析", () => {
     expect(result.leveragedEtfs[0].caveat).toContain("路徑相依");
   });
 
-  it("事件依持倉與直接性排序，經理人交易降權且每檔最多兩則", () => {
+  it("個股事件排除 ETF 並依持倉權重排序，每檔最多兩則", () => {
     const candidate = (
       symbol: string,
       event: string,
@@ -175,23 +175,44 @@ describe("每週研究確定性分析", () => {
     });
     const events = [
       candidate("ARKB", "基金經理人交易", "manager_related"),
-      candidate("AAPL", "財報 A"),
-      candidate("AAPL", "財報 B"),
-      candidate("AAPL", "財報 C"),
+      {
+        ...candidate("AAPL", "財報 A"),
+        materialityScore: 1,
+        directnessScore: 1,
+        financialImpactScore: 1,
+        sourceQualityScore: 1,
+      },
+      {
+        ...candidate("AAPL", "財報 B"),
+        materialityScore: 1,
+        directnessScore: 1,
+        financialImpactScore: 1,
+        sourceQualityScore: 1,
+      },
+      {
+        ...candidate("AAPL", "財報 C"),
+        materialityScore: 1,
+        directnessScore: 1,
+        financialImpactScore: 1,
+        sourceQualityScore: 1,
+      },
       candidate("QQQ", "指數事件"),
       candidate("MSFT", "低持倉關聯事件"),
     ];
 
-    const ranked = rankSecurityEvents(events, allocation);
-    expect(ranked).toHaveLength(5);
+    const ranked = rankSecurityEvents(events, [
+      ...allocation,
+      { symbol: "MSFT", market: "US", type: "stock", weightPct: 10 },
+    ]);
+    expect(ranked).toHaveLength(3);
     expect(ranked[0].symbol).toBe("AAPL");
     expect(ranked.filter((item) => item.symbol === "AAPL")).toHaveLength(2);
-    expect(ranked.find((item) => item.symbol === "ARKB")?.classification).toBe(
-      "manager_related",
+    expect(ranked[2].symbol).toBe("MSFT");
+    expect(ranked.some((item) => item.symbol === "QQQ")).toBe(false);
+    expect(ranked.some((item) => item.symbol === "ARKB")).toBe(false);
+    expect(ranked[0].portfolioRelevanceScore).toBeLessThan(
+      ranked[2].portfolioRelevanceScore,
     );
-    expect(
-      ranked.find((item) => item.symbol === "ARKB")!.portfolioRelevanceScore,
-    ).toBeLessThan(ranked[0].portfolioRelevanceScore);
   });
 
   it("下週事件優先保留高占比持倉的直接事件", () => {

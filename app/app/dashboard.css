@@ -1038,6 +1038,17 @@ html.dark .page-intro .page-description {
   flex-shrink: 0;
   min-height: 44px;
 }
+.settings-select {
+  min-height: 44px;
+  min-width: min(100%, 16rem);
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  color: var(--foreground);
+  padding: 0.65rem 2.25rem 0.65rem 0.8rem;
+  font: inherit;
+}
 .settings-return {
   justify-self: start;
 }
@@ -1052,6 +1063,9 @@ html.dark .page-intro .page-description {
     align-items: flex-start;
     flex-direction: column;
     gap: 0.75rem;
+  }
+  .settings-select {
+    width: 100%;
   }
 }
 @media (max-width: 360px) {

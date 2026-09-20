@@ -66,6 +66,19 @@ import {
   useDisplayOrder,
 } from "@/components/display-order-editor";
 import { applyDisplayOrder, type DisplaySection } from "@/lib/display-order";
+import {
+  defaultDisplayPreferences,
+  displayLocales,
+  displayPreferenceStorageKey,
+  displayTimeZones,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  lastUpdatedLabel,
+  parseDisplayPreferences,
+  type DisplayLocale,
+  type DisplayPreferences,
+  type DisplayTimeZone,
+} from "@/lib/display-preferences";
 import { requestJson as request } from "@/lib/client-request";
 import {
   buildInfo,
@@ -245,6 +258,9 @@ export default function FinanceDashboard({
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [valuesHidden, setValuesHidden] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [displayPreferences, setDisplayPreferences] =
+    useState<DisplayPreferences>(defaultDisplayPreferences);
+  const [displayPreferenceWarning, setDisplayPreferenceWarning] = useState("");
   const [benchmark, setBenchmark] = useState<BenchmarkId>("twii");
   const [performance, setPerformance] = useState<PerformanceReport | null>(
     null,
@@ -324,9 +340,26 @@ export default function FinanceDashboard({
         localStorage.getItem(sidebarHiddenStorageKey) === "true",
       );
       setValuesHidden(localStorage.getItem(valuesHiddenStorageKey) === "true");
+      setDisplayPreferences(
+        parseDisplayPreferences(
+          localStorage.getItem(displayPreferenceStorageKey),
+        ),
+      );
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const updateDisplayPreferences = (next: DisplayPreferences) => {
+    setDisplayPreferences(next);
+    try {
+      localStorage.setItem(displayPreferenceStorageKey, JSON.stringify(next));
+      setDisplayPreferenceWarning("");
+    } catch {
+      setDisplayPreferenceWarning(
+        "偏好已套用，但瀏覽器無法儲存；重新整理後將恢復原設定。",
+      );
+    }
+  };
 
   const selectRange = (nextRange: string) => {
     setRange(nextRange);
@@ -1023,11 +1056,15 @@ export default function FinanceDashboard({
               <h1>{pageMeta.title}</h1>
               <p className="page-description">{pageMeta.description}</p>
               <p>
-                {new Date().toLocaleDateString("zh-TW", { dateStyle: "full" })}
+                {formatDisplayDate(new Date(), displayPreferences)}
                 {latest && (
                   <span className="last-updated">
                     <span className="mx-2 text-[#c3c9c4]">/</span>
-                    最後更新 {dateFormatter.format(new Date(latest.capturedAt))}
+                    {lastUpdatedLabel(displayPreferences.locale)}{" "}
+                    {formatDisplayDateTime(
+                      new Date(latest.capturedAt),
+                      displayPreferences,
+                    )}
                   </span>
                 )}
                 <span
@@ -1071,6 +1108,57 @@ export default function FinanceDashboard({
               >
                 <h2 id="display-settings-title">顯示偏好</h2>
                 <p>偏好會儲存在此瀏覽器，並套用到所有帳本頁面。</p>
+                <div className="settings-row">
+                  <div>
+                    <h3>日期與時間語言</h3>
+                    <p>調整頁首日期、星期與最後更新時間的顯示語言。</p>
+                  </div>
+                  <select
+                    className="settings-select"
+                    aria-label="日期與時間語言"
+                    value={displayPreferences.locale}
+                    onChange={(event) =>
+                      updateDisplayPreferences({
+                        ...displayPreferences,
+                        locale: event.currentTarget.value as DisplayLocale,
+                      })
+                    }
+                  >
+                    {Object.entries(displayLocales).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="settings-row">
+                  <div>
+                    <h3>時區</h3>
+                    <p>所有時間仍保存原始時間點，僅依此時區轉換顯示。</p>
+                  </div>
+                  <select
+                    className="settings-select"
+                    aria-label="時區"
+                    value={displayPreferences.timeZone}
+                    onChange={(event) =>
+                      updateDisplayPreferences({
+                        ...displayPreferences,
+                        timeZone: event.currentTarget.value as DisplayTimeZone,
+                      })
+                    }
+                  >
+                    {Object.entries(displayTimeZones).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {displayPreferenceWarning && (
+                  <p className="notice error" role="alert">
+                    {displayPreferenceWarning}
+                  </p>
+                )}
                 <div className="settings-row">
                   <div>
                     <h3>深色模式</h3>

@@ -25,6 +25,7 @@ export function creditCardPaymentLabel(
   status: CreditCardPaymentStatus,
 ): CreditCardPaymentLabel {
   switch (status) {
+    case "no_statement":
     case "paid":
     case "overpaid":
       return "已繳";

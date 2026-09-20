@@ -27,7 +27,30 @@ describe("信用卡繳款期限", () => {
     expect(creditCardPaymentLabel("overpaid")).toBe("已繳");
     expect(creditCardPaymentLabel("partially_paid")).toBe("部分繳");
     expect(creditCardPaymentLabel("overdue")).toBe("未繳");
-    expect(creditCardPaymentLabel("no_statement")).toBe("待更新");
+    expect(creditCardPaymentLabel("no_statement")).toBe("已繳");
+  });
+
+  it("零元帳單視為本期已繳，進入下一個繳款月份後才待更新", () => {
+    expect(
+      creditCardDisplayPayment(
+        "2026-09-18",
+        18,
+        "no_statement",
+        new Date("2026-09-20T00:00:00+08:00"),
+      ),
+    ).toEqual({ dueDate: "2026-09-18", label: "已繳", awaitingUpdate: false });
+    expect(
+      creditCardDisplayPayment(
+        "2026-09-18",
+        18,
+        "no_statement",
+        new Date("2026-10-01T00:00:00+08:00"),
+      ),
+    ).toEqual({
+      dueDate: "2026-10-18",
+      label: "待更新",
+      awaitingUpdate: true,
+    });
   });
 
   it("本期已繳清時不再將同一月份標示為應繳", () => {

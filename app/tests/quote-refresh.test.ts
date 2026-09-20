@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyFuturesQuoteEquityChanges,
   prepareQuoteRefresh,
   summarizeQuoteStatuses,
 } from "@/lib/quote-refresh";
@@ -22,6 +23,26 @@ const position = (
   quoteSource:
     quoteStatus === "manual" ? ("MANUAL" as const) : ("TWSE" as const),
   quoteStatus,
+});
+
+const futurePosition = (
+  marketPrice = "22100",
+  positionSide: "long" | "short" = "long",
+): AccountStateInput["positions"][number] => ({
+  market: "FUTURES",
+  symbol: "TMF202609",
+  name: "微型臺指期 2026/09",
+  securityType: "future",
+  positionSide,
+  contractMultiplier: "10",
+  contractExpiry: "202609",
+  quoteCurrency: "TWD",
+  quantity: "3",
+  averageCost: "22000",
+  marketPrice,
+  quoteAsOf: "2026-08-28T00:00:00.000Z",
+  quoteSource: "MANUAL",
+  quoteStatus: "manual",
 });
 
 const account = (
@@ -120,6 +141,58 @@ describe("一鍵更新標的現值", () => {
     expect(result).toMatchObject({ fresh: 1, stale: 0, manual: 0 });
     expect(result.failures).toEqual([]);
     expect(result.accounts[0].positions[0].marketPrice).toBe("20");
+  });
+
+  it("期貨行情更新時依新舊點數差額同步更新帳戶權益", async () => {
+    const snapshot = latest([futurePosition()]);
+    snapshot.accounts[0].cashBalances = [{ currency: "TWD", amount: "300000" }];
+    const result = await prepareQuoteRefresh(snapshot, {
+      resolve: async (accounts) => ({
+        accounts: [
+          {
+            ...account([]),
+            accountId: accounts[0].accountId,
+            cashBalances: accounts[0].cashBalances,
+            positions: [
+              {
+                ...accounts[0].positions[0],
+                marketPrice: "22120",
+                quoteStatus: "fresh",
+                quoteSource: "YAHOO",
+              },
+            ],
+          },
+        ],
+        warnings: [],
+      }),
+    });
+
+    expect(result.accounts[0].cashBalances[0].amount).toBe("300600");
+    expect(
+      applyFuturesQuoteEquityChanges(snapshot, result.accounts)[0]
+        .cashBalances[0].amount,
+    ).toBe("300600");
+  });
+
+  it("空單手動補價時依價格方向更新帳戶權益", () => {
+    const snapshot = latest([futurePosition("22100", "short")]);
+    snapshot.accounts[0].cashBalances = [{ currency: "TWD", amount: "300000" }];
+    const updated = applyFuturesQuoteEquityChanges(snapshot, [
+      {
+        ...account([]),
+        accountId: "account-1",
+        cashBalances: [{ currency: "TWD", amount: "300000" }],
+        positions: [
+          {
+            ...futurePosition("22080", "short"),
+            positionId: "position-0",
+            securityId: "security-0",
+          },
+        ],
+      },
+    ]);
+
+    expect(updated[0].cashBalances[0].amount).toBe("300600");
   });
 
   it("更新失敗時列出補價項目並恢復上一份快照價格", async () => {

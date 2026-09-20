@@ -20,6 +20,7 @@ import {
 import { getDatabase, withTransaction } from "./db";
 import { buildHealthReport } from "./health";
 import { getDataOwner } from "./data-owner";
+import { futuresContractMultiplier } from "./futures-form";
 import type {
   AccountStateInput,
   AccountView,
@@ -1508,39 +1509,86 @@ export async function listSales(db?: FinanceDatabase): Promise<SaleView[]> {
   const rows = (await db
     .prepare(
       `SELECT ps.*, a.name AS account_name, settlement.name AS settlement_account_name,
-      s.id AS security_id, s.symbol, s.name AS security_name
+      s.id AS security_id, s.symbol, s.name AS security_name, s.security_type,
+      prior.average_cost, prior.position_side, prior.contract_multiplier
     FROM position_sales ps
     JOIN account_positions ap ON ap.id = ps.position_id
     JOIN accounts a ON a.id = ap.account_id
     JOIN securities s ON s.id = ap.security_id
     LEFT JOIN accounts settlement ON settlement.id = ps.settlement_account_id
+    LEFT JOIN snapshot_positions prior ON prior.id = (
+      SELECT candidate.id FROM snapshot_positions candidate
+      WHERE candidate.position_id = ps.position_id
+      ORDER BY candidate.created_at DESC LIMIT 1
+    )
     WHERE a.owner_key = ?
     ORDER BY ps.sold_at DESC, ps.created_at DESC`,
     )
     .all(ownerKey)) as Row[];
-  return rows.map((row) => ({
-    id: text(row.id),
-    positionId: text(row.position_id),
-    securityId: text(row.security_id),
-    accountName: text(row.account_name),
-    symbol: text(row.symbol),
-    securityName: text(row.security_name),
-    soldAt: text(row.sold_at),
-    quantity: text(row.quantity),
-    salePrice: nullableText(row.sale_price),
-    currency: text(row.currency),
-    settlementAccountId: nullableText(row.settlement_account_id),
-    settlementAccountName: nullableText(row.settlement_account_name),
-    fee: nullableText(row.fee),
-    tax: nullableText(row.tax),
-    grossProceeds: nullableText(row.gross_proceeds),
-    netProceeds: nullableText(row.net_proceeds),
-    costBasis: nullableText(row.cost_basis),
-    realizedPnl: nullableText(row.realized_pnl),
-    fxRate: nullableText(row.fx_rate),
-    realizedPnlTwd: nullableText(row.realized_pnl_twd),
-    note: nullableText(row.note),
-  }));
+  return rows.map((row) => {
+    const securityType = text(row.security_type) as SaleView["securityType"];
+    const salePrice = nullableText(row.sale_price);
+    const averageCost = nullableText(row.average_cost);
+    const quantity = text(row.quantity);
+    const contractMultiplier = futuresContractMultiplier(
+      text(row.symbol),
+      nullableText(row.contract_multiplier),
+    );
+    const canRecalculateFuture =
+      securityType === "future" &&
+      salePrice !== null &&
+      averageCost !== null &&
+      contractMultiplier !== null &&
+      decimal(contractMultiplier).gt(0);
+    const futureGross = canRecalculateFuture
+      ? decimal(salePrice)
+          .minus(averageCost)
+          .mul(nullableText(row.position_side) === "short" ? -1 : 1)
+          .mul(quantity)
+          .mul(contractMultiplier)
+      : null;
+    const futureNet = futureGross
+      ? futureGross
+          .minus(nullableText(row.fee) ?? "0")
+          .minus(nullableText(row.tax) ?? "0")
+      : null;
+    const currency = text(row.currency);
+    const fxRate = nullableText(row.fx_rate);
+    const futurePnlTwd =
+      futureNet && (currency === "TWD" || fxRate)
+        ? money(futureNet.mul(fxRate ?? "1"))
+        : null;
+    return {
+      id: text(row.id),
+      positionId: text(row.position_id),
+      securityId: text(row.security_id),
+      accountName: text(row.account_name),
+      symbol: text(row.symbol),
+      securityName: text(row.security_name),
+      securityType,
+      soldAt: text(row.sold_at),
+      quantity,
+      salePrice,
+      currency,
+      settlementAccountId: nullableText(row.settlement_account_id),
+      settlementAccountName: nullableText(row.settlement_account_name),
+      fee: nullableText(row.fee),
+      tax: nullableText(row.tax),
+      grossProceeds: futureGross
+        ? money(futureGross)
+        : nullableText(row.gross_proceeds),
+      netProceeds: futureNet
+        ? money(futureNet)
+        : nullableText(row.net_proceeds),
+      costBasis: nullableText(row.cost_basis),
+      realizedPnl: futureNet
+        ? money(futureNet)
+        : nullableText(row.realized_pnl),
+      fxRate,
+      realizedPnlTwd: futurePnlTwd ?? nullableText(row.realized_pnl_twd),
+      note: nullableText(row.note),
+    };
+  });
 }
 
 function dateFromRange(range: string): string | null {
@@ -1645,11 +1693,26 @@ export async function sellPosition(
       (account) => account.accountId === input.settlementAccountId,
     );
     if (!settlementAccount) throw new Error("找不到指定的入帳帳戶");
+    if (
+      current.securityType === "future" &&
+      settlementAccount.accountId !== current.accountId
+    )
+      throw new Error("期貨結算帳戶必須是持倉所屬帳戶");
 
     const quantity = decimal(current.quantity);
     const salePrice = decimal(input.salePrice);
     const fee = decimal(input.fee);
     const tax = decimal(input.tax);
+    const contractMultiplier =
+      current.securityType === "future"
+        ? futuresContractMultiplier(current.symbol, current.contractMultiplier)
+        : null;
+    if (
+      current.securityType === "future" &&
+      (!contractMultiplier || decimal(contractMultiplier).lte(0))
+    ) {
+      throw new Error("期貨缺少有效的每點價值，無法計算結算損益");
+    }
     const costBasis =
       current.securityType === "future"
         ? zero
@@ -1660,7 +1723,7 @@ export async function sellPosition(
             .minus(current.averageCost)
             .mul(current.positionSide === "short" ? -1 : 1)
             .mul(quantity)
-            .mul(current.contractMultiplier ?? "0")
+            .mul(contractMultiplier!)
         : quantity.mul(salePrice);
     const netProceeds = grossProceeds.minus(fee).minus(tax);
     if (current.securityType !== "future" && netProceeds.isNegative())
@@ -1669,6 +1732,16 @@ export async function sellPosition(
       current.securityType === "future"
         ? netProceeds
         : netProceeds.minus(costBasis);
+    const settlementAdjustment =
+      current.securityType === "future"
+        ? salePrice
+            .minus(current.marketPrice)
+            .mul(current.positionSide === "short" ? -1 : 1)
+            .mul(quantity)
+            .mul(contractMultiplier!)
+            .minus(fee)
+            .minus(tax)
+        : netProceeds;
     const fxRate = decimal(
       current.quoteCurrency === "TWD" ? "1" : (current.fxRate?.rate ?? "0"),
     );
@@ -1692,16 +1765,18 @@ export async function sellPosition(
                 (balance) => balance.currency === input.currency,
               );
               if (target) {
-                const nextAmount = decimal(target.amount).plus(netProceeds);
+                const nextAmount = decimal(target.amount).plus(
+                  settlementAdjustment,
+                );
                 if (nextAmount.isNegative())
                   throw new Error("結算後現金餘額不可為負數");
                 target.amount = money(nextAmount);
               } else {
-                if (netProceeds.isNegative())
+                if (settlementAdjustment.isNegative())
                   throw new Error("入帳帳戶沒有足夠現金支付結算損失與費用");
                 balances.push({
                   currency: input.currency,
-                  amount: money(netProceeds),
+                  amount: money(settlementAdjustment),
                   fxRate: current.fxRate,
                 });
               }
@@ -1713,7 +1788,10 @@ export async function sellPosition(
     }));
     const soldAt = new Date(input.soldAt).toISOString();
     const snapshotId = await createSnapshotInDb(db, {
-      rawInput: `${current.accountName} 的 ${current.symbol} 已全部賣出`,
+      rawInput:
+        current.securityType === "future"
+          ? `${current.accountName} 的 ${current.symbol} 已全部結算並更新帳戶權益`
+          : `${current.accountName} 的 ${current.symbol} 已全部賣出`,
       baseSnapshotId: latest.id,
       accounts,
       loans: latest.loans,

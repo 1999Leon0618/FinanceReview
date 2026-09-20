@@ -43,6 +43,7 @@ import {
 import { snapshotCreateSchema } from "@/lib/validation";
 import { requestJson as request } from "@/lib/client-request";
 import {
+  futuresContractMultiplier,
   futuresProduct,
   withFuturesCode,
   withKnownFuturesContract,
@@ -2838,7 +2839,10 @@ export function SaleDialog({
   const feeAmount = Number(fee || 0);
   const taxAmount = Number(tax || 0);
   const averageCost = Number(position.averageCost);
-  const contractMultiplier = Number(position.contractMultiplier ?? 0);
+  const contractMultiplier = Number(
+    futuresContractMultiplier(position.symbol, position.contractMultiplier) ??
+      0,
+  );
   const costBasis =
     position.securityType === "future"
       ? averageCost * quantity * contractMultiplier
@@ -2860,7 +2864,11 @@ export function SaleDialog({
       return;
     }
     if (!settlementAccountId) {
-      setError("請選擇入帳帳戶");
+      setError(
+        position.securityType === "future"
+          ? "請選擇結算帳戶"
+          : "請選擇入帳帳戶",
+      );
       return;
     }
     setBusy(true);
@@ -2889,7 +2897,11 @@ export function SaleDialog({
       <div className="p-7">
         <div className="flex justify-between">
           <div>
-            <h2 className="text-xl font-semibold">確認全部賣出</h2>
+            <h2 className="text-xl font-semibold">
+              {position.securityType === "future"
+                ? "確認期貨結算"
+                : "確認全部賣出"}
+            </h2>
             <p className="mt-1 text-sm text-[#68776e]">
               {position.accountName}・{position.symbol}・全部{" "}
               {number.format(Number(position.quantity))}
@@ -2921,22 +2933,34 @@ export function SaleDialog({
             />
           </label>
           <label>
-            入帳帳戶
+            {position.securityType === "future" ? "結算帳戶" : "入帳帳戶"}
             <select
               className="field"
               value={settlementAccountId}
               onChange={(event) => setSettlementAccountId(event.target.value)}
+              disabled={position.securityType === "future"}
             >
-              {accounts.map((account) => (
-                <option
-                  key={account.accountId ?? account.name}
-                  value={account.accountId}
-                >
-                  {account.name}
-                </option>
-              ))}
+              {accounts
+                .filter(
+                  (account) =>
+                    position.securityType !== "future" ||
+                    account.accountId === position.accountId,
+                )
+                .map((account) => (
+                  <option
+                    key={account.accountId ?? account.name}
+                    value={account.accountId}
+                  >
+                    {account.name}
+                  </option>
+                ))}
             </select>
           </label>
+          {position.securityType === "future" && (
+            <p className="notice text-xs">
+              系統會依最後行情到結算價的損益差額更新帳戶權益並扣除費稅；從進場到結算的完整已實現損益會另外保存。
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <label>
               手續費（{position.quoteCurrency}）
@@ -2987,10 +3011,14 @@ export function SaleDialog({
             <strong className="text-right">
               {position.quoteCurrency} {number.format(gross)}
             </strong>
-            <span>淨入帳</span>
-            <strong className="text-right">
-              {position.quoteCurrency} {number.format(net)}
-            </strong>
+            {position.securityType !== "future" && (
+              <>
+                <span>淨入帳</span>
+                <strong className="text-right">
+                  {position.quoteCurrency} {number.format(net)}
+                </strong>
+              </>
+            )}
             <span>預估已實現損益</span>
             <strong className={`text-right ${performanceTone}`}>
               {position.quoteCurrency} {number.format(realized)}
@@ -3009,7 +3037,11 @@ export function SaleDialog({
             取消
           </button>
           <button className="danger" disabled={busy} onClick={submit}>
-            {busy ? "處理中…" : "確認全部賣出"}
+            {busy
+              ? "處理中…"
+              : position.securityType === "future"
+                ? "確認結算"
+                : "確認全部賣出"}
           </button>
         </div>
       </div>

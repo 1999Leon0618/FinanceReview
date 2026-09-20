@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/http";
-import { prepareQuoteRefresh } from "@/lib/quote-refresh";
+import {
+  applyFuturesQuoteEquityChanges,
+  prepareQuoteRefresh,
+} from "@/lib/quote-refresh";
 import { createSnapshot, getLatestSnapshot } from "@/lib/repository";
 import { snapshotCreateSchema } from "@/lib/validation";
 import { refreshWatchlist } from "@/lib/research-repository";
@@ -35,7 +38,13 @@ export async function PUT(request: NextRequest) {
     if (!latest || payload.baseSnapshotId !== latest.id) {
       throw new Error("最新快照已變更，請重新取得行情");
     }
-    return NextResponse.json(await createSnapshot(payload), { status: 201 });
+    return NextResponse.json(
+      await createSnapshot({
+        ...payload,
+        accounts: applyFuturesQuoteEquityChanges(latest, payload.accounts),
+      }),
+      { status: 201 },
+    );
   } catch (error) {
     return apiError(error);
   }

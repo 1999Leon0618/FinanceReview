@@ -2,6 +2,16 @@ import type { PositionInput } from "./types";
 
 export type KnownFuturesProduct = "TMF" | "MTX";
 
+export function futuresContractMultiplier(
+  symbol: string,
+  stored?: string | null,
+) {
+  if (stored && Number(stored) > 0) return stored;
+  if (/^TMF\d{6}$/i.test(symbol)) return "10";
+  if (/^MTX\d{6}$/i.test(symbol)) return "50";
+  return null;
+}
+
 export function futuresProduct(symbol: string) {
   const code = symbol.toUpperCase();
   if (code.startsWith("TMF")) return "TMF";

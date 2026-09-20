@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  futuresContractMultiplier,
   futuresProduct,
   withFuturesCode,
   withKnownFuturesContract,
@@ -24,6 +25,13 @@ const blankFuture: PositionInput = {
 };
 
 describe("期貨輸入表單", () => {
+  it("缺少每點價值時能由標準契約代碼補值", () => {
+    expect(futuresContractMultiplier("TMF202609")).toBe("10");
+    expect(futuresContractMultiplier("mtx202609")).toBe("50");
+    expect(futuresContractMultiplier("TMF202609", "12")).toBe("12");
+    expect(futuresContractMultiplier("TX202609")).toBeNull();
+  });
+
   it("輸入券商微台代碼後辨識商品、月份與每點價值", () => {
     expect(withFuturesCode(blankFuture, "tmz6", 2026)).toMatchObject({
       symbol: "TMF202612",

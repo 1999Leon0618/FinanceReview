@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { closeDatabaseForTests } from "@/lib/db";
+import { closeDatabaseForTests, getDatabase } from "@/lib/db";
 import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
 import {
   createSnapshot,
@@ -577,6 +577,85 @@ describe("快照與全部賣出", () => {
       marketValueTwd: "0",
       unrealizedPnlTwd: "17000",
       unrealizedReturnPct: "0.767494",
+    });
+  });
+
+  it("期貨平倉保留完整已實現損益，並以最後行情到結算價的差額更新權益", async () => {
+    const owner = dataOwnerFromEmail("futures-settlement@example.com");
+    await runWithDataOwner(owner, async () => {
+      const snapshot = await createSnapshot({
+        rawInput: "微型臺指期帳戶權益與持倉",
+        capturedAt: "2026-09-16T08:00:00.000Z",
+        accounts: [
+          {
+            name: "統一期貨帳戶",
+            accountType: "brokerage",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "300000" }],
+            positions: [
+              {
+                market: "FUTURES",
+                symbol: "TMF202609",
+                name: "微型臺指期 2026/09",
+                securityType: "future",
+                positionSide: "long",
+                contractMultiplier: "10",
+                contractExpiry: "202609",
+                quoteCurrency: "TWD",
+                quantity: "3",
+                averageCost: "22000",
+                marketPrice: "22100",
+                quoteAsOf: "2026-09-16T00:00:00.000Z",
+                quoteSource: "MANUAL",
+                quoteStatus: "manual",
+              },
+            ],
+          },
+        ],
+      });
+      const position = snapshot.accounts[0].positions[0];
+      const positionId = position.positionId!;
+
+      const result = await sellPosition(positionId, {
+        soldAt: "2026-09-16T09:00:00.000Z",
+        salePrice: "22120",
+        currency: "TWD",
+        settlementAccountId: position.accountId,
+        fee: "100",
+        tax: "20",
+      });
+
+      expect(result.totalAssetValueTwd).toBe("300480");
+      expect(result.accounts[0].cashBalances[0].amount).toBe("300480");
+      expect(result.accounts[0].positions).toHaveLength(0);
+      expect(result.rawInput).toContain("已全部結算並更新帳戶權益");
+      expect(result.cashFlows).toMatchObject([
+        { flowType: "fee_tax", amountTwd: "120" },
+      ]);
+
+      const db = await getDatabase();
+      await db
+        .prepare(
+          "UPDATE position_sales SET gross_proceeds = '0', net_proceeds = '0', realized_pnl = '0', realized_pnl_twd = '0' WHERE position_id = ?",
+        )
+        .run(positionId);
+      await db
+        .prepare(
+          "UPDATE snapshot_positions SET contract_multiplier = NULL WHERE position_id = ?",
+        )
+        .run(positionId);
+
+      expect(await listSales()).toMatchObject([
+        {
+          symbol: "TMF202609",
+          securityType: "future",
+          quantity: "3",
+          grossProceeds: "3600",
+          netProceeds: "3480",
+          realizedPnl: "3480",
+          realizedPnlTwd: "3480",
+        },
+      ]);
     });
   });
 

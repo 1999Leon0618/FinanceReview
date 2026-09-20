@@ -869,7 +869,7 @@ async function runResearchAgents(
 Delegate independent work in parallel to four focused subagents and wait for all of them before synthesizing:
 1. Portfolio analyst: use deterministic portfolio data to identify concentration, geography, single-name exposure, leveraged ETF exposure, and ETF overlap. For held QQQ, VOO, 0050, 006208, and TQQQ, obtain current top holdings from issuer or official fund sources and return them as etfHoldings. Do not perform exposure arithmetic; the application will calculate it.
 2. Market researcher: research the report week. Separate (a) an officially confirmed event, (b) its direct implication, and (c) any broader market-state conclusion. A policy-rate increase supports "policy stance tightened" but does not alone support "financial conditions broadly tightened." Populate broadMarketState only when additional market evidence such as yields, credit spreads, USD, equities, financing costs, or lending conditions supports it, and list those additional source IDs separately.
-3. Security researcher: find material events for the largest holdings and unusual movers. Score materiality, directness, financial impact, and source quality from 0 to 5. Earnings, guidance, revenue/margin changes, acquisitions, major contracts, regulation, delays, capital raises, management changes, material lawsuits, and major customer/supplier events outrank conference attendance, research publicity, minor product updates, marketing, and third-party manager trades. For an ETF, distinguish fund-level events from manager or affiliated-portfolio activity. Classify the latter as manager_related; never present it as an ETF fundamental event. No research data is not proof that no event occurred.
+3. Security researcher: find material events for held individual stocks, prioritizing higher portfolio weights. Do not return ETF or fund events. Score materiality, directness, financial impact, and source quality from 0 to 5. Earnings, guidance, revenue/margin changes, acquisitions, major contracts, regulation, delays, capital raises, management changes, material lawsuits, and major customer/supplier events outrank conference attendance, research publicity, minor product updates, and marketing. No research data is not proof that no event occurred.
 4. Forward researcher: find concrete dated events in the next calendar week. Prioritize top-holding earnings/guidance/company events, Fed/rates/macro, semiconductor/AI, Taiwan/TSMC, then other relevant holdings. Score importance and source quality from 0 to 5.
 
 Return ONLY one valid JSON object, without Markdown fences or Markdown links. Use this exact shape:
@@ -1050,7 +1050,7 @@ Quality rules:
 - Weekly market: weeklyPerformance is the only source for market return numbers. Never substitute watchlist.changePercent, news prose, or snapshot changes for weekly returns. For policy and macro events, distinguish confirmed events, direct implications, and broader market conditions. Do not infer broad financial-condition tightening or easing from a single policy action.
 - Portfolio Attribution: the application will replace this field with deterministic weeklyAttribution. Return an empty array; never infer attribution from portfolioChange or a short snapshot interval.
 - Portfolio Risk: descriptive risk analysis is allowed even when the investor profile is incomplete. Use concentration, market/geographic exposure, single-name exposure, etfLookThrough, overlaps, and leveragedEtfs. Clearly call TQQQ exposure a daily target nominal exposure and explain daily reset, path dependency, volatility drag, and compounding differences. ${hasProfile ? "Use the investor goal, horizon, and tolerance only for clearly labeled personalized context." : "Do not judge suitability, prescribe target allocations, or recommend trades because the investor profile is incomplete."}
-- Security events: use securityEventRanking order. Do not add unranked web events. Manager-related ETF activity must stay labeled manager-related, not as an ETF fundamental event. No research data is not proof of no event.
+- Security events: use securityEventRanking order. This section is for held individual stocks only, ordered by portfolio weight; do not add ETF, fund, or unranked web events. No research data is not proof of no event.
 - Next-week watch: use nextWeekRanking order. Do not add data-refresh or stale-quote checks here.
 - Sources: never write Markdown links or raw URLs. Cite only existing structured source IDs using literal tokens such as [src-1] or [market-qqq].
 - Data Quality: keep only 3-5 user-relevant limitations that affect interpretation. Do not expose omitted counters, debug metadata, retry details, internal pipeline state, or agent execution details. Avoid repetition.
@@ -1250,23 +1250,16 @@ Quality rules:
         })),
       ]
     : [];
-  const securityEvents = rankedSecurityEvents.length
-    ? rankedSecurityEvents.map((item) => ({
-        symbol: item.symbol,
-        event: sanitize(
-          `${item.classification === "manager_related" ? "Manager-related activity：" : ""}${item.event}${sourceReferences(item.sourceIds)}`,
-        ),
-        portfolioRelevance: sanitize(
-          `${item.portfolioRelevance}（持倉權重 ${item.portfolioWeight}%；relevance ${item.portfolioRelevanceScore}/100）`,
-        ),
-        risk: sanitize(item.risk),
-      }))
-    : parsed.securityEvents.slice(0, 5).map((item) => ({
-        symbol: sanitize(item.symbol),
-        event: sanitize(item.event),
-        portfolioRelevance: sanitize(item.portfolioRelevance),
-        risk: sanitize(item.risk),
-      }));
+  const securityEvents = rankedSecurityEvents.map((item) => ({
+    symbol: item.symbol,
+    event: sanitize(
+      `${item.classification === "manager_related" ? "Manager-related activity：" : ""}${item.event}${sourceReferences(item.sourceIds)}`,
+    ),
+    portfolioRelevance: sanitize(
+      `${item.portfolioRelevance}（持倉權重 ${item.portfolioWeight}%；relevance ${item.portfolioRelevanceScore}/100）`,
+    ),
+    risk: sanitize(item.risk),
+  }));
   const nextWeekWatch = rankedNextWeekEvents.length
     ? rankedNextWeekEvents.map((item) => ({
         focus: sanitize(item.focus),

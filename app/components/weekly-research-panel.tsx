@@ -24,6 +24,7 @@ import {
   attributionChartData,
   concentrationMetrics,
   etfOverlapChartData,
+  heldStockEventsByWeight,
   indexExposureMetrics,
   lookThroughExposureChartData,
   marketAllocationChartData,
@@ -637,6 +638,12 @@ export default function WeeklyResearchPanel({
   const selected =
     reports.find((report) => report.id === selectedId) ?? reports[0];
   const selectedSources = selected ? evidenceSources(selected.evidence) : [];
+  const selectedSecurityEvents = selected
+    ? heldStockEventsByWeight(
+        selected.content.securityEvents,
+        selected.evidence,
+      )
+    : [];
   const selectedRiskCharts = selected
     ? portfolioRiskChartData(selected.evidence)
     : { lookThrough: [], overlaps: [], indexExposure: [] };
@@ -843,11 +850,11 @@ export default function WeeklyResearchPanel({
                 )}
               </>
             )}
-            {selected.content.securityEvents.length > 0 && (
+            {selectedSecurityEvents.length > 0 && (
               <>
                 <h3 className="mt-7 text-lg font-bold">個股重要事件</h3>
                 <ul className="mt-2 space-y-3">
-                  {selected.content.securityEvents.map((item, index) => (
+                  {selectedSecurityEvents.map((item, index) => (
                     <li
                       key={`${item.symbol}-${index}`}
                       className="rounded-xl bg-[#f4f7ef] p-4 dark:bg-white/5"

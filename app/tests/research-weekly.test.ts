@@ -337,6 +337,7 @@ describe("每週研究報告", () => {
       });
       const report = await generateWeeklyReport("manual", now);
       expect(report.content.portfolioRisk).toHaveLength(1);
+      expect(report.content.securityEvents).toHaveLength(0);
       expect(report.content.nextWeekWatch).toHaveLength(1);
       expect(report.content.dataQuality).toContain(
         "本週外部即時研究來源不足；事件內容僅使用既有研究資料。",

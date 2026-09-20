@@ -20,6 +20,7 @@ import {
 import { getDatabase, withTransaction } from "./db";
 import { buildHealthReport } from "./health";
 import { getDataOwner } from "./data-owner";
+import { futuresContractMultiplier } from "./futures-form";
 import type {
   AccountStateInput,
   AccountView,
@@ -46,13 +47,6 @@ type Row = Record<string, unknown>;
 const text = (value: unknown) => String(value ?? "");
 const nullableText = (value: unknown) =>
   value === null || value === undefined ? null : String(value);
-
-function futuresMultiplier(symbol: string, stored?: string | null) {
-  if (stored && decimal(stored).gt(0)) return stored;
-  if (/^TMF\d{6}$/.test(symbol)) return "10";
-  if (/^MTX\d{6}$/.test(symbol)) return "50";
-  return null;
-}
 
 function snapshotSummary(row: Row): SnapshotSummary {
   return {
@@ -1536,7 +1530,7 @@ export async function listSales(db?: FinanceDatabase): Promise<SaleView[]> {
     const salePrice = nullableText(row.sale_price);
     const averageCost = nullableText(row.average_cost);
     const quantity = text(row.quantity);
-    const contractMultiplier = futuresMultiplier(
+    const contractMultiplier = futuresContractMultiplier(
       text(row.symbol),
       nullableText(row.contract_multiplier),
     );
@@ -1706,7 +1700,7 @@ export async function sellPosition(
     const tax = decimal(input.tax);
     const contractMultiplier =
       current.securityType === "future"
-        ? futuresMultiplier(current.symbol, current.contractMultiplier)
+        ? futuresContractMultiplier(current.symbol, current.contractMultiplier)
         : null;
     if (
       current.securityType === "future" &&
@@ -1733,16 +1727,6 @@ export async function sellPosition(
       current.securityType === "future"
         ? netProceeds
         : netProceeds.minus(costBasis);
-    const settlementAdjustment =
-      current.securityType === "future"
-        ? salePrice
-            .minus(current.marketPrice)
-            .mul(current.positionSide === "short" ? -1 : 1)
-            .mul(quantity)
-            .mul(contractMultiplier!)
-            .minus(fee)
-            .minus(tax)
-        : netProceeds;
     const fxRate = decimal(
       current.quoteCurrency === "TWD" ? "1" : (current.fxRate?.rate ?? "0"),
     );
@@ -1756,6 +1740,7 @@ export async function sellPosition(
       accountReference: account.accountReference,
       defaultCurrency: account.defaultCurrency,
       cashBalances:
+        current.securityType === "future" ||
         account.accountId !== settlementAccount.accountId
           ? account.cashBalances
           : (() => {
@@ -1766,18 +1751,16 @@ export async function sellPosition(
                 (balance) => balance.currency === input.currency,
               );
               if (target) {
-                const nextAmount = decimal(target.amount).plus(
-                  settlementAdjustment,
-                );
+                const nextAmount = decimal(target.amount).plus(netProceeds);
                 if (nextAmount.isNegative())
                   throw new Error("結算後現金餘額不可為負數");
                 target.amount = money(nextAmount);
               } else {
-                if (settlementAdjustment.isNegative())
+                if (netProceeds.isNegative())
                   throw new Error("入帳帳戶沒有足夠現金支付結算損失與費用");
                 balances.push({
                   currency: input.currency,
-                  amount: money(settlementAdjustment),
+                  amount: money(netProceeds),
                   fxRate: current.fxRate,
                 });
               }
@@ -1789,19 +1772,23 @@ export async function sellPosition(
     }));
     const soldAt = new Date(input.soldAt).toISOString();
     const snapshotId = await createSnapshotInDb(db, {
-      rawInput: `${current.accountName} 的 ${current.symbol} 已全部賣出`,
+      rawInput:
+        current.securityType === "future"
+          ? `${current.accountName} 的 ${current.symbol} 已全部結算；帳戶權益待下次快照更新`
+          : `${current.accountName} 的 ${current.symbol} 已全部賣出`,
       baseSnapshotId: latest.id,
       accounts,
       loans: latest.loans,
-      cashFlows: fee.plus(tax).gt(0)
-        ? [
-            {
-              flowType: "fee_tax",
-              amountTwd: money(fee.plus(tax).mul(fxRate)),
-              note: `${current.symbol} 全部賣出費稅`,
-            },
-          ]
-        : [],
+      cashFlows:
+        current.securityType !== "future" && fee.plus(tax).gt(0)
+          ? [
+              {
+                flowType: "fee_tax",
+                amountTwd: money(fee.plus(tax).mul(fxRate)),
+                note: `${current.symbol} 全部賣出費稅`,
+              },
+            ]
+          : [],
     });
     const now = new Date().toISOString();
     await db

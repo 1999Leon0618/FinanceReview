@@ -19,7 +19,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 - 排除外部投入與提領後估算投資績效、年化報酬與最大回撤，並和臺灣加權指數、SPY 或 VT 比較。
 - 啟動時顯示資料更新時效，並檢查總額、行情、匯率、貸款還款與期貨契約月份。
 - 透過 JSON 匯出／匯入備份，並可在畫面上暫時隱藏財務數字。
-- 提供私人「研究」工作區：追蹤台美股自選標的與 K 線，人工建立盤前簡報、盤中快報、盤後研究，保存來源、研究當下行情、修訂紀錄與關聯待辦。
+- 提供私人「研究」工作區：追蹤台美股自選標的與 K 線，並集中檢視 AI 每週研究報告。
 - 每位使用者可自行設定 OpenAI API Key、報告語言與投資背景；每週日產生台美股研究週報，亦可手動產生並保留歷次結果。
 
 ## 啟動
@@ -164,9 +164,9 @@ sequenceDiagram
 
 ### 研究週報與 API Key
 
-「設定」頁面的「報告設定」提供繁體中文、英文、日文選項，以及投資目標、期限、風險承受度與 API Key 管理。未設定 API Key 時仍可使用人工研究功能；產生週報時會提示先前往設定頁儲存金鑰。正式環境每週日 07:00（台灣時間）自動產生一份，手動按鈕則每按一次另存一份。
+「設定」頁面的「報告設定」提供繁體中文、英文、日文選項，以及投資目標、期限、風險承受度與 API Key 管理。行情面板不需要 API Key；產生週報時會提示先前往設定頁儲存金鑰。正式環境每週日 07:00（台灣時間）自動產生一份，手動按鈕則每按一次另存一份。
 
-週報依序呈現 `Portfolio Snapshot`、本週市場、`Portfolio Attribution`、`Portfolio Risk`、個股重要事件、下週觀察與 `Data Quality`。沒有有效內容的歸因、風險、事件、觀察或資料品質區段不顯示。超過單次上限的自選標的、研究報告或待辦會先依關聯標的的持倉占比由高到低排序，優先省略低占比與未持有標的；同占比才沿用既有順序。省略筆數只留在報告證據供除錯，不會成為一般使用者的 `Data Quality` 內容。
+週報依序呈現 `Portfolio Snapshot`、本週市場、`Portfolio Attribution`、`Portfolio Risk`、個股重要事件、下週觀察與 `Data Quality`。沒有有效內容的歸因、風險、事件、觀察或資料品質區段不顯示。超過單次上限的自選標的會先依關聯標的的持倉占比由高到低排序，優先省略低占比與未持有標的；同占比才沿用既有順序。省略筆數只留在報告證據供除錯，不會成為一般使用者的 `Data Quality` 內容。
 
 週報管線保留既有四個研究 Agent 與最終撰稿者，不增加 Agent 數量；可確定計算的數學則由應用程式完成：
 
@@ -190,7 +190,7 @@ flowchart LR
 - 外部研究來源以結構化物件保存；正文只能引用 `[sourceId]`，畫面再依已驗證的來源物件建立連結。模型產生的 Markdown 連結及裸網址會被移除，避免錯誤或串接網址。
 - `Data Quality` 最多顯示五項會影響解讀的限制，不顯示省略筆數、重試、Agent 執行或其他內部狀態。投資背景未填齊時仍可產生集中度、地域、ETF 重疊、穿透與槓桿等描述性風險，但不會產生個人化配置或交易建議。
 
-送至 OpenAI 的資料僅有自選標的、公開行情、研究報告、待辦，以及從最新快照計算的股票／ETF／基金持倉比例；不包含結構化的帳戶餘額、持倉數量或金額。若使用者自行在研究摘要或待辦文字寫入金額，該文字仍會傳送。投資背景未填齊時仍會整理市場，但不輸出個人化買賣方向。報告記錄產生時的語言、資料期間與使用的證據；AI 建議包含依據、觸發條件與風險，並不會自動下單。OpenAI API 的費用由使用者金鑰所屬帳戶承擔。
+送至 OpenAI 的資料僅有自選標的、公開行情、從最新快照計算的股票／ETF／基金持倉比例，以及使用者填寫的投資背景；不包含結構化的帳戶餘額、持倉數量或金額。投資背景未填齊時仍會整理市場，但不輸出個人化買賣方向。報告記錄產生時的語言、資料期間與使用的證據；AI 建議包含依據、觸發條件與風險，並不會自動下單。OpenAI API 的費用由使用者金鑰所屬帳戶承擔。
 
 使用者金鑰在伺服器端以 AES-GCM 加密後保存，不會回傳至瀏覽器或包含在 JSON 備份。管理員必須先設定 32 位元組的 Base64 `RESEARCH_KEY_ENCRYPTION_KEY`：本機放在 `app/.env.local`，Workers 放在對應環境的 Cloudflare Secret。金鑰需持續保管；遺失後既有加密的使用者金鑰無法解密，使用者必須重新設定。備份還原後也需重新設定 API Key。部署方式見 [Workers＋D1 說明](app/WORKERS.md)。
 
@@ -239,11 +239,11 @@ erDiagram
 | `quote_cache`                   | 可重新取得的行情快取，不列入備份                                       |
 | `app_settings`                  | 基準幣別、預設圖表區間與行情提供者等設定                               |
 | `watchlist_items`               | 台美股自選標的、持有狀態、加入來源與追蹤開關                           |
-| `research_notes`                | 盤前簡報、盤中快報、盤後研究的目前版本與封存狀態                       |
-| `research_note_revisions`       | 每次儲存的研究內容、來源與行情證據版本                                 |
-| `research_note_sources`         | 來源標題、媒體、網址、發布／查閱時間與關聯標的                         |
-| `research_quote_snapshots`      | 研究儲存當下引用的 card／kline 行情快照                                |
-| `research_todos`                | 台美股研究事項、預定時間、完成狀態與關聯研究報告                       |
+| `research_notes`                | 舊版人工研究資料，僅為既有備份與資料相容性保留                         |
+| `research_note_revisions`       | 舊版人工研究修訂，僅為既有備份與資料相容性保留                         |
+| `research_note_sources`         | 舊版人工研究來源，僅為既有備份與資料相容性保留                         |
+| `research_quote_snapshots`      | 舊版人工研究行情快照，僅為既有備份與資料相容性保留                     |
+| `research_todos`                | 舊版研究待辦，僅為既有備份與資料相容性保留                             |
 | `research_preferences`          | 每位使用者的報告語言與投資背景                                         |
 | `research_credentials`          | 每位使用者的加密 OpenAI API Key；不列入 JSON 備份                      |
 | `weekly_research_reports`       | 已生成週報、語言、期間與當次使用的非金額證據                           |
@@ -269,11 +269,11 @@ erDiagram
 | `PATCH`／`DELETE`     | `/api/watchlist/:id`                | 啟用、停用或隱藏自選標的             |
 | `GET`                 | `/api/watchlist/:id/candles`        | 取得自選標的 K 線                    |
 | `POST`                | `/api/watchlist/refresh`            | 更新自選行情快取                     |
-| `GET`／`POST`         | `/api/research-notes`               | 查詢或建立研究報告                   |
-| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`           | 讀取、修訂、封存或還原研究報告       |
-| `GET`                 | `/api/research-notes/:id/revisions` | 檢視唯讀修訂歷史                     |
-| `GET`／`POST`         | `/api/research-todos`               | 查詢或建立研究待辦                   |
-| `PATCH`               | `/api/research-todos/:id`           | 關聯報告、完成或重開研究待辦         |
+| `GET`／`POST`         | `/api/research-notes`               | 舊版研究報告相容 API                 |
+| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`           | 舊版研究報告相容 API                 |
+| `GET`                 | `/api/research-notes/:id/revisions` | 舊版研究修訂相容 API                 |
+| `GET`／`POST`         | `/api/research-todos`               | 舊版研究待辦相容 API                 |
+| `PATCH`               | `/api/research-todos/:id`           | 舊版研究待辦相容 API                 |
 | `GET`／`PUT`          | `/api/research-preferences`         | 讀取或更新語言與投資背景             |
 | `PUT`／`DELETE`       | `/api/research-preferences/key`     | 設定、更換或刪除個人 API Key         |
 | `GET`／`POST`         | `/api/weekly-reports`               | 列出或手動產生每週研究報告           |

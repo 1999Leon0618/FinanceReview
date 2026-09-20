@@ -789,8 +789,8 @@ export default function FinanceDashboard({
     research: {
       eyebrow: "RESEARCH",
       title: "投資研究",
-      location: "台美股研究工作區",
-      description: "以自選標的為核心，保存盤前、盤中與盤後研究。",
+      location: "市場行情與每週報告",
+      description: "追蹤自選標的走勢，定期檢視市場、事件與持倉風險。",
     },
     settings: {
       eyebrow: "SETTINGS",

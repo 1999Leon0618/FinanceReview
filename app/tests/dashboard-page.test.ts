@@ -15,6 +15,7 @@ import DashboardPage from "@/components/dashboard-page";
 
 describe("DashboardPage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     getDashboard.mockResolvedValue({ latest: null });
     ensureCurrentAppUser.mockResolvedValue({ role: "admin" });
   });
@@ -38,5 +39,17 @@ describe("DashboardPage", () => {
 
     expect(element.props.page).toBeUndefined();
     expect(element.props.isAdmin).toBe(false);
+  });
+
+  it("does not load unrelated dashboard data for the research page", async () => {
+    const element = await DashboardPage({ page: "research" });
+
+    expect(getDashboard).not.toHaveBeenCalled();
+    expect(ensureCurrentAppUser).toHaveBeenCalledOnce();
+    expect(element.props).toMatchObject({
+      page: "research",
+      initialData: null,
+      isAdmin: true,
+    });
   });
 });

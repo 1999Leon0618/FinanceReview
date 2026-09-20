@@ -82,35 +82,33 @@ function watchlistFromRow(row: Row): WatchlistItem {
 async function syncHoldingWatchlist(database?: FinanceDatabase) {
   const db = database ?? (await getDatabase());
   const ownerKey = getDataOwner().key;
-  const rows = (await db
-    .prepare(
-      `SELECT DISTINCT security.id AS security_id
-      FROM account_positions position
-      JOIN accounts account ON account.id = position.account_id
-      JOIN securities security ON security.id = position.security_id
-      WHERE account.owner_key = ? AND position.status = 'active'
-      AND security.market IN ('TWSE', 'TPEX', 'US')
-      AND security.security_type IN ('stock', 'etf')`,
-    )
-    .all(ownerKey)) as Row[];
-  const now = new Date().toISOString();
-  for (const row of rows) {
-    const securityId = text(row.security_id);
-    const existing = await db
+  await db.atomic(async (transaction) => {
+    const rows = (await transaction
       .prepare(
-        "SELECT id FROM watchlist_items WHERE owner_key = ? AND security_id = ?",
+        `SELECT DISTINCT security.id AS security_id
+        FROM account_positions position
+        JOIN accounts account ON account.id = position.account_id
+        JOIN securities security ON security.id = position.security_id
+        LEFT JOIN watchlist_items item
+          ON item.owner_key = account.owner_key
+          AND item.security_id = security.id
+        WHERE account.owner_key = ? AND position.status = 'active'
+        AND security.market IN ('TWSE', 'TPEX', 'US')
+        AND security.security_type IN ('stock', 'etf')
+        AND item.id IS NULL`,
       )
-      .get(ownerKey, securityId);
-    if (!existing)
-      await db
+      .all(ownerKey)) as Row[];
+    const now = new Date().toISOString();
+    for (const row of rows)
+      await transaction
         .prepare(
           `INSERT INTO watchlist_items(
             id, owner_key, security_id, origin, is_enabled, first_seen_at,
             created_at, updated_at
           ) VALUES (?, ?, ?, 'holding', 1, ?, ?, ?)`,
         )
-        .run(randomUUID(), ownerKey, securityId, now, now, now);
-  }
+        .run(randomUUID(), ownerKey, text(row.security_id), now, now, now);
+  });
 }
 
 export async function listWatchlist(

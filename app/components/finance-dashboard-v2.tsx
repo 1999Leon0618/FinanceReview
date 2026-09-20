@@ -240,7 +240,7 @@ export default function FinanceDashboard({
   demoMode = false,
   demoReturnHref = "/pending",
 }: {
-  initialData: DashboardData;
+  initialData: DashboardData | null;
   page?: FinancePage;
   isAdmin?: boolean;
   demoMode?: boolean;
@@ -3945,7 +3945,7 @@ function AccountSettingsEditor({
       const capturedAt = new Date(
         Math.max(Date.now(), latest ? Date.parse(latest.capturedAt) + 1 : 0),
       ).toISOString();
-      await request("/api/snapshots", {
+      await request("/api/snapshots?response=minimal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4325,7 +4325,7 @@ function CreditCardEditor({
           account.remainingInstallmentPrincipal || "0",
         overpaymentBalance: account.overpaymentBalance || "0",
       }));
-      await request("/api/snapshots", {
+      await request("/api/snapshots?response=minimal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

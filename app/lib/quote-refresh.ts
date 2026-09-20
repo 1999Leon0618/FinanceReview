@@ -1,4 +1,6 @@
 import { resolveAccountQuotes } from "./quotes";
+import { decimal, money, zero } from "./finance";
+import { futuresContractMultiplier } from "./futures-form";
 import type {
   AccountStateInput,
   LoanInput,
@@ -96,6 +98,66 @@ function cloneAccounts(latest: SnapshotDetail): AccountStateInput[] {
 const positionKey = (position: Pick<PositionInput, "positionId" | "symbol">) =>
   position.positionId ?? position.symbol;
 
+export function applyFuturesQuoteEquityChanges(
+  latest: SnapshotDetail,
+  accounts: AccountStateInput[],
+): AccountStateInput[] {
+  const previousAccounts = new Map(
+    latest.accounts.map((account) => [account.accountId, account]),
+  );
+
+  return accounts.map((account) => {
+    const previousAccount = account.accountId
+      ? previousAccounts.get(account.accountId)
+      : undefined;
+    if (!previousAccount) return account;
+
+    const currentPositions = new Map(
+      account.positions.map((position) => [positionKey(position), position]),
+    );
+    const changes = new Map<string, ReturnType<typeof decimal>>();
+    for (const previous of previousAccount.positions) {
+      if (previous.securityType !== "future") continue;
+      const current = currentPositions.get(positionKey(previous));
+      if (!current) continue;
+      if (current.quoteCurrency !== previous.quoteCurrency)
+        throw new Error(`${previous.symbol} 更新行情時不可變更報價幣別`);
+      const multiplier = futuresContractMultiplier(
+        previous.symbol,
+        previous.contractMultiplier,
+      );
+      if (!multiplier) throw new Error(`${previous.symbol} 缺少有效的每點價值`);
+      const change = decimal(current.marketPrice)
+        .minus(previous.marketPrice)
+        .mul(previous.positionSide === "short" ? -1 : 1)
+        .mul(previous.quantity)
+        .mul(multiplier);
+      changes.set(
+        previous.quoteCurrency,
+        (changes.get(previous.quoteCurrency) ?? zero).plus(change),
+      );
+    }
+    if (changes.size === 0) return account;
+
+    const balances = account.cashBalances.map((balance) => ({ ...balance }));
+    for (const [currency, change] of changes) {
+      const previousBalance = previousAccount.cashBalances.find(
+        (balance) => balance.currency === currency,
+      );
+      const target = balances.find((balance) => balance.currency === currency);
+      if (!previousBalance || !target)
+        throw new Error(
+          `${account.name} 缺少 ${currency} 期貨帳戶權益，請先建立權益快照`,
+        );
+      const nextAmount = decimal(previousBalance.amount).plus(change);
+      if (nextAmount.isNegative())
+        throw new Error(`${account.name} 更新行情後的期貨帳戶權益不可為負數`);
+      target.amount = money(nextAmount);
+    }
+    return { ...account, cashBalances: balances };
+  });
+}
+
 export async function prepareQuoteRefresh(
   latest: SnapshotDetail,
   dependencies: QuoteRefreshDependencies = {},
@@ -149,7 +211,7 @@ export async function prepareQuoteRefresh(
   return {
     ...summary,
     baseSnapshotId: latest.id,
-    accounts: previewAccounts,
+    accounts: applyFuturesQuoteEquityChanges(latest, previewAccounts),
     loans: latest.loans.map((loan) => ({
       loanId: loan.loanId,
       accountId: loan.accountId,

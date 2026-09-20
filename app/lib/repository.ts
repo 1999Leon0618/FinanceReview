@@ -1693,6 +1693,11 @@ export async function sellPosition(
       (account) => account.accountId === input.settlementAccountId,
     );
     if (!settlementAccount) throw new Error("找不到指定的入帳帳戶");
+    if (
+      current.securityType === "future" &&
+      settlementAccount.accountId !== current.accountId
+    )
+      throw new Error("期貨結算帳戶必須是持倉所屬帳戶");
 
     const quantity = decimal(current.quantity);
     const salePrice = decimal(input.salePrice);
@@ -1727,6 +1732,16 @@ export async function sellPosition(
       current.securityType === "future"
         ? netProceeds
         : netProceeds.minus(costBasis);
+    const settlementAdjustment =
+      current.securityType === "future"
+        ? salePrice
+            .minus(current.marketPrice)
+            .mul(current.positionSide === "short" ? -1 : 1)
+            .mul(quantity)
+            .mul(contractMultiplier!)
+            .minus(fee)
+            .minus(tax)
+        : netProceeds;
     const fxRate = decimal(
       current.quoteCurrency === "TWD" ? "1" : (current.fxRate?.rate ?? "0"),
     );
@@ -1740,7 +1755,6 @@ export async function sellPosition(
       accountReference: account.accountReference,
       defaultCurrency: account.defaultCurrency,
       cashBalances:
-        current.securityType === "future" ||
         account.accountId !== settlementAccount.accountId
           ? account.cashBalances
           : (() => {
@@ -1751,16 +1765,18 @@ export async function sellPosition(
                 (balance) => balance.currency === input.currency,
               );
               if (target) {
-                const nextAmount = decimal(target.amount).plus(netProceeds);
+                const nextAmount = decimal(target.amount).plus(
+                  settlementAdjustment,
+                );
                 if (nextAmount.isNegative())
                   throw new Error("結算後現金餘額不可為負數");
                 target.amount = money(nextAmount);
               } else {
-                if (netProceeds.isNegative())
+                if (settlementAdjustment.isNegative())
                   throw new Error("入帳帳戶沒有足夠現金支付結算損失與費用");
                 balances.push({
                   currency: input.currency,
-                  amount: money(netProceeds),
+                  amount: money(settlementAdjustment),
                   fxRate: current.fxRate,
                 });
               }
@@ -1774,21 +1790,20 @@ export async function sellPosition(
     const snapshotId = await createSnapshotInDb(db, {
       rawInput:
         current.securityType === "future"
-          ? `${current.accountName} 的 ${current.symbol} 已全部結算；帳戶權益待下次快照更新`
+          ? `${current.accountName} 的 ${current.symbol} 已全部結算並更新帳戶權益`
           : `${current.accountName} 的 ${current.symbol} 已全部賣出`,
       baseSnapshotId: latest.id,
       accounts,
       loans: latest.loans,
-      cashFlows:
-        current.securityType !== "future" && fee.plus(tax).gt(0)
-          ? [
-              {
-                flowType: "fee_tax",
-                amountTwd: money(fee.plus(tax).mul(fxRate)),
-                note: `${current.symbol} 全部賣出費稅`,
-              },
-            ]
-          : [],
+      cashFlows: fee.plus(tax).gt(0)
+        ? [
+            {
+              flowType: "fee_tax",
+              amountTwd: money(fee.plus(tax).mul(fxRate)),
+              note: `${current.symbol} 全部賣出費稅`,
+            },
+          ]
+        : [],
     });
     const now = new Date().toISOString();
     await db

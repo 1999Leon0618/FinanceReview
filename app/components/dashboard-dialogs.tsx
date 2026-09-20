@@ -2933,27 +2933,32 @@ export function SaleDialog({
             />
           </label>
           <label>
-            {position.securityType === "future"
-              ? "結算帳戶（僅供紀錄）"
-              : "入帳帳戶"}
+            {position.securityType === "future" ? "結算帳戶" : "入帳帳戶"}
             <select
               className="field"
               value={settlementAccountId}
               onChange={(event) => setSettlementAccountId(event.target.value)}
+              disabled={position.securityType === "future"}
             >
-              {accounts.map((account) => (
-                <option
-                  key={account.accountId ?? account.name}
-                  value={account.accountId}
-                >
-                  {account.name}
-                </option>
-              ))}
+              {accounts
+                .filter(
+                  (account) =>
+                    position.securityType !== "future" ||
+                    account.accountId === position.accountId,
+                )
+                .map((account) => (
+                  <option
+                    key={account.accountId ?? account.name}
+                    value={account.accountId}
+                  >
+                    {account.name}
+                  </option>
+                ))}
             </select>
           </label>
           {position.securityType === "future" && (
             <p className="notice text-xs">
-              此次結算會記錄已實現損益與費稅，但不會自動改寫期貨帳戶權益；請在下一份快照填入券商顯示的最新權益數。
+              系統會依最後行情到結算價的損益差額更新帳戶權益並扣除費稅；從進場到結算的完整已實現損益會另外保存。
             </p>
           )}
           <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">

@@ -580,7 +580,7 @@ describe("快照與全部賣出", () => {
     });
   });
 
-  it("期貨平倉保留完整已實現損益，帳戶權益留待下一份快照更新", async () => {
+  it("期貨平倉保留完整已實現損益，並以最後行情到結算價的差額更新權益", async () => {
     const owner = dataOwnerFromEmail("futures-settlement@example.com");
     await runWithDataOwner(owner, async () => {
       const snapshot = await createSnapshot({
@@ -625,11 +625,13 @@ describe("快照與全部賣出", () => {
         tax: "20",
       });
 
-      expect(result.totalAssetValueTwd).toBe("300000");
-      expect(result.accounts[0].cashBalances[0].amount).toBe("300000");
+      expect(result.totalAssetValueTwd).toBe("300480");
+      expect(result.accounts[0].cashBalances[0].amount).toBe("300480");
       expect(result.accounts[0].positions).toHaveLength(0);
-      expect(result.rawInput).toContain("帳戶權益待下次快照更新");
-      expect(result.cashFlows).toEqual([]);
+      expect(result.rawInput).toContain("已全部結算並更新帳戶權益");
+      expect(result.cashFlows).toMatchObject([
+        { flowType: "fee_tax", amountTwd: "120" },
+      ]);
 
       const db = await getDatabase();
       await db

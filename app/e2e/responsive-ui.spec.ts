@@ -91,16 +91,16 @@ for (const width of [390, 768, 1440]) {
   });
 }
 
-test("手機可開啟投資研究工作區且分頁不溢出", async ({ page }) => {
+test("手機可開啟精簡後的投資研究工作區且分頁不溢出", async ({ page }) => {
   await page.setViewportSize({ width: 486, height: 812 });
   await page.goto("/research");
   await expect(
     page.getByRole("heading", { name: "投資研究", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "行情面板" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "台股研究" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "美股研究" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /研究待辦/ })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "每週報告 AI 研究與建議" }),
+  ).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));

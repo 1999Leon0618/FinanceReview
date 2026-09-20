@@ -162,6 +162,8 @@ describe("每週研究報告", () => {
         "AAPL",
         "0050",
       ]);
+      expect(evidence).not.toHaveProperty("researchNotes");
+      expect(evidence).not.toHaveProperty("todos");
       expect(JSON.stringify(evidence)).not.toContain("20000");
       expect(JSON.stringify(evidence)).not.toContain("10000");
       expect(JSON.stringify(evidence)).not.toContain("測試券商");

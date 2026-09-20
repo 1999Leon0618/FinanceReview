@@ -567,11 +567,6 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
     quoteAsOf: string | null;
     status: string;
   }>;
-  const notes = (evidence.researchNotes ?? []) as Array<{
-    title: string;
-    asOf: string;
-    sources: Array<{ title: string; url: string }>;
-  }>;
   return (
     <details className="mt-7 rounded-xl border p-4 text-sm">
       <summary className="cursor-pointer font-bold">檢視當次使用的資料</summary>
@@ -597,34 +592,6 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
             <li key={`${item.market}-${item.symbol}-${index}`}>
               {item.market} {item.symbol}：{item.status}（
               {item.quoteAsOf?.slice(0, 10) ?? "無行情"}）
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="mt-4 font-semibold">本週研究來源</p>
-      {notes.length === 0 ? (
-        <p>本週沒有研究報告。</p>
-      ) : (
-        <ul className="mt-1 space-y-2">
-          {notes.map((note, index) => (
-            <li key={index}>
-              {note.title}（{note.asOf.slice(0, 10)}）
-              {note.sources.length > 0 && (
-                <ul className="ml-4 list-disc">
-                  {note.sources.map((source, sourceIndex) => (
-                    <li key={sourceIndex}>
-                      <a
-                        className="underline"
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {source.title}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </li>
           ))}
         </ul>
@@ -749,11 +716,8 @@ export default function WeeklyResearchPanel({
         </p>
         <p className="mt-2 text-sm text-[#59675f]">
           傳送至
-          OpenAI：投資持倉比例、自選標的、公開行情、研究報告、待辦，以及下方投資背景。不傳帳戶餘額、持倉數量或金額。API
+          OpenAI：投資持倉比例、自選標的、公開行情，以及下方投資背景。不傳帳戶餘額、持倉數量或金額。API
           費用由你的金鑰所屬帳戶承擔。
-        </p>
-        <p className="mt-2 text-xs text-[#718078]">
-          若研究摘要或待辦文字自行寫入金額，該文字仍會隨報告資料傳送。
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button className="primary" disabled={busy} onClick={generate}>

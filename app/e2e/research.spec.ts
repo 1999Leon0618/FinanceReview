@@ -12,6 +12,17 @@ test("研究工作區只保留行情面板與每週報告", async ({ page }) => 
   await expect(page.getByRole("button", { name: "台股研究" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "美股研究" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /研究待辦/ })).toHaveCount(0);
+  const navigation = await page.locator(".research-tabs").boundingBox();
+  const firstTab = await page
+    .getByRole("button", { name: "行情面板" })
+    .boundingBox();
+  const secondTab = await page
+    .getByRole("button", { name: "每週報告 AI 研究與建議" })
+    .boundingBox();
+  expect(Math.abs(firstTab!.y - secondTab!.y)).toBeLessThanOrEqual(1);
+  expect(firstTab!.width + secondTab!.width).toBeGreaterThan(
+    navigation!.width * 0.9,
+  );
 });
 
 test("每週報告未設定金鑰時提供設定與提示", async ({ page }) => {

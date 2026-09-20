@@ -4,6 +4,7 @@ import {
   attributionChartData,
   concentrationMetrics,
   etfOverlapChartData,
+  heldStockEventsByWeight,
   indexExposureMetrics,
   lookThroughExposureChartData,
   marketAllocationChartData,
@@ -220,6 +221,33 @@ describe("週報圖表資料", () => {
     expect(indexExposureMetrics(evidence)).toEqual([
       { label: "Nasdaq-100", value: 28.1 },
     ]);
+  });
+
+  it("既有週報的個股事件在顯示時排除 ETF 並依持倉權重排序", () => {
+    const events = [
+      {
+        symbol: "6488",
+        event: "低權重事件",
+        portfolioRelevance: "直接持有",
+        risk: "波動",
+      },
+      {
+        symbol: "QQQ",
+        event: "ETF 事件",
+        portfolioRelevance: "ETF",
+        risk: "波動",
+      },
+      {
+        symbol: "AAPL",
+        event: "高權重事件",
+        portfolioRelevance: "直接持有",
+        risk: "波動",
+      },
+    ];
+
+    expect(
+      heldStockEventsByWeight(events, evidence).map((item) => item.symbol),
+    ).toEqual(["AAPL", "6488"]);
   });
 
   it("缺少或異常 evidence 時不產生誤導圖表", () => {

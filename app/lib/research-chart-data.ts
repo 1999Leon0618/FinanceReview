@@ -30,6 +30,13 @@ export type EtfOverlapChartItem = AllocationChartItem & {
   commonHoldingsCount: number;
 };
 
+export type SecurityEventItem = {
+  symbol: string;
+  event: string;
+  portfolioRelevance: string;
+  risk: string;
+};
+
 const marketLabels: Record<string, string> = {
   US: "美股",
   TWSE: "台股上市",
@@ -67,6 +74,31 @@ function records(value: unknown) {
           Boolean(item) && typeof item === "object",
       )
     : [];
+}
+
+export function heldStockEventsByWeight(
+  events: SecurityEventItem[],
+  evidence: Evidence,
+) {
+  const weights = new Map<string, number>();
+  for (const item of records(evidence.allocation)) {
+    const type = typeof item.type === "string" ? item.type.toLowerCase() : "";
+    const weight = finiteNumber(item.weightPct);
+    if (type !== "stock" || typeof item.symbol !== "string" || weight === null)
+      continue;
+    const symbol = item.symbol.toUpperCase();
+    weights.set(symbol, (weights.get(symbol) ?? 0) + weight);
+  }
+  return events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => weights.has(event.symbol.toUpperCase()))
+    .sort(
+      (left, right) =>
+        (weights.get(right.event.symbol.toUpperCase()) ?? 0) -
+          (weights.get(left.event.symbol.toUpperCase()) ?? 0) ||
+        left.index - right.index,
+    )
+    .map(({ event }) => event);
 }
 
 export function marketAllocationChartData(evidence: Evidence) {

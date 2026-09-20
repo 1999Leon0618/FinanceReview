@@ -6,6 +6,7 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   await expect(page.getByRole("heading", { name: "報告設定" })).toBeVisible();
   const reportSettings = page.locator("#research-report-settings");
   await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
+  await expect(page.getByLabel("日期與時間語言")).toHaveCount(0);
   await reportSettings.getByLabel("報告語言").selectOption("en");
   await reportSettings.getByRole("button", { name: "儲存設定" }).click();
   await expect(reportSettings.getByRole("status")).toContainText(
@@ -31,7 +32,6 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
   await page.locator(".settings-entry").click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "顯示偏好" })).toBeVisible();
-  await page.getByLabel("日期與時間語言").selectOption("en-US");
   await page.getByLabel("時區").selectOption("America/New_York");
   await page.getByRole("button", { name: "切換為深色模式" }).click();
   await page.getByRole("button", { name: "隱藏財務數字" }).click();
@@ -42,20 +42,30 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
   await expect(
     page.getByRole("button", { name: "顯示財務數字" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("日期與時間語言")).toHaveValue("en-US");
   await expect(page.getByLabel("時區")).toHaveValue("America/New_York");
   await page.getByRole("link", { name: "返回財務總覽" }).click();
   await expect(
     page.getByRole("heading", { name: "財務總覽", exact: true }),
   ).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  const expectedDate = new Intl.DateTimeFormat("en-US", {
-    dateStyle: "full",
-    timeZone: "America/New_York",
-  }).format(new Date());
-  await expect(page.locator(".page-intro")).toContainText(expectedDate);
   await expect(page.locator(".topbar").getByRole("button")).toHaveCount(1);
   await page.goto("/demo");
+  const capturedAt = new Date("2026-09-01T08:00:00.000Z");
+  const newYorkTime = new Intl.DateTimeFormat("zh-TW", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  }).format(capturedAt);
+  await expect(page.locator(".last-updated")).toContainText(newYorkTime);
+  await page.locator(".settings-entry").click();
+  await page.getByLabel("時區").selectOption("Asia/Tokyo");
+  const tokyoTime = new Intl.DateTimeFormat("zh-TW", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Tokyo",
+  }).format(capturedAt);
+  await expect(page.locator(".last-updated")).toContainText(tokyoTime);
+  await page.getByRole("link", { name: "返回財務總覽" }).click();
   await expect(page.locator(".net-worth-card")).toContainText("••••••");
   await expect(page.locator(".net-worth-card")).not.toContainText(
     "NT$1,286,000",

@@ -274,6 +274,32 @@ describe("財務計算", () => {
     expect(patch.positionUpdates[0].providerSymbol).toBe("T3601Y");
   });
 
+  it("會把有效 ISIN 保存為境外基金的精確行情代碼", async () => {
+    const patch = mergeDeterministicUpdates(
+      "兆豐證券持有路博邁投資基金，ISIN IE00B9276V44，100單位均價5.4",
+      {
+        unsupportedReason: null,
+        accountUpdates: [],
+        positionUpdates: [
+          {
+            accountName: "兆豐證券",
+            market: "FUND",
+            symbol: "路博邁投資基金",
+            name: "路博邁投資基金",
+            securityType: "fund",
+            quantity: "100",
+            averageCost: "5.4",
+          },
+        ],
+        loanUpdates: [],
+        sales: [],
+        warnings: [],
+      },
+    );
+
+    expect(patch.positionUpdates[0].providerSymbol).toBe("IE00B9276V44");
+  });
+
   it("可從混合敘述補出銀行餘額", async () => {
     expect(
       extractCashBalances(

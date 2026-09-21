@@ -15,6 +15,7 @@ import type {
   ParserPatch,
   SnapshotProposal,
 } from "./types";
+import { isValidIsin } from "./isin";
 
 export function extractCashBalances(
   rawInput: string,
@@ -301,8 +302,12 @@ export function mergeDeterministicUpdates(
       });
   }
   const fundCodes = [
-    ...rawInput.toUpperCase().matchAll(/\bT\d{4}[A-Z]\b/g),
-  ].map((match) => match[0]);
+    ...rawInput
+      .toUpperCase()
+      .matchAll(/\b(?:T\d{4}[A-Z]|[A-Z]{2}[A-Z0-9]{9}\d)\b/g),
+  ]
+    .map((match) => match[0])
+    .filter((code) => !/^[A-Z]{2}/.test(code) || isValidIsin(code));
   const fundUpdates = positionUpdates.filter(
     (item) => item.securityType === "fund",
   );

@@ -8,13 +8,19 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
   await expect(page.getByLabel("日期與時間語言")).toHaveCount(0);
   await reportSettings.getByLabel("報告語言").selectOption("en");
-  await reportSettings.getByLabel("啟用自動週報").setChecked(true);
+  const automaticReport = reportSettings.getByLabel("啟用自動週報");
+  if (!(await automaticReport.isChecked())) await automaticReport.click();
+  await expect(automaticReport).toBeChecked();
   await reportSettings.getByLabel("執行星期").selectOption("2");
   await reportSettings.getByLabel("執行時間").fill("09:30");
   await reportSettings.getByLabel("排程時區").selectOption("America/New_York");
   await reportSettings.getByLabel("AI 模型").selectOption("gpt-5.6-luna");
-  await reportSettings.getByLabel("將現金部位加入分析").setChecked(true);
-  await reportSettings.getByLabel("將期貨部位加入分析").setChecked(true);
+  const includeCash = reportSettings.getByLabel("將現金部位加入分析");
+  const includeFutures = reportSettings.getByLabel("將期貨部位加入分析");
+  if (!(await includeCash.isChecked())) await includeCash.click();
+  await expect(includeCash).toBeChecked();
+  if (!(await includeFutures.isChecked())) await includeFutures.click();
+  await expect(includeFutures).toBeChecked();
   await reportSettings.getByRole("button", { name: "儲存設定" }).click();
   await expect(reportSettings.getByRole("status")).toContainText(
     "報告設定已儲存",

@@ -2364,6 +2364,13 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "investment_goal",
       "investment_horizon",
       "risk_tolerance",
+      "automatic_report_enabled",
+      "report_weekday",
+      "report_time",
+      "report_timezone",
+      "report_model",
+      "include_cash_in_analysis",
+      "include_futures_in_analysis",
       "updated_at",
     ],
     weekly_research_reports: [

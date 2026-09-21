@@ -426,11 +426,27 @@ export interface WatchlistItem {
 }
 
 export type ResearchReportLanguage = "zh-TW" | "en" | "ja";
+export type ResearchReportModel =
+  "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
 export interface ResearchPreferences {
   reportLanguage: ResearchReportLanguage;
   investmentGoal: string | null;
   investmentHorizon: "short" | "medium" | "long" | null;
   riskTolerance: "low" | "medium" | "high" | null;
+  automaticReportEnabled: boolean;
+  reportWeekday: number;
+  reportTime: string;
+  reportTimezone:
+    | "Asia/Taipei"
+    | "Asia/Tokyo"
+    | "Asia/Shanghai"
+    | "Asia/Singapore"
+    | "Europe/London"
+    | "America/New_York"
+    | "UTC";
+  reportModel: ResearchReportModel;
+  includeCashInAnalysis: boolean;
+  includeFuturesInAnalysis: boolean;
   hasApiKey: boolean;
 }
 

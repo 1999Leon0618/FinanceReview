@@ -22,6 +22,7 @@ import {
   generateWeeklyReport,
   getWeeklyReport,
   getResearchPreferences,
+  isWeeklyReportDue,
   listWeeklyReports,
   prioritizeByPortfolioWeight,
   saveResearchApiKey,
@@ -37,6 +38,7 @@ process.env.RESEARCH_KEY_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
 const ownerA = dataOwnerFromEmail("weekly-a@example.com");
 const ownerB = dataOwnerFromEmail("weekly-b@example.com");
 const ownerC = dataOwnerFromEmail("weekly-c@example.com");
+const ownerD = dataOwnerFromEmail("weekly-d@example.com");
 const now = new Date("2026-09-20T00:00:00.000Z");
 const emptyWeeklyMarketData = async () => ({
   benchmarks: [],
@@ -85,6 +87,35 @@ describe("每週研究報告", () => {
     });
   });
 
+  it("依使用者星期、整點或半點與時區判斷排程", () => {
+    const schedule = {
+      automaticReportEnabled: true,
+      reportWeekday: 0,
+      reportTime: "07:00",
+      reportTimezone: "Asia/Taipei" as const,
+    };
+    expect(
+      isWeeklyReportDue(new Date("2026-09-19T23:00:00.000Z"), schedule),
+    ).toBe(true);
+    expect(
+      isWeeklyReportDue(new Date("2026-09-19T23:30:00.000Z"), schedule),
+    ).toBe(false);
+    expect(
+      isWeeklyReportDue(new Date("2026-09-19T23:00:00.000Z"), {
+        ...schedule,
+        automaticReportEnabled: false,
+      }),
+    ).toBe(false);
+    expect(
+      isWeeklyReportDue(new Date("2026-09-20T13:30:00.000Z"), {
+        ...schedule,
+        reportWeekday: 0,
+        reportTime: "09:30",
+        reportTimezone: "America/New_York",
+      }),
+    ).toBe(true);
+  });
+
   it("加密每人金鑰、僅傳比例、保存多次手動週報並隔離使用者", async () => {
     const apiKey = "sk-test-weekly-user-key-123456789";
     await runWithDataOwner(ownerA, async () => {
@@ -94,6 +125,13 @@ describe("每週研究報告", () => {
         investmentGoal: "長期增值",
         investmentHorizon: "long",
         riskTolerance: "medium",
+        automaticReportEnabled: true,
+        reportWeekday: 0,
+        reportTime: "07:00",
+        reportTimezone: "Asia/Taipei",
+        reportModel: "gpt-5.6-luna",
+        includeCashInAnalysis: false,
+        includeFuturesInAnalysis: false,
       });
       expect((await saveResearchApiKey({ apiKey })).hasApiKey).toBe(true);
       const db = await getDatabase();
@@ -158,10 +196,7 @@ describe("每週研究報告", () => {
         top3WeightPct: 100,
         marketWeightPct: { US: 66.667, TWSE: 33.333 },
       });
-      expect(evidence.watchlist.map((item) => item.symbol)).toEqual([
-        "AAPL",
-        "0050",
-      ]);
+      expect(evidence.watchlist).toEqual([]);
       expect(evidence).not.toHaveProperty("researchNotes");
       expect(evidence).not.toHaveProperty("todos");
       expect(JSON.stringify(evidence)).not.toContain("20000");
@@ -214,8 +249,10 @@ describe("每週研究報告", () => {
           const request = JSON.parse(String(init?.body)) as {
             input: string;
             store: boolean;
+            model: string;
           };
           expect(request.store).toBe(false);
+          expect(request.model).toBe("gpt-5.6-luna");
           expect(request.input).not.toContain("20000");
           expect(request.input).not.toContain("測試券商");
           return new Response(
@@ -236,11 +273,22 @@ describe("每週研究報告", () => {
       expect(first.id).not.toBe(second.id);
       expect(scheduled.id).toBe(duplicate.id);
       expect(first.language).toBe("en");
+      expect(first.model).toBe("gpt-5.6-luna");
       expect(await listWeeklyReports()).toHaveLength(3);
-      expect(await generateScheduledReports(now)).toEqual({
+      expect(
+        await generateScheduledReports(new Date("2026-09-19T23:00:00.000Z")),
+      ).toEqual({
         total: 1,
         failed: 0,
       });
+      const savedPreferences = await getResearchPreferences();
+      await saveResearchPreferences({
+        ...savedPreferences,
+        automaticReportEnabled: false,
+      });
+      expect(
+        await generateScheduledReports(new Date("2026-09-26T23:00:00.000Z")),
+      ).toEqual({ total: 0, failed: 0 });
       fetchMock.mockRestore();
       const watchlist = await listWatchlist();
       await removeWatchlistItem(
@@ -265,6 +313,79 @@ describe("每週研究報告", () => {
     await runWithDataOwner(ownerA, async () => {
       expect((await deleteResearchApiKey()).hasApiKey).toBe(false);
       expect(await listWeeklyReports()).toHaveLength(3);
+    });
+  });
+
+  it("依設定加入現金與期貨比例，且不傳送金額或口數", async () => {
+    await runWithDataOwner(ownerD, async () => {
+      await createSnapshot({
+        rawInput: "現金與期貨分析測試",
+        capturedAt: now.toISOString(),
+        accounts: [
+          {
+            name: "期貨帳戶",
+            accountType: "brokerage",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "100000" }],
+            positions: [
+              {
+                market: "FUTURES",
+                symbol: "MTX202609",
+                name: "小型臺指期 2026/09",
+                securityType: "future",
+                positionSide: "long",
+                contractMultiplier: "50",
+                contractExpiry: "202609",
+                quoteCurrency: "TWD",
+                quantity: "1",
+                averageCost: "19000",
+                marketPrice: "20000",
+                quoteAsOf: now.toISOString(),
+                quoteSource: "MANUAL",
+                quoteStatus: "manual",
+              },
+            ],
+          },
+        ],
+      });
+      const excluded = await buildWeeklyEvidence(now, {
+        marketDataLoader: emptyWeeklyMarketData,
+      });
+      expect(excluded).not.toHaveProperty("cashAnalysis");
+      expect(excluded).not.toHaveProperty("futuresAnalysis");
+
+      const included = await buildWeeklyEvidence(now, {
+        marketDataLoader: emptyWeeklyMarketData,
+        includeCashInAnalysis: true,
+        includeFuturesInAnalysis: true,
+      });
+      expect(included.cashAnalysis).toMatchObject({
+        cashPctOfTotalAssets: 100,
+        currencyAllocation: [
+          {
+            currency: "TWD",
+            weightPctOfCash: 100,
+            weightPctOfTotalAssets: 100,
+          },
+        ],
+      });
+      expect(included.futuresAnalysis).toMatchObject({
+        positionCount: 1,
+        grossNotionalPctOfNetWorth: 1000,
+        netNotionalPctOfNetWorth: 1000,
+        positions: [
+          {
+            symbol: "MTX202609",
+            side: "long",
+            contractExpiry: "202609",
+            notionalPctOfNetWorth: 1000,
+            unrealizedPnlPctOfNetWorth: 50,
+          },
+        ],
+      });
+      expect(JSON.stringify(included)).not.toContain("100000");
+      expect(JSON.stringify(included)).not.toContain('"quantity"');
+      expect(JSON.stringify(included)).not.toContain('"amount"');
     });
   });
 

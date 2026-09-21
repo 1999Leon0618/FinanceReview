@@ -20,6 +20,10 @@ import {
 import type { ResearchPreferences, WeeklyResearchReport } from "@/lib/types";
 import { requestJson } from "@/lib/client-request";
 import {
+  defaultResearchPreferences,
+  researchReportWeekdays,
+} from "@/lib/research-report-options";
+import {
   allocationTooltipText,
   attributionChartData,
   concentrationMetrics,
@@ -34,13 +38,7 @@ import {
   weeklyPerformanceChartData,
 } from "@/lib/research-chart-data";
 
-const emptyPreferences: ResearchPreferences = {
-  reportLanguage: "zh-TW",
-  investmentGoal: null,
-  investmentHorizon: null,
-  riskTolerance: null,
-  hasApiKey: false,
-};
+const emptyPreferences: ResearchPreferences = defaultResearchPreferences;
 const attributionEffectLabels = {
   positive: "正向",
   negative: "負向",
@@ -568,6 +566,28 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
     quoteAsOf: string | null;
     status: string;
   }>;
+  const cashAnalysis = evidence.cashAnalysis as
+    | {
+        cashPctOfTotalAssets: number | null;
+        currencyAllocation: Array<{
+          currency: string;
+          weightPctOfCash: number | null;
+          weightPctOfTotalAssets: number | null;
+        }>;
+      }
+    | undefined;
+  const futuresAnalysis = evidence.futuresAnalysis as
+    | {
+        grossNotionalPctOfNetWorth: number | null;
+        netNotionalPctOfNetWorth: number | null;
+        positions: Array<{
+          symbol: string;
+          side: "long" | "short";
+          contractExpiry: string | null;
+          notionalPctOfNetWorth: number | null;
+        }>;
+      }
+    | undefined;
   return (
     <details className="mt-7 rounded-xl border p-4 text-sm">
       <summary className="cursor-pointer font-bold">檢視當次使用的資料</summary>
@@ -584,7 +604,7 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
           ))}
         </ul>
       )}
-      <p className="mt-4 font-semibold">自選行情</p>
+      <p className="mt-4 font-semibold">僅自選、未持有的行情</p>
       {watchlist.length === 0 ? (
         <p>沒有追蹤中的自選標的。</p>
       ) : (
@@ -596,6 +616,59 @@ function WeeklyEvidence({ evidence }: { evidence: Record<string, unknown> }) {
             </li>
           ))}
         </ul>
+      )}
+      {cashAnalysis && (
+        <>
+          <p className="mt-4 font-semibold">現金分析</p>
+          <p>
+            現金占總資產：
+            {cashAnalysis.cashPctOfTotalAssets === null
+              ? "無法計算"
+              : `${cashAnalysis.cashPctOfTotalAssets.toFixed(2)}%`}
+          </p>
+          {cashAnalysis.currencyAllocation.length > 0 && (
+            <ul className="mt-1 space-y-1">
+              {cashAnalysis.currencyAllocation.map((item) => (
+                <li key={item.currency}>
+                  {item.currency}：現金內占比{" "}
+                  {item.weightPctOfCash === null
+                    ? "無法計算"
+                    : `${item.weightPctOfCash.toFixed(2)}%`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+      {futuresAnalysis && (
+        <>
+          <p className="mt-4 font-semibold">期貨名目曝險</p>
+          <p>
+            Gross／Net：
+            {futuresAnalysis.grossNotionalPctOfNetWorth === null
+              ? "無法計算"
+              : `${futuresAnalysis.grossNotionalPctOfNetWorth.toFixed(2)}%`}
+            ／
+            {futuresAnalysis.netNotionalPctOfNetWorth === null
+              ? "無法計算"
+              : `${futuresAnalysis.netNotionalPctOfNetWorth.toFixed(2)}%`}
+          </p>
+          {futuresAnalysis.positions.length > 0 && (
+            <ul className="mt-1 space-y-1">
+              {futuresAnalysis.positions.map((item, index) => (
+                <li
+                  key={`${item.symbol}-${item.side}-${item.contractExpiry}-${index}`}
+                >
+                  {item.symbol} {item.side === "long" ? "多單" : "空單"}
+                  {item.contractExpiry ? ` ${item.contractExpiry}` : ""}：
+                  {item.notionalPctOfNetWorth === null
+                    ? "無法計算"
+                    : `${item.notionalPctOfNetWorth.toFixed(2)}% 淨值名目曝險`}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
       {structuredSources.length > 0 && (
         <>
@@ -718,12 +791,16 @@ export default function WeeklyResearchPanel({
       <section className="rounded-2xl border border-[#dce4dd] bg-white p-5 dark:border-white/10 dark:bg-white/5">
         <h2 className="text-xl font-bold">每週 AI 研究報告</h2>
         <p className="mt-2 text-sm text-[#59675f]">
-          每週日
-          07:00（台灣時間）自動產生。開發期間可手動產生；每次結果都會保存。
+          {preferences.automaticReportEnabled
+            ? `每${researchReportWeekdays[preferences.reportWeekday].replace("星期", "週")} ${preferences.reportTime}（${preferences.reportTimezone}）自動產生。`
+            : "自動週報目前已關閉。"}
+          手動產生的每次結果都會保存。
         </p>
         <p className="mt-2 text-sm text-[#59675f]">
-          傳送至
-          OpenAI：投資持倉比例、自選標的、公開行情，以及下方投資背景。不傳帳戶餘額、持倉數量或金額。API
+          傳送至 OpenAI：投資持倉比例、僅自選標的、公開行情，以及下方投資背景。
+          {preferences.includeCashInAnalysis && "另包含現金占比。"}
+          {preferences.includeFuturesInAnalysis && "另包含期貨名目曝險比例。"}
+          不傳帳戶餘額、持倉數量、期貨口數或金額。API
           費用由你的金鑰所屬帳戶承擔。
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">

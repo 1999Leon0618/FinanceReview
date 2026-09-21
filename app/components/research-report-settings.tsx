@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { requestJson } from "@/lib/client-request";
+import { displayTimeZones } from "@/lib/display-preferences";
+import {
+  defaultResearchPreferences,
+  researchModelOptions,
+  researchReportWeekdays,
+} from "@/lib/research-report-options";
 import type { ResearchPreferences } from "@/lib/types";
 
-const emptyPreferences: ResearchPreferences = {
-  reportLanguage: "zh-TW",
-  investmentGoal: null,
-  investmentHorizon: null,
-  riskTolerance: null,
-  hasApiKey: false,
-};
+const emptyPreferences: ResearchPreferences = defaultResearchPreferences;
 
 export default function ResearchReportSettings() {
   const [preferences, setPreferences] =
@@ -65,6 +65,13 @@ export default function ResearchReportSettings() {
             investmentGoal: preferences.investmentGoal,
             investmentHorizon: preferences.investmentHorizon,
             riskTolerance: preferences.riskTolerance,
+            automaticReportEnabled: preferences.automaticReportEnabled,
+            reportWeekday: preferences.reportWeekday,
+            reportTime: preferences.reportTime,
+            reportTimezone: preferences.reportTimezone,
+            reportModel: preferences.reportModel,
+            includeCashInAnalysis: preferences.includeCashInAnalysis,
+            includeFuturesInAnalysis: preferences.includeFuturesInAnalysis,
           }),
         },
       );
@@ -101,11 +108,90 @@ export default function ResearchReportSettings() {
       aria-labelledby="research-report-settings-title"
     >
       <h2 id="research-report-settings-title">報告設定</h2>
-      <p>設定每週 AI 研究報告的語言、投資背景與 OpenAI API Key。</p>
+      <p>
+        設定每週 AI 研究報告的排程、模型、分析範圍、投資背景與 OpenAI API Key。
+      </p>
       {loading ? (
         <p role="status">正在載入報告設定…</p>
       ) : (
         <>
+          <h3 className="mt-5 font-bold">自動排程</h3>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={preferences.automaticReportEnabled}
+              onChange={(event) =>
+                setPreferences({
+                  ...preferences,
+                  automaticReportEnabled: event.target.checked,
+                })
+              }
+            />
+            啟用自動週報
+          </label>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <label className="text-sm">
+              執行星期
+              <select
+                className="field mt-1"
+                disabled={!preferences.automaticReportEnabled}
+                value={preferences.reportWeekday}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    reportWeekday: Number(event.target.value),
+                  })
+                }
+              >
+                {researchReportWeekdays.map((label, value) => (
+                  <option key={label} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              執行時間
+              <input
+                className="field mt-1"
+                type="time"
+                step={1800}
+                disabled={!preferences.automaticReportEnabled}
+                value={preferences.reportTime}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    reportTime: event.target.value,
+                  })
+                }
+              />
+            </label>
+            <label className="text-sm">
+              排程時區
+              <select
+                className="field mt-1"
+                disabled={!preferences.automaticReportEnabled}
+                value={preferences.reportTimezone}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    reportTimezone: event.target
+                      .value as ResearchPreferences["reportTimezone"],
+                  })
+                }
+              >
+                {Object.entries(displayTimeZones).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-[#718078]">
+            自動排程每 30 分鐘檢查一次，因此時間必須選擇整點或半點。
+          </p>
+          <h3 className="mt-5 font-bold">產生方式與分析範圍</h3>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <label className="text-sm">
               報告語言
@@ -123,6 +209,26 @@ export default function ResearchReportSettings() {
                 <option value="zh-TW">繁體中文</option>
                 <option value="en">English</option>
                 <option value="ja">日本語</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              AI 模型
+              <select
+                className="field mt-1"
+                value={preferences.reportModel}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    reportModel: event.target
+                      .value as ResearchPreferences["reportModel"],
+                  })
+                }
+              >
+                {researchModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-sm">
@@ -167,6 +273,37 @@ export default function ResearchReportSettings() {
               </select>
             </label>
           </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={preferences.includeCashInAnalysis}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    includeCashInAnalysis: event.target.checked,
+                  })
+                }
+              />
+              將現金部位加入分析
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={preferences.includeFuturesInAnalysis}
+                onChange={(event) =>
+                  setPreferences({
+                    ...preferences,
+                    includeFuturesInAnalysis: event.target.checked,
+                  })
+                }
+              />
+              將期貨部位加入分析
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-[#718078]">
+            現金只傳送資產與幣別占比；期貨只傳送方向、到期月份及名目曝險比例，不傳餘額、金額或口數。
+          </p>
           <label className="mt-3 block text-sm">
             投資目標
             <textarea

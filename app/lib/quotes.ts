@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import YahooFinance from "yahoo-finance2";
 import { getDatabase } from "./db";
 import { getDataOwner } from "./data-owner";
+import { isValidIsin, normalizeIsin } from "./isin";
 import type {
   AccountStateInput,
   FxRateInput,
@@ -436,6 +437,37 @@ async function yahooQuote(symbol: string): Promise<Quote> {
   };
 }
 
+type YahooFundSearchResult = {
+  quotes: unknown[];
+};
+
+export async function yahooFundSymbolFromIsin(
+  isin: string,
+  search: (query: string) => Promise<YahooFundSearchResult> = (query) =>
+    yahoo.search(query),
+) {
+  const normalized = normalizeIsin(isin);
+  const result = await search(normalized);
+  const fund = result.quotes.find((item) => {
+    if (typeof item !== "object" || item === null) return false;
+    const quote = item as Record<string, unknown>;
+    return quote.quoteType === "MUTUALFUND" && typeof quote.symbol === "string";
+  }) as Record<string, unknown> | undefined;
+  const yahooSymbol = fund?.symbol;
+  if (typeof yahooSymbol !== "string")
+    throw new Error(`Yahoo Finance 找不到 ISIN：${normalized}`);
+  return yahooSymbol;
+}
+
+async function yahooFundQuoteByIsin(isin: string): Promise<Quote> {
+  const normalized = normalizeIsin(isin);
+  const yahooSymbol = await yahooFundSymbolFromIsin(normalized);
+  return {
+    ...(await yahooQuote(yahooSymbol)),
+    note: `網路淨值・Yahoo Finance（${normalized} → ${yahooSymbol}）`,
+  };
+}
+
 export function yahooProviderSymbol(symbol: string, providerSymbol?: string) {
   const normalizedSymbol = symbol.trim().toUpperCase();
   const explicitSymbol = providerSymbol?.trim();
@@ -543,6 +575,10 @@ export async function fetchMarketQuote(
   if (market === "FUTURES") {
     quote = await taifexFuturesQuote(normalized);
   } else if (market === "FUND") {
+    const isin = [options?.providerSymbol, symbol]
+      .filter((item): item is string => Boolean(item?.trim()))
+      .find(isValidIsin);
+    if (isin) return yahooFundQuoteByIsin(isin);
     try {
       quote = await sitcaFundQuote(
         symbol,

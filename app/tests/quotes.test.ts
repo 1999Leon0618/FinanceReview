@@ -7,8 +7,10 @@ import {
   resolveAccountQuotes,
   resolveSnapshotFxRates,
   yahooCandleSymbol,
+  yahooFundSymbolFromIsin,
   yahooProviderSymbol,
 } from "@/lib/quotes";
+import { isValidIsin, normalizeIsin } from "@/lib/isin";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -34,6 +36,29 @@ describe("Yahoo K 線代碼", () => {
     expect(yahooCandleSymbol("TWSE", "0050", "0050.TW")).toBe("0050.TW");
     expect(yahooCandleSymbol("TPEX", "6488", "6488.TW")).toBe("6488.TWO");
     expect(yahooCandleSymbol("US", "BRK.B", "BRK.B")).toBe("BRK-B");
+  });
+});
+
+describe("ISIN", () => {
+  it("驗證並正規化境外基金 ISIN", () => {
+    expect(normalizeIsin("ie00 b9276v44")).toBe("IE00B9276V44");
+    expect(isValidIsin("IE00B9276V44")).toBe(true);
+    expect(isValidIsin("IE00B9276V45")).toBe(false);
+    expect(isValidIsin("AR04")).toBe(false);
+  });
+
+  it("以 ISIN 搜尋時只採用 Yahoo 的基金結果", async () => {
+    const search = vi.fn().mockResolvedValue({
+      quotes: [
+        { quoteType: "EQUITY", symbol: "WRONG" },
+        { quoteType: "MUTUALFUND", symbol: "0P0000XPV2" },
+      ],
+    });
+
+    await expect(
+      yahooFundSymbolFromIsin("ie00 b9276v44", search),
+    ).resolves.toBe("0P0000XPV2");
+    expect(search).toHaveBeenCalledWith("IE00B9276V44");
   });
 });
 

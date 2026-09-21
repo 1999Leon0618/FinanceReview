@@ -1585,7 +1585,7 @@ export function SnapshotEditor({
                                                 quoteStatus: "manual",
                                                 quoteNote:
                                                   securityType === "fund"
-                                                    ? "尚未更新行情（將依基金級別代碼查詢）"
+                                                    ? "尚未更新行情（將依基金級別代碼或 ISIN 查詢）"
                                                     : securityType === "future"
                                                       ? "尚未更新行情"
                                                       : "尚未更新行情",
@@ -1656,7 +1656,7 @@ export function SnapshotEditor({
                                                 quoteStatus: "manual",
                                                 quoteNote:
                                                   e.target.value === "FUND"
-                                                    ? "尚未更新行情（將依基金級別代碼查詢）"
+                                                    ? "尚未更新行情（將依基金級別代碼或 ISIN 查詢）"
                                                     : e.target.value ===
                                                         "FUTURES"
                                                       ? "尚未更新行情"
@@ -2009,10 +2009,10 @@ export function SnapshotEditor({
                               </p>
                               {position.securityType === "fund" && (
                                 <label className="col-span-full max-w-sm">
-                                  基金級別代碼
+                                  基金級別代碼／ISIN
                                   <input
                                     className="field"
-                                    placeholder="例如 T3601Y"
+                                    placeholder="例如 T3601Y 或 IE00B9276V44"
                                     value={position.providerSymbol ?? ""}
                                     onChange={(e) => {
                                       const nextPosition = {
@@ -2021,7 +2021,7 @@ export function SnapshotEditor({
                                         quoteSource: "MANUAL" as const,
                                         quoteStatus: "manual" as const,
                                         quoteNote:
-                                          "尚未更新行情（將依基金級別代碼查詢）",
+                                          "尚未更新行情（將依基金級別代碼或 ISIN 查詢）",
                                       };
                                       updateAccount(accountIndex, {
                                         positions: account.positions.map(
@@ -2038,8 +2038,9 @@ export function SnapshotEditor({
                                     }}
                                   />
                                   <span className="mt-1 text-[10px] leading-4 text-[#8a958e]">
-                                    建議填寫投信投顧公會的精確級別代碼，避免同一基金的不同級別互相誤配；境外基金也可填
-                                    Yahoo Finance 代碼。
+                                    境內基金請填投信投顧公會的精確級別代碼；境外基金優先填
+                                    ISIN，亦可填 Yahoo Finance
+                                    代碼，避免不同級別互相誤配。
                                   </span>
                                 </label>
                               )}

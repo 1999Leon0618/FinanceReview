@@ -95,6 +95,11 @@ import {
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
 import { futuresReferenceNotionalTwd } from "@/lib/finance";
+import {
+  advanceLoanPaymentDate,
+  estimateLoanPrincipalPayment,
+  recordLoanPayment,
+} from "@/lib/loan-payment";
 import type {
   AccountTrendPoint,
   AccountView,
@@ -267,6 +272,7 @@ export default function FinanceDashboard({
   const [editor, setEditor] = useState(false);
   const [accountEditor, setAccountEditor] = useState(false);
   const [creditCardEditor, setCreditCardEditor] = useState(false);
+  const [loanPayment, setLoanPayment] = useState<LoanView | null>(null);
   const [viewAll, setViewAll] = useState<ViewAllSection | null>(null);
   const [sortingSection, setSortingSection] = useState<DisplaySection | null>(
     null,
@@ -775,6 +781,39 @@ export default function FinanceDashboard({
   };
 
   const latest = sortedLatest;
+  const saveLoanPayment = async (
+    loan: LoanView,
+    principalPaid: string,
+    paidOn: string,
+  ) => {
+    if (!latest) throw new Error("找不到可更新的財務快照");
+    const updatedLoan = recordLoanPayment(loan, principalPaid, paidOn);
+    const remaining = updatedLoan.outstandingPrincipal;
+    await request("/api/snapshots?response=minimal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rawInput: `${loan.name} 已於 ${paidOn} 償還本金 ${loan.currency} ${principalPaid}，剩餘本金 ${loan.currency} ${remaining}`,
+        baseSnapshotId: latest.id,
+        accounts: latest.accounts,
+        loans: latest.loans.map((item) =>
+          item.loanId === loan.loanId ? updatedLoan : item,
+        ),
+      }),
+    });
+    setLoanPayment(null);
+    notify({
+      title: Number(remaining) === 0 ? "貸款已結清" : "本期還款已登記",
+      message:
+        Number(remaining) === 0
+          ? `${loan.name} 的未償本金已歸零。`
+          : `未償本金已更新為 ${loan.currency} ${number.format(Number(remaining))}。`,
+      detail: updatedLoan.nextPaymentDate
+        ? `下次繳款日：${updatedLoan.nextPaymentDate}`
+        : undefined,
+    });
+    await load();
+  };
   const firstTrendValue = Number(data?.trend[0]?.totalAssetValueTwd ?? 0);
   const latestValue = Number(latest?.netWorthTwd ?? 0);
   const trendChange = latestValue - firstTrendValue;
@@ -1420,6 +1459,9 @@ export default function FinanceDashboard({
                   <LoanPanel
                     loans={latest.loans}
                     onViewAll={() => setViewAll("loans")}
+                    onRecordPayment={
+                      demoMode ? undefined : (loan) => setLoanPayment(loan)
+                    }
                     sortAction={
                       demoMode ? undefined : (
                         <SortButton
@@ -1636,7 +1678,13 @@ export default function FinanceDashboard({
               ) : (
                 <div className="accounts-grid view-all-grid">
                   {latest.loans.map((loan) => (
-                    <LoanCard key={loan.loanId} loan={loan} />
+                    <LoanCard
+                      key={loan.loanId}
+                      loan={loan}
+                      onRecordPayment={
+                        demoMode ? undefined : () => setLoanPayment(loan)
+                      }
+                    />
                   ))}
                 </div>
               )}
@@ -1796,6 +1844,15 @@ export default function FinanceDashboard({
                 setManualQuotePrices({});
               }}
               onConfirm={confirmQuoteRefresh}
+            />
+          )}
+          {loanPayment && (
+            <LoanPaymentDialog
+              loan={loanPayment}
+              onClose={() => setLoanPayment(null)}
+              onConfirm={(principalPaid, paidOn) =>
+                saveLoanPayment(loanPayment, principalPaid, paidOn)
+              }
             />
           )}
           {sale && (
@@ -2901,6 +2958,167 @@ const loanTypeLabels: Record<LoanView["loanType"], string> = {
   other: "其他貸款",
 };
 
+function LoanPaymentDialog({
+  loan,
+  onClose,
+  onConfirm,
+}: {
+  loan: LoanView;
+  onClose: () => void;
+  onConfirm: (principalPaid: string, paidOn: string) => Promise<void>;
+}) {
+  const [principalPaid, setPrincipalPaid] = useState(() =>
+    estimateLoanPrincipalPayment(loan),
+  );
+  const [paidOn, setPaidOn] = useState(() =>
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Taipei" }),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const remaining = Number(loan.outstandingPrincipal) - Number(principalPaid);
+  const nextPaymentDate = paidOn
+    ? advanceLoanPaymentDate(
+        loan.nextPaymentDate,
+        loan.paymentDayOfMonth,
+        paidOn,
+      )
+    : null;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm(principalPaid, paidOn);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法登記本期還款");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[130] grid place-items-center bg-[#10241a]/55 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!busy && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="loan-payment-title"
+        className="w-full max-w-md rounded-[26px] border border-[#d8ddd8] bg-white p-6 shadow-[0_28px_90px_rgba(12,35,24,.3)]"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">LOAN PAYMENT</p>
+            <h2 id="loan-payment-title" className="mt-1 text-xl font-semibold">
+              登記本期已繳
+            </h2>
+            <p className="mt-1 text-sm text-[#68776e]">{loan.name}</p>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="關閉還款視窗"
+            disabled={busy}
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={submit}>
+          <label className="block text-sm font-medium text-[#445149]">
+            實際付款日
+            <input
+              required
+              type="date"
+              className="field mt-2"
+              value={paidOn}
+              disabled={busy}
+              onChange={(event) => setPaidOn(event.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium text-[#445149]">
+            本期償還本金（{loan.currency}）
+            <input
+              required
+              type="number"
+              min="0.01"
+              max={loan.outstandingPrincipal}
+              step="any"
+              inputMode="decimal"
+              className="field mt-2"
+              value={principalPaid}
+              disabled={busy}
+              onChange={(event) => setPrincipalPaid(event.target.value)}
+            />
+          </label>
+          <p className="rounded-2xl bg-[#f4f1ed] px-4 py-3 text-xs leading-5 text-[#68776e]">
+            {loan.monthlyPayment
+              ? `已依月付 ${loan.currency} ${number.format(Number(loan.monthlyPayment))}${loan.annualInterestRate ? ` 與年利率 ${number.format(Number(loan.annualInterestRate))}%` : ""}估算本金；月付金通常含利息，請依銀行帳單調整。`
+              : "未設定月付金，請輸入銀行帳單上的本期償還本金。"}
+          </p>
+          {principalPaid && Number.isFinite(remaining) && remaining >= 0 && (
+            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-[#e1e5e1] p-4 text-sm">
+              <div>
+                <span className="block text-xs text-[#7b877f]">更新後本金</span>
+                <strong>
+                  {loan.currency} {number.format(remaining)}
+                </strong>
+              </div>
+              <div>
+                <span className="block text-xs text-[#7b877f]">下次繳款日</span>
+                <strong>
+                  {remaining === 0 ? "已結清" : nextPaymentDate || "未設定"}
+                </strong>
+              </div>
+            </div>
+          )}
+          <p className="text-xs leading-5 text-[#7b877f]">
+            此操作只更新貸款本金並建立財務快照，不會自動扣除任何現金帳戶餘額。
+          </p>
+          {error && (
+            <p className="rounded-xl bg-[#fff0ed] px-3 py-2 text-sm text-[#a44b42]">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={onClose}
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              className="primary"
+              disabled={
+                busy ||
+                !paidOn ||
+                !principalPaid ||
+                Number(principalPaid) <= 0 ||
+                Number(principalPaid) > Number(loan.outstandingPrincipal)
+              }
+            >
+              {busy ? (
+                <LoaderCircle className="animate-spin" size={15} />
+              ) : (
+                <Check size={15} />
+              )}
+              {busy ? "正在儲存…" : "確認已繳"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function AccountCard({
   account,
   onOpen,
@@ -3483,7 +3701,13 @@ function TrendChart<T extends { capturedAt: string }>({
   );
 }
 
-function LoanCard({ loan }: { loan: LoanView }) {
+function LoanCard({
+  loan,
+  onRecordPayment,
+}: {
+  loan: LoanView;
+  onRecordPayment?: () => void;
+}) {
   const original = Number(loan.originalPrincipal ?? 0);
   const outstanding = Number(loan.outstandingPrincipal);
   const paidRatio =
@@ -3541,6 +3765,16 @@ function LoanCard({ loan }: { loan: LoanView }) {
             />
           </div>
         )}
+        {onRecordPayment && outstanding > 0 && (
+          <button
+            type="button"
+            className="secondary mt-4 w-full justify-center"
+            onClick={onRecordPayment}
+          >
+            <CheckCircle2 size={15} />
+            登記本期已繳
+          </button>
+        )}
       </div>
     </article>
   );
@@ -3569,10 +3803,12 @@ function SortButton({
 function LoanPanel({
   loans,
   onViewAll,
+  onRecordPayment,
   sortAction,
 }: {
   loans: LoanView[];
   onViewAll: () => void;
+  onRecordPayment?: (loan: LoanView) => void;
   sortAction: React.ReactNode;
 }) {
   return (
@@ -3600,7 +3836,13 @@ function LoanPanel({
       ) : (
         <div className="accounts-grid">
           {loans.slice(0, 6).map((loan) => (
-            <LoanCard key={loan.loanId} loan={loan} />
+            <LoanCard
+              key={loan.loanId}
+              loan={loan}
+              onRecordPayment={
+                onRecordPayment ? () => onRecordPayment(loan) : undefined
+              }
+            />
           ))}
         </div>
       )}

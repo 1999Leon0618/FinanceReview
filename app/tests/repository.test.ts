@@ -14,6 +14,7 @@ import {
   getSecurityTrend,
   getSnapshotDetail,
   importBackup,
+  previewBackup,
   listSales,
   sellPosition,
 } from "@/lib/repository";
@@ -1202,6 +1203,39 @@ describe("快照與全部賣出", () => {
         statementPeriod: "2026-10",
         statementAmount: "25000",
       });
+    });
+  });
+
+  it("備份預覽提示未來日期，匯入前拒絕錯誤數值與重複 ID，並可處理千筆快照", async () => {
+    const owner = dataOwnerFromEmail("backup-scale@example.com");
+    await runWithDataOwner(owner, async () => {
+      await createSnapshot({
+        rawInput: "備份日期測試",
+        capturedAt: "2099-01-01T00:00:00.000Z",
+        accounts: [],
+      });
+      const backup = await exportBackup();
+      expect((await previewBackup(backup)).futureSnapshots).toBe(1);
+      const invalidAmount = structuredClone(backup);
+      invalidAmount.data.snapshots[0].net_worth_twd = "NaN";
+      await expect(importBackup(invalidAmount)).rejects.toThrow(
+        "金額或數值格式無效",
+      );
+      const invalidDate = structuredClone(backup);
+      invalidDate.data.snapshots[0].captured_at = "not-a-date";
+      await expect(previewBackup(invalidDate)).rejects.toThrow("日期格式無效");
+      const large = structuredClone(backup);
+      const original = large.data.snapshots[0];
+      large.data.snapshots = Array.from({ length: 1000 }, (_, index) => ({
+        ...original,
+        id: `backup-scale-${index}`,
+        base_snapshot_id: null,
+      }));
+      expect((await previewBackup(large)).backup.snapshots).toBe(1000);
+      expect((await importBackup(large)).imported).toBeGreaterThanOrEqual(1000);
+      const duplicate = structuredClone(backup);
+      duplicate.data.snapshots.push({ ...duplicate.data.snapshots[0] });
+      await expect(importBackup(duplicate)).rejects.toThrow("有重複值");
     });
   });
 

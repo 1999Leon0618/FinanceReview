@@ -271,11 +271,54 @@ function Modal({
   wide?: boolean;
   labelledBy?: string;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const dialog = dialogRef.current;
+    const focusable = dialog?.querySelector<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]",
+    );
+    (focusable ?? dialog)?.focus();
+    return () => previous?.focus();
+  }, []);
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const items = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]",
+      ) ?? [],
+    ).filter((item) => item.getClientRects().length > 0);
+    if (items.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = items[0];
+    const last = items.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelledBy}
+      onKeyDown={handleKeyDown}
       className="fixed inset-0 z-50 grid place-items-center bg-[#07140f]/70 p-4 backdrop-blur-md"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
@@ -342,6 +385,28 @@ export function SnapshotEditor({
     null,
   );
   const [error, setError] = useState("");
+  const hasUnsavedInput = Boolean(
+    processedInput ||
+    hasPrepared ||
+    selectedAccountIds.length ||
+    selectedCreditCardAccountIds.length ||
+    accounts.length ||
+    loans.length ||
+    cashFlows.length,
+  );
+  const confirmDiscard = () =>
+    !busy &&
+    (!hasUnsavedInput ||
+      window.confirm("尚未保存這次財務輸入，確定要離開嗎？"));
+  const closeEditor = () => {
+    if (confirmDiscard()) onClose();
+  };
+  const manageAccounts = () => {
+    if (confirmDiscard()) onManageAccounts();
+  };
+  const manageCreditCards = () => {
+    if (confirmDiscard()) onManageCreditCards();
+  };
   const selectableItemCount =
     (latest?.accounts.length ?? 0) +
     (latest?.creditCardAccounts.filter((account) => account.creditCardAccountId)
@@ -483,29 +548,15 @@ export function SnapshotEditor({
     }
     return issues;
   };
-  const hasDraft =
-    hasPrepared ||
-    selectedItemCount > 0 ||
-    cashFlows.length > 0 ||
-    customCapturedAt;
-  const closeWithCheck = (action: () => void) => {
-    if (busy) return;
-    if (
-      hasDraft &&
-      !window.confirm("尚有未儲存的快照資料，確定要離開並放棄這次修改嗎？")
-    )
-      return;
-    action();
-  };
   useEffect(() => {
-    if (!hasDraft) return;
+    if (!hasUnsavedInput) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [hasDraft]);
+  }, [hasUnsavedInput]);
   const previewCards = useMemo(() => {
     const changed = new Map(
       normalizedCreditCardAccounts.map((account) => [
@@ -959,11 +1010,7 @@ export function SnapshotEditor({
     }
   };
   return (
-    <Modal
-      onClose={() => closeWithCheck(onClose)}
-      wide
-      labelledBy="snapshot-editor-title"
-    >
+    <Modal onClose={closeEditor} wide labelledBy="snapshot-editor-title">
       <div className="snapshot-editor-header">
         <div className="snapshot-editor-title">
           <div className="snapshot-editor-mark">
@@ -1002,7 +1049,7 @@ export function SnapshotEditor({
         <button
           className="snapshot-editor-close"
           aria-label="關閉"
-          onClick={() => closeWithCheck(onClose)}
+          onClick={closeEditor}
         >
           <X size={18} />
         </button>
@@ -1218,7 +1265,7 @@ export function SnapshotEditor({
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={() => closeWithCheck(onManageAccounts)}
+                  onClick={manageAccounts}
                   className="secondary"
                 >
                   管理一般帳戶
@@ -1226,7 +1273,7 @@ export function SnapshotEditor({
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={() => closeWithCheck(onManageCreditCards)}
+                  onClick={manageCreditCards}
                   className="secondary"
                 >
                   管理信用卡
@@ -1856,7 +1903,7 @@ export function SnapshotEditor({
                       <button
                         type="button"
                         className="secondary shrink-0"
-                        onClick={() => closeWithCheck(onManageAccounts)}
+                        onClick={manageAccounts}
                       >
                         管理帳戶設定
                       </button>
@@ -3374,7 +3421,7 @@ export function SnapshotEditor({
               可以直接保存；尚未更新行情的持倉會暫時使用均價估值。
             </p>
           )}
-          <button className="secondary" onClick={() => closeWithCheck(onClose)}>
+          <button className="secondary" onClick={closeEditor}>
             取消
           </button>
           <button

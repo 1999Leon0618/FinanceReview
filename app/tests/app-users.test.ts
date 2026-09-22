@@ -9,7 +9,7 @@ import {
   reviewAppUser,
   submitCurrentApplication,
 } from "@/lib/app-users";
-import { closeDatabaseForTests } from "@/lib/db";
+import { closeDatabaseForTests, getDatabase } from "@/lib/db";
 import { dataOwnerFromEmail, runWithDataOwner } from "@/lib/data-owner";
 import { createSnapshot } from "@/lib/repository";
 
@@ -47,6 +47,38 @@ describe("使用者永久審核", () => {
       status: "approved",
       role: "admin",
     });
+  });
+
+  it("重複請求在 15 分鐘內不寫入活動時間，仍會讀取最新權限", async () => {
+    const db = await getDatabase();
+    const original = await db
+      .prepare(
+        "SELECT last_seen_at, updated_at FROM app_users WHERE owner_key = ?",
+      )
+      .get(admin.key);
+    vi.setSystemTime(new Date("2026-09-11T08:05:00.000Z"));
+    const cached = await runWithDataOwner(admin, () => ensureCurrentAppUser());
+    expect(cached.lastSeenAt).toBe(original?.last_seen_at);
+    expect(
+      await db
+        .prepare(
+          "SELECT last_seen_at, updated_at FROM app_users WHERE owner_key = ?",
+        )
+        .get(admin.key),
+    ).toMatchObject(original ?? {});
+    await db
+      .prepare("UPDATE app_users SET status = 'rejected' WHERE owner_key = ?")
+      .run(admin.key);
+    const revoked = await runWithDataOwner(admin, () => ensureCurrentAppUser());
+    expect(revoked.status).toBe("rejected");
+    await db
+      .prepare("UPDATE app_users SET status = 'approved' WHERE owner_key = ?")
+      .run(admin.key);
+    vi.setSystemTime(new Date("2026-09-11T08:16:00.000Z"));
+    const refreshed = await runWithDataOwner(admin, () =>
+      ensureCurrentAppUser(),
+    );
+    expect(refreshed.lastSeenAt).toBe("2026-09-11T08:16:00.000Z");
   });
 
   it("新信箱填寫理由前不會進入管理員審核名單", async () => {

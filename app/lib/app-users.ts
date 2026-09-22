@@ -1,4 +1,5 @@
 import { getDataOwner } from "./data-owner";
+import { ApiError } from "./api-error";
 import { getDatabase, withTransaction, type FinanceDatabase } from "./db";
 
 export type AppUserStatus = "pending" | "approved" | "rejected";
@@ -78,16 +79,22 @@ export async function ensureCurrentAppUser(
     .get(owner.key)) as UserRow | undefined;
 
   if (existing) {
-    await db
-      .prepare(
-        `UPDATE app_users SET email = ?, last_seen_at = ?, updated_at = ?
-        WHERE owner_key = ?`,
-      )
-      .run(owner.email, now, now, owner.key);
+    const refreshLastSeen = !(
+      Date.parse(existing.last_seen_at) >
+      Date.now() - 15 * 60_000
+    );
+    const shouldUpdate = refreshLastSeen || existing.email !== owner.email;
+    if (shouldUpdate)
+      await db
+        .prepare(
+          `UPDATE app_users SET email = ?, last_seen_at = ?, updated_at = ?
+          WHERE owner_key = ?`,
+        )
+        .run(owner.email, now, now, owner.key);
     return userFromRow({
       ...existing,
       email: owner.email,
-      last_seen_at: now,
+      last_seen_at: shouldUpdate ? now : existing.last_seen_at,
     });
   }
 
@@ -177,7 +184,7 @@ function isApprovedAppUser(user: AppUser) {
 async function requireAdmin(database?: FinanceDatabase) {
   const user = await ensureCurrentAppUser(database);
   if (user.status !== "approved" || user.role !== "admin")
-    throw new Error("僅管理員可以管理使用者");
+    throw new ApiError("僅管理員可以管理使用者", 403, "forbidden");
   return user;
 }
 

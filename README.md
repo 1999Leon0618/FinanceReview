@@ -167,7 +167,7 @@ flowchart LR
 
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 16。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 18。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 
@@ -309,7 +309,7 @@ npm run check:workers
 `npm run check` 會依序執行型別檢查、ESLint、Vitest 與正式建置。提交前亦可用
 `npm run format:check` 檢查格式；需要套用 Prettier 時再執行 `npm run format`，避免將純格式調整混入功能修改。
 
-備份可從介面的「匯出資料」下載 JSON；備份刻意排除可重新取得的 `quote_cache`。
+備份可從介面的「匯出資料」下載 JSON；備份刻意排除可重新取得的 `quote_cache`。匯入前會檢查備份列的資料型別、主要金額與快照日期，預覽會提示晚於目前時間超過一天的快照；請先確認異常日期，避免影響最新快照排序。
 
 端對端測試首次執行前，安裝三種瀏覽器引擎：
 

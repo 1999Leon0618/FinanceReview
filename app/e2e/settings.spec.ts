@@ -6,6 +6,7 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   await expect(page.getByRole("heading", { name: "報告設定" })).toBeVisible();
   const reportSettings = page.locator("#research-report-settings");
   await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
+  await expect(reportSettings.getByText(/下次排程：|自動週報未排程。/)).toBeVisible();
   await expect(page.getByLabel("日期與時間語言")).toHaveCount(0);
   await reportSettings.getByLabel("報告語言").selectOption("en");
   const automaticReport = reportSettings.getByLabel("啟用自動週報");
@@ -22,9 +23,8 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   if (!(await includeFutures.isChecked())) await includeFutures.click();
   await expect(includeFutures).toBeChecked();
   await reportSettings.getByRole("button", { name: "儲存設定" }).click();
-  await expect(reportSettings.getByRole("status")).toContainText(
-    "報告設定已儲存",
-  );
+  await expect(reportSettings.getByText("報告設定已儲存")).toBeVisible();
+  await expect(reportSettings.getByText(/下次排程：/)).toBeVisible();
   await page.reload();
   await expect(reportSettings.getByLabel("報告語言")).toHaveValue("en");
   await expect(reportSettings.getByLabel("執行星期")).toHaveValue("2");
@@ -139,7 +139,7 @@ test("設定頁可匯出、匯入備份並顯示失敗原因", async ({ page, re
   await replaceClick;
   await expect(page.getByLabel("備份匯入預覽")).toBeVisible();
   await page.getByRole("button", { name: "合併全部" }).click();
-  await expect(page.getByRole("status")).toContainText("匯入成功");
+  await expect(page.locator("#backup-import-status")).toContainText("匯入成功");
   await expect(page.getByRole("button", { name: "選擇備份" })).toBeEnabled();
   await page.locator('input[type="file"]').setInputFiles({
     name: "invalid.json",

@@ -5,8 +5,20 @@ type ApiValidationIssue = {
 
 type ApiErrorBody = {
   error?: string;
+  code?: string;
   issues?: ApiValidationIssue[];
 };
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
 
 function formatIssuePath(path: Array<string | number>): string {
   return path.reduce<string>((result, part) => {
@@ -45,15 +57,15 @@ export async function requestJson<T>(
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(url, init);
+  const contentType = response.headers.get("content-type") ?? "";
   if (
     response.status === 401 ||
-    response.status === 403 ||
+    (response.status === 403 && !contentType.includes("application/json")) ||
     response.url.includes("/cdn-cgi/access/login/")
   )
     throw new Error("登入已過期，請重新整理頁面後重新登入。");
 
   if (response.status === 204) return null as T;
-  const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json"))
     throw new Error(
       response.redirected
@@ -63,8 +75,15 @@ export async function requestJson<T>(
 
   const body = (await response.json()) as ApiErrorBody | T;
   if (!response.ok) {
-    throw new Error(
+    throw new ApiRequestError(
       body && typeof body === "object" ? formatApiError(body) : "操作失敗",
+      response.status,
+      body &&
+        typeof body === "object" &&
+        "code" in body &&
+        typeof body.code === "string"
+        ? body.code
+        : undefined,
     );
   }
   return body as T;

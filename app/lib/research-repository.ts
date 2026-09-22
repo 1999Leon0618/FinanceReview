@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ApiError } from "./api-error";
 import { getDataOwner } from "./data-owner";
 import { getDatabase, withTransaction, type FinanceDatabase } from "./db";
 import {
@@ -706,7 +707,11 @@ export async function updateResearchNote(id: string, input: ResearchNoteInput) {
   const existing = await getResearchNote(id);
   if (!existing) throw new Error("找不到研究報告");
   if (input.expectedRevision && input.expectedRevision !== existing.revision)
-    throw new Error("研究報告已被更新，請重新載入後再儲存");
+    throw new ApiError(
+      "研究報告已被更新，請重新載入後再儲存",
+      409,
+      "revision_conflict",
+    );
   const revision = existing.revision + 1;
   const snapshots = await buildQuoteSnapshots(id, revision, input);
   const now = new Date().toISOString();
@@ -736,7 +741,11 @@ export async function updateResearchNote(id: string, input: ResearchNoteInput) {
         existing.revision,
       );
     if (!result.changes)
-      throw new Error("研究報告已被更新，請重新載入後再儲存");
+      throw new ApiError(
+        "研究報告已被更新，請重新載入後再儲存",
+        409,
+        "revision_conflict",
+      );
     await saveResearchVersion(db, id, revision, input, snapshots);
   });
   return (await getResearchNote(id))!;

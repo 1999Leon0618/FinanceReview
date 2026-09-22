@@ -219,6 +219,85 @@ describe("每週研究報告", () => {
     );
   });
 
+  it("同一週並行觸發只會啟動一次外部研究請求", async () => {
+    const owner = dataOwnerFromEmail("weekly-concurrent@example.com");
+    await runWithDataOwner(owner, async () => {
+      await ensureCurrentAppUser();
+      await saveResearchPreferences({
+        ...(await getResearchPreferences()),
+        automaticReportEnabled: true,
+        reportWeekday: 0,
+        reportTime: "07:00",
+        reportTimezone: "Asia/Taipei",
+      });
+      await saveResearchApiKey({ apiKey: "sk-test-weekly-concurrent-key" });
+      await (
+        await getDatabase()
+      )
+        .prepare("UPDATE app_users SET status = 'approved' WHERE owner_key = ?")
+        .run(owner.key);
+    });
+    let startRequest = () => {};
+    let failRequest = () => {};
+    let openAIRequests = 0;
+    const requestStarted = new Promise<void>((resolve) => {
+      startRequest = resolve;
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (!String(input).includes("api.openai.com"))
+        return new Response("unavailable", { status: 503 });
+      openAIRequests += 1;
+      if (openAIRequests > 1)
+        return new Response("unavailable", { status: 503 });
+      startRequest();
+      return new Promise<Response>((_, reject) => {
+        failRequest = () => reject(new Error("upstream failed"));
+      });
+    });
+    const scheduledAt = new Date("2026-09-20T00:00:00.000Z");
+    const first = generateScheduledReports(scheduledAt);
+    await requestStarted;
+    expect(
+      await generateScheduledReports(new Date(scheduledAt.getTime() + 60_000)),
+    ).toEqual({ total: 1, failed: 0 });
+    expect(openAIRequests).toBe(1);
+    failRequest();
+    expect(await first).toEqual({ total: 1, failed: 1 });
+    await runWithDataOwner(owner, async () =>
+      saveResearchPreferences({
+        ...(await getResearchPreferences()),
+        automaticReportEnabled: false,
+      }),
+    );
+  });
+
+  it("外部服務不回應時，研究請求會在截止時間中止", async () => {
+    const owner = dataOwnerFromEmail("weekly-timeout@example.com");
+    await runWithDataOwner(owner, () =>
+      saveResearchApiKey({ apiKey: "sk-test-weekly-timeout-key" }),
+    );
+    const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() =>
+      originalTimeout(5),
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_input, init) =>
+        new Promise<Response>((_, reject) => {
+          const signal = init?.signal;
+          if (!signal) throw new Error("外部請求缺少截止時間");
+          if (signal.aborted) reject(signal.reason);
+          else
+            signal.addEventListener("abort", () => reject(signal.reason), {
+              once: true,
+            });
+        }),
+    );
+    await expect(
+      runWithDataOwner(owner, () => generateWeeklyReport("manual", now)),
+    ).rejects.toThrow();
+    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(0);
+  });
+
   it("歷次週報以游標分頁，清單不載入大型內容並維持使用者隔離", async () => {
     const owner = dataOwnerFromEmail("weekly-pagination@example.com");
     const db = await getDatabase();

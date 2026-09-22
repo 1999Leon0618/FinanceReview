@@ -2619,6 +2619,7 @@ export type BackupImportMode = "history" | "merge" | "replace";
 export type BackupImportPreview = {
   backup: { snapshots: number; earliest: string | null; latest: string | null };
   cloud: { snapshots: number; earliest: string | null; latest: string | null };
+  futureSnapshots: number;
   historicalSnapshots: number;
   duplicateSnapshots: number;
   mergeWillChangeCurrent: boolean;
@@ -2630,24 +2631,109 @@ type BackupPayload = {
   data: Record<string, Row[]>;
 };
 
+const backupNumericColumns: Partial<
+  Record<(typeof backupTables)[number], string[]>
+> = {
+  snapshots: [
+    "total_cash_twd",
+    "total_securities_twd",
+    "total_asset_value_twd",
+    "total_liabilities_twd",
+    "net_worth_twd",
+  ],
+  snapshot_fx_rates: ["rate"],
+  cash_balances: ["amount", "value_twd"],
+  snapshot_positions: [
+    "quantity",
+    "average_cost",
+    "market_price",
+    "cost_value_twd",
+    "market_value_twd",
+    "unrealized_pnl_twd",
+  ],
+  snapshot_loans: [
+    "original_principal",
+    "outstanding_principal",
+    "monthly_payment",
+    "value_twd",
+  ],
+  snapshot_credit_card_accounts: [
+    "shared_credit_limit",
+    "statement_amount",
+    "payment_amount",
+    "statement_outstanding",
+    "liability_value_twd",
+  ],
+  snapshot_cash_flows: ["amount_twd"],
+  position_sales: [
+    "quantity",
+    "sale_price",
+    "fee",
+    "tax",
+    "gross_proceeds",
+    "net_proceeds",
+    "realized_pnl",
+  ],
+};
+
 function parseBackup(payload: unknown): BackupPayload {
   if (!payload || typeof payload !== "object") throw new Error("備份格式無效");
   const backup = payload as {
     schemaVersion?: number;
     data?: Record<string, Row[]>;
   };
-  if (![1, 2, 3, 4].includes(backup.schemaVersion ?? 0) || !backup.data)
+  if (
+    ![1, 2, 3, 4].includes(backup.schemaVersion ?? 0) ||
+    !backup.data ||
+    typeof backup.data !== "object" ||
+    Array.isArray(backup.data)
+  )
     throw new Error("不支援此備份版本");
 
   for (const table of backupTables) {
     const rows = backup.data[table] ?? [];
     const primaryColumn = backupColumns[table][0];
     if (!Array.isArray(rows)) throw new Error(`${table} 備份資料格式無效`);
+    const primaryValues = new Set<string>();
     for (const row of rows) {
       if (!row || typeof row !== "object" || Array.isArray(row))
         throw new Error(`${table} 備份列格式無效`);
       if (!Object.hasOwn(row, primaryColumn))
         throw new Error(`${table}.${primaryColumn} 不可缺少`);
+      const primaryValue = row[primaryColumn];
+      if (
+        (typeof primaryValue !== "string" &&
+          typeof primaryValue !== "number") ||
+        !String(primaryValue).trim()
+      )
+        throw new Error(`${table}.${primaryColumn} 格式無效`);
+      if (primaryValues.has(String(primaryValue)))
+        throw new Error(`${table}.${primaryColumn} 有重複值`);
+      primaryValues.add(String(primaryValue));
+      for (const column of backupColumns[table]) {
+        const value = row[column];
+        if (value === undefined || value === null) continue;
+        if (
+          typeof value !== "string" &&
+          (typeof value !== "number" || !Number.isFinite(value))
+        )
+          throw new Error(`${table}.${column} 資料型別無效`);
+        if (backupNumericColumns[table]?.includes(column)) {
+          try {
+            if (value === "" || !decimal(value).isFinite()) throw new Error();
+          } catch {
+            throw new Error(`${table}.${column} 金額或數值格式無效`);
+          }
+        }
+      }
+      if (table === "snapshots") {
+        const capturedAt = row.captured_at;
+        if (
+          typeof capturedAt !== "string" ||
+          !Number.isFinite(Date.parse(capturedAt))
+        )
+          throw new Error("snapshots.captured_at 日期格式無效");
+      }
     }
   }
   return { schemaVersion: backup.schemaVersion!, data: backup.data };
@@ -2740,6 +2826,10 @@ export async function previewBackup(
   return {
     backup: backupRange,
     cloud,
+    futureSnapshots: (backup.data.snapshots ?? []).filter(
+      (row) =>
+        Date.parse(String(row.captured_at)) > Date.now() + 24 * 60 * 60_000,
+    ).length,
     historicalSnapshots: (backup.data.snapshots ?? []).filter(
       (row) => !cloud.latest || String(row.captured_at) < cloud.latest,
     ).length,

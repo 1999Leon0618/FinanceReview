@@ -166,6 +166,7 @@ type BackupImportMode = "history" | "merge" | "replace";
 type BackupImportPreview = {
   backup: { snapshots: number; earliest: string | null; latest: string | null };
   cloud: { snapshots: number; earliest: string | null; latest: string | null };
+  futureSnapshots: number;
   historicalSnapshots: number;
   duplicateSnapshots: number;
   mergeWillChangeCurrent: boolean;
@@ -1276,6 +1277,12 @@ export default function FinanceDashboard({
                         {backupImportPreview.duplicateSnapshots}{" "}
                         份相同快照會略過。
                       </p>
+                      {backupImportPreview.futureSnapshots > 0 && (
+                        <p className="danger-text" role="alert">
+                          備份有 {backupImportPreview.futureSnapshots}{" "}
+                          份快照日期晚於目前時間超過一天；匯入後可能影響最新快照排序，請先確認日期。
+                        </p>
+                      )}
                       {backupImportPreview.mergeWillChangeCurrent && (
                         <p className="danger-text">
                           合併全部後，備份中較新的快照會成為目前顯示狀態。

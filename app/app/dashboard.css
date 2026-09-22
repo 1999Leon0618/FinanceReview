@@ -1004,11 +1004,15 @@ html.dark .page-intro .page-description {
   margin-top: 2rem;
 }
 .settings-panel {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 1.2rem;
   background: var(--surface);
   box-shadow: 0 10px 34px rgba(24, 42, 32, 0.035);
   padding: 1.5rem;
+}
+.settings-panel .field {
+  max-width: 100%;
 }
 .settings-panel h2 {
   font-size: 1.1rem;

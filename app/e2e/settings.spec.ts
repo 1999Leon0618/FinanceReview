@@ -1,14 +1,56 @@
 import { expect, test } from "@playwright/test";
 
+test("設定欄位在各種螢幕寬度內不溢出", async ({ page }) => {
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/settings");
+    const reportSettings = page.locator("#research-report-settings");
+    await expect(reportSettings.getByLabel("執行時間")).toBeVisible();
+    const overflow = await page
+      .locator(".settings-panel")
+      .evaluateAll((panels) =>
+        panels.flatMap((panel) => {
+          const bounds = panel.getBoundingClientRect();
+          return Array.from(
+            panel.querySelectorAll(
+              "input:not([type='file']), select, textarea, button",
+            ),
+          )
+            .filter((field) => {
+              const fieldBounds = field.getBoundingClientRect();
+              return (
+                fieldBounds.left < bounds.left - 1 ||
+                fieldBounds.right > bounds.right + 1
+              );
+            })
+            .map(
+              (field) =>
+                field.getAttribute("aria-label") ||
+                field.outerHTML.slice(0, 80),
+            );
+        }),
+      );
+    expect(overflow, `viewport ${width}px`).toEqual([]);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+      `viewport ${width}px`,
+    ).toBeLessThanOrEqual(width);
+  }
+});
+
 test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "報告設定" })).toBeVisible();
   const reportSettings = page.locator("#research-report-settings");
-  await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
-  await expect(reportSettings.getByText(/下次排程：|自動週報未排程。/)).toBeVisible();
+  const displaySettings = page.getByRole("region", { name: "顯示偏好" });
+  await expect(displaySettings.getByLabel("報告語言")).toBeVisible();
+  await expect(reportSettings.getByLabel("報告語言")).toHaveCount(0);
+  await expect(
+    reportSettings.getByText(/下次排程：|自動週報未排程。/),
+  ).toBeVisible();
   await expect(page.getByLabel("日期與時間語言")).toHaveCount(0);
-  await reportSettings.getByLabel("報告語言").selectOption("en");
+  await displaySettings.getByLabel("報告語言").selectOption("en");
   const automaticReport = reportSettings.getByLabel("啟用自動週報");
   if (!(await automaticReport.isChecked())) await automaticReport.click();
   await expect(automaticReport).toBeChecked();
@@ -26,7 +68,7 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   await expect(reportSettings.getByText("報告設定已儲存")).toBeVisible();
   await expect(reportSettings.getByText(/下次排程：/)).toBeVisible();
   await page.reload();
-  await expect(reportSettings.getByLabel("報告語言")).toHaveValue("en");
+  await expect(displaySettings.getByLabel("報告語言")).toHaveValue("en");
   await expect(reportSettings.getByLabel("執行星期")).toHaveValue("2");
   await expect(reportSettings.getByLabel("執行時間")).toHaveValue("09:30");
   await expect(reportSettings.getByLabel("排程時區")).toHaveValue(

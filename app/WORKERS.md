@@ -8,6 +8,8 @@
 
 `workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過 Access 與自訂網域入口。正式 Worker、D1 與 Cloudflare Access 已上線；真實資料搬移、驗收與切換演練仍須依下列流程完成。
 
+設定頁與週報頁會顯示下次排程、最近成功與失敗，以及可重試時間；連續三次失敗後須檢查金鑰或外部服務狀態。
+
 ## 指令
 
 ```powershell

@@ -8,7 +8,10 @@ import {
   researchModelOptions,
   researchReportWeekdays,
 } from "@/lib/research-report-options";
-import type { ResearchPreferences } from "@/lib/types";
+import type {
+  ResearchPreferences,
+  WeeklyResearchReportPage,
+} from "@/lib/types";
 
 const emptyPreferences: ResearchPreferences = defaultResearchPreferences;
 
@@ -20,6 +23,10 @@ export default function ResearchReportSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [schedule, setSchedule] = useState<
+    WeeklyResearchReportPage["schedule"] | null
+  >(null);
+  const [scheduleError, setScheduleError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -33,6 +40,16 @@ export default function ResearchReportSettings() {
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+    requestJson<WeeklyResearchReportPage>("/api/weekly-reports?summary=1")
+      .then((value) => {
+        if (active) setSchedule(value.schedule);
+      })
+      .catch((cause: unknown) => {
+        if (active)
+          setScheduleError(
+            cause instanceof Error ? cause.message : "排程狀態載入失敗",
+          );
       });
     return () => {
       active = false;
@@ -76,6 +93,18 @@ export default function ResearchReportSettings() {
         },
       );
       setPreferences(next);
+      const status = await requestJson<WeeklyResearchReportPage>(
+        "/api/weekly-reports?summary=1",
+      ).catch((cause: unknown) => {
+        setScheduleError(
+          cause instanceof Error ? cause.message : "排程狀態載入失敗",
+        );
+        return null;
+      });
+      if (status) {
+        setSchedule(status.schedule);
+        setScheduleError("");
+      }
     }, "報告設定已儲存");
 
   const saveKey = () =>
@@ -191,6 +220,25 @@ export default function ResearchReportSettings() {
           <p className="mt-2 text-xs text-[#718078]">
             自動排程每 30 分鐘檢查一次，因此時間必須選擇整點或半點。
           </p>
+          {schedule && (
+            <p className="mt-2 text-xs text-[#718078]" role="status">
+              {schedule.nextAt
+                ? `下次排程：${new Date(schedule.nextAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}。`
+                : "自動週報未排程。"}
+              {schedule.lastSuccessAt &&
+                ` 最近成功：${new Date(schedule.lastSuccessAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}。`}
+              {schedule.lastFailureAt &&
+                ` 最近失敗：${new Date(schedule.lastFailureAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}（已嘗試 ${schedule.attempts} 次）。`}
+              {schedule.nextRetryAt &&
+                schedule.attempts < 3 &&
+                ` 預計重試：${new Date(schedule.nextRetryAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}。`}
+            </p>
+          )}
+          {scheduleError && (
+            <p className="notice error mt-2" role="alert">
+              排程狀態：{scheduleError}
+            </p>
+          )}
           <h3 className="mt-5 font-bold">產生方式與分析範圍</h3>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             <label className="text-sm">

@@ -4,9 +4,11 @@
 
 `wrangler.jsonc` 的頂層設定是 `finance-staging.hsun.dev` 與測試 D1；`production` 環境使用獨立的 `finance-review-production` Worker、`finance.hsun.dev` 與正式 D1。兩個環境不共用資料。
 
-研究週報的 production Worker 每 30 分鐘執行一次，並依各使用者設定的星期、整點／半點時間與時區判斷是否到期。它只替已啟用自動週報、已核准且已設定個人 OpenAI API Key 的使用者產生報告，同一使用者每週仍只保存一份排程報告。部署前需在 production Worker 設定 `RESEARCH_KEY_ENCRYPTION_KEY` Cloudflare Secret，其值為 32 位元組隨機資料的 Base64 編碼；staging 應使用不同值。本機 Next.js 使用 `app/.env.local`，本機 Worker 使用 `app/.dev.vars`，兩者均須加入 Git 忽略。此密鑰用於加密使用者自行輸入的 API Key，不能放在 `wrangler.jsonc`、GitHub 倉庫或 JSON 備份。輪替密鑰前必須重新加密既有金鑰；直接更換會使既有金鑰無法使用。
+研究週報的 production Worker 每 30 分鐘執行一次，並依各使用者設定的星期、整點／半點時間與時區判斷是否到期。指定時間已過、當週尚無報告時會補跑；失敗後至少間隔 25 分鐘重試，當週最多嘗試三次。資料庫工作紀錄會防止同一份週報同時生成。它只替已啟用自動週報、已核准且已設定個人 OpenAI API Key 的使用者產生報告，同一使用者每週仍只保存一份排程報告。部署前需在 production Worker 設定 `RESEARCH_KEY_ENCRYPTION_KEY` Cloudflare Secret，其值為 32 位元組隨機資料的 Base64 編碼；staging 應使用不同值。本機 Next.js 使用 `app/.env.local`，本機 Worker 使用 `app/.dev.vars`，兩者均須加入 Git 忽略。此密鑰用於加密使用者自行輸入的 API Key，不能放在 `wrangler.jsonc`、GitHub 倉庫或 JSON 備份。輪替密鑰前必須重新加密既有金鑰；直接更換會使既有金鑰無法使用。
 
 `workers.dev` 與 Wrangler 預覽網址皆停用，避免繞過 Access 與自訂網域入口。正式 Worker、D1 與 Cloudflare Access 已上線；真實資料搬移、驗收與切換演練仍須依下列流程完成。
+
+設定頁與週報頁會顯示下次排程、最近成功與失敗，以及可重試時間；連續三次失敗後須檢查金鑰或外部服務狀態。
 
 ## 指令
 

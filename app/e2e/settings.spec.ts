@@ -8,12 +8,35 @@ test("報告設定集中於設定頁並與其他頁面同寬", async ({ page }) 
   await expect(reportSettings.getByLabel("報告語言")).toBeVisible();
   await expect(page.getByLabel("日期與時間語言")).toHaveCount(0);
   await reportSettings.getByLabel("報告語言").selectOption("en");
+  const automaticReport = reportSettings.getByLabel("啟用自動週報");
+  if (!(await automaticReport.isChecked())) await automaticReport.click();
+  await expect(automaticReport).toBeChecked();
+  await reportSettings.getByLabel("執行星期").selectOption("2");
+  await reportSettings.getByLabel("執行時間").fill("09:30");
+  await reportSettings.getByLabel("排程時區").selectOption("America/New_York");
+  await reportSettings.getByLabel("AI 模型").selectOption("gpt-5.6-luna");
+  const includeCash = reportSettings.getByLabel("將現金部位加入分析");
+  const includeFutures = reportSettings.getByLabel("將期貨部位加入分析");
+  if (!(await includeCash.isChecked())) await includeCash.click();
+  await expect(includeCash).toBeChecked();
+  if (!(await includeFutures.isChecked())) await includeFutures.click();
+  await expect(includeFutures).toBeChecked();
   await reportSettings.getByRole("button", { name: "儲存設定" }).click();
   await expect(reportSettings.getByRole("status")).toContainText(
     "報告設定已儲存",
   );
   await page.reload();
   await expect(reportSettings.getByLabel("報告語言")).toHaveValue("en");
+  await expect(reportSettings.getByLabel("執行星期")).toHaveValue("2");
+  await expect(reportSettings.getByLabel("執行時間")).toHaveValue("09:30");
+  await expect(reportSettings.getByLabel("排程時區")).toHaveValue(
+    "America/New_York",
+  );
+  await expect(reportSettings.getByLabel("AI 模型")).toHaveValue(
+    "gpt-5.6-luna",
+  );
+  await expect(reportSettings.getByLabel("將現金部位加入分析")).toBeChecked();
+  await expect(reportSettings.getByLabel("將期貨部位加入分析")).toBeChecked();
   const settingsWidth = await page
     .locator(".settings-sections")
     .evaluate((element) => element.getBoundingClientRect().width);
@@ -32,7 +55,9 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
   await page.locator(".settings-entry").click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "顯示偏好" })).toBeVisible();
-  await page.getByLabel("時區").selectOption("America/New_York");
+  await page
+    .getByLabel("時區", { exact: true })
+    .selectOption("America/New_York");
   await page.getByRole("button", { name: "切換為深色模式" }).click();
   await page.getByRole("button", { name: "隱藏財務數字" }).click();
   await page.reload();
@@ -42,7 +67,9 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
   await expect(
     page.getByRole("button", { name: "顯示財務數字" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("時區")).toHaveValue("America/New_York");
+  await expect(page.getByLabel("時區", { exact: true })).toHaveValue(
+    "America/New_York",
+  );
   await page.getByRole("link", { name: "返回財務總覽" }).click();
   await expect(
     page.getByRole("heading", { name: "財務總覽", exact: true }),
@@ -58,7 +85,7 @@ test("設定頁保存顯示偏好並套用至其他頁面", async ({ page }) => 
   }).format(capturedAt);
   await expect(page.locator(".last-updated")).toContainText(newYorkTime);
   await page.locator(".settings-entry").click();
-  await page.getByLabel("時區").selectOption("Asia/Tokyo");
+  await page.getByLabel("時區", { exact: true }).selectOption("Asia/Tokyo");
   const tokyoTime = new Intl.DateTimeFormat("zh-TW", {
     dateStyle: "medium",
     timeStyle: "short",

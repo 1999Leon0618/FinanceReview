@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { requestJson } from "@/lib/client-request";
 import { displayTimeZones } from "@/lib/display-preferences";
 import {
@@ -15,7 +16,11 @@ import type {
 
 const emptyPreferences: ResearchPreferences = defaultResearchPreferences;
 
-export default function ResearchReportSettings() {
+export default function ResearchReportSettings({
+  languageTarget,
+}: {
+  languageTarget: HTMLElement | null;
+}) {
   const [preferences, setPreferences] =
     useState<ResearchPreferences>(emptyPreferences);
   const [apiKey, setApiKey] = useState("");
@@ -140,6 +145,33 @@ export default function ResearchReportSettings() {
       <p>
         設定每週 AI 研究報告的排程、模型、分析範圍、投資背景與 OpenAI API Key。
       </p>
+      {languageTarget &&
+        createPortal(
+          <div className="settings-row">
+            <div>
+              <h3>報告語言</h3>
+              <p>研究週報使用此語言；變更後請按下方「儲存設定」。</p>
+            </div>
+            <select
+              className="settings-select"
+              aria-label="報告語言"
+              disabled={loading}
+              value={preferences.reportLanguage}
+              onChange={(event) =>
+                setPreferences({
+                  ...preferences,
+                  reportLanguage: event.target
+                    .value as ResearchPreferences["reportLanguage"],
+                })
+              }
+            >
+              <option value="zh-TW">繁體中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>,
+          languageTarget,
+        )}
       {loading ? (
         <p role="status">正在載入報告設定…</p>
       ) : (
@@ -158,8 +190,8 @@ export default function ResearchReportSettings() {
             />
             啟用自動週報
           </label>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <label className="text-sm">
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <label className="min-w-0 text-sm">
               執行星期
               <select
                 className="field mt-1"
@@ -179,7 +211,7 @@ export default function ResearchReportSettings() {
                 ))}
               </select>
             </label>
-            <label className="text-sm">
+            <label className="min-w-0 text-sm">
               執行時間
               <input
                 className="field mt-1"
@@ -195,7 +227,7 @@ export default function ResearchReportSettings() {
                 }
               />
             </label>
-            <label className="text-sm">
+            <label className="min-w-0 text-sm">
               排程時區
               <select
                 className="field mt-1"
@@ -240,25 +272,7 @@ export default function ResearchReportSettings() {
             </p>
           )}
           <h3 className="mt-5 font-bold">產生方式與分析範圍</h3>
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <label className="text-sm">
-              報告語言
-              <select
-                className="field mt-1"
-                value={preferences.reportLanguage}
-                onChange={(event) =>
-                  setPreferences({
-                    ...preferences,
-                    reportLanguage: event.target
-                      .value as ResearchPreferences["reportLanguage"],
-                  })
-                }
-              >
-                <option value="zh-TW">繁體中文</option>
-                <option value="en">English</option>
-                <option value="ja">日本語</option>
-              </select>
-            </label>
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="text-sm">
               AI 模型
               <select

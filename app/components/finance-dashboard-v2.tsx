@@ -278,6 +278,8 @@ export default function FinanceDashboard({
   const [displayPreferences, setDisplayPreferences] =
     useState<DisplayPreferences>(defaultDisplayPreferences);
   const [displayPreferenceWarning, setDisplayPreferenceWarning] = useState("");
+  const [reportLanguageTarget, setReportLanguageTarget] =
+    useState<HTMLDivElement | null>(null);
   const [benchmark, setBenchmark] = useState<BenchmarkId>("twii");
   const [performance, setPerformance] = useState<PerformanceReport | null>(
     null,
@@ -1159,7 +1161,7 @@ export default function FinanceDashboard({
                 aria-labelledby="display-settings-title"
               >
                 <h2 id="display-settings-title">顯示偏好</h2>
-                <p>偏好會儲存在此瀏覽器，並套用到所有帳本頁面。</p>
+                <p>顯示偏好會儲存在此瀏覽器；報告語言請按「儲存設定」保存。</p>
                 <div className="settings-row">
                   <div>
                     <h3>時區</h3>
@@ -1183,6 +1185,7 @@ export default function FinanceDashboard({
                     ))}
                   </select>
                 </div>
+                {!demoMode && <div ref={setReportLanguageTarget} />}
                 {displayPreferenceWarning && (
                   <p className="notice error" role="alert">
                     {displayPreferenceWarning}
@@ -1219,7 +1222,9 @@ export default function FinanceDashboard({
                   </button>
                 </div>
               </section>
-              {!demoMode && <ResearchReportSettings />}
+              {!demoMode && (
+                <ResearchReportSettings languageTarget={reportLanguageTarget} />
+              )}
               {!demoMode && (
                 <section
                   className="settings-panel"

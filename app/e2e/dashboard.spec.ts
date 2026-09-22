@@ -546,21 +546,27 @@ test("未保存的快照編輯需確認才可關閉，焦點留在對話框內",
   page,
   request,
 }) => {
-  const created = await request.post("/api/snapshots", {
-    data: {
-      rawInput: "建立未保存確認測試帳戶",
-      accounts: [
-        {
-          name: "未保存確認測試帳戶",
-          accountType: "bank",
-          defaultCurrency: "TWD",
-          cashBalances: [{ currency: "TWD", amount: "100" }],
-          positions: [],
-        },
-      ],
-    },
-  });
-  expect(created.ok()).toBeTruthy();
+  const dashboard = await request.get("/api/dashboard");
+  const latest = (await dashboard.json()).latest as {
+    accounts: unknown[];
+  } | null;
+  if (!latest?.accounts.length) {
+    const created = await request.post("/api/snapshots", {
+      data: {
+        rawInput: "建立未保存確認測試帳戶",
+        accounts: [
+          {
+            name: "未保存確認測試帳戶",
+            accountType: "bank",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "100" }],
+            positions: [],
+          },
+        ],
+      },
+    });
+    expect(created.ok()).toBeTruthy();
+  }
   await page.goto("/");
   await page.getByRole("button", { name: "新增快照" }).click();
   const dialog = page.getByRole("dialog", { name: "建立財務快照" });
@@ -568,7 +574,7 @@ test("未保存的快照編輯需確認才可關閉，焦點留在對話框內",
   expect(
     await dialog.evaluate((item) => item.contains(document.activeElement)),
   ).toBe(true);
-  await dialog.getByRole("checkbox", { name: /未保存確認測試帳戶/ }).click();
+  await dialog.getByRole("checkbox").first().click();
   await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
   page.once("dialog", (confirmation) => confirmation.dismiss());
   await dialog.click({ position: { x: 5, y: 5 } });

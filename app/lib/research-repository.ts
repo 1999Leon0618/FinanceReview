@@ -83,23 +83,34 @@ async function syncHoldingWatchlist(database?: FinanceDatabase) {
   const db = database ?? (await getDatabase());
   const ownerKey = getDataOwner().key;
   await db.atomic(async (transaction) => {
+    const latest = await transaction
+      .prepare(
+        `SELECT id FROM snapshots WHERE owner_key = ?
+        ORDER BY captured_at DESC, created_at DESC LIMIT 1`,
+      )
+      .get(ownerKey);
+    if (!latest) return;
+    const snapshotId = text(latest.id);
     const rows = (await transaction
       .prepare(
         `SELECT DISTINCT security.id AS security_id
-        FROM account_positions position
-        JOIN accounts account ON account.id = position.account_id
+        FROM snapshot_positions position
+        JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
         JOIN securities security ON security.id = position.security_id
-        LEFT JOIN watchlist_items item
-          ON item.owner_key = account.owner_key
-          AND item.security_id = security.id
-        WHERE account.owner_key = ? AND position.status = 'active'
+        WHERE account.snapshot_id = ?
         AND security.market IN ('TWSE', 'TPEX', 'US')
-        AND security.security_type IN ('stock', 'etf')
-        AND item.id IS NULL`,
+        AND security.security_type IN ('stock', 'etf')`,
       )
-      .all(ownerKey)) as Row[];
+      .all(snapshotId)) as Row[];
     const now = new Date().toISOString();
-    for (const row of rows)
+    const heldSecurityIds = rows.map((row) => text(row.security_id));
+    for (const securityId of heldSecurityIds) {
+      const existing = await transaction
+        .prepare(
+          "SELECT id FROM watchlist_items WHERE owner_key = ? AND security_id = ?",
+        )
+        .get(ownerKey, securityId);
+      if (existing) continue;
       await transaction
         .prepare(
           `INSERT INTO watchlist_items(
@@ -107,7 +118,8 @@ async function syncHoldingWatchlist(database?: FinanceDatabase) {
             created_at, updated_at
           ) VALUES (?, ?, ?, 'holding', 1, ?, ?, ?)`,
         )
-        .run(randomUUID(), ownerKey, text(row.security_id), now, now, now);
+        .run(randomUUID(), ownerKey, securityId, now, now, now);
+    }
   });
 }
 
@@ -129,10 +141,14 @@ export async function listWatchlist(
         COALESCE(item.display_quote_currency, historic.quote_currency,
           security.quote_currency) AS effective_quote_currency,
         CASE WHEN EXISTS (
-          SELECT 1 FROM account_positions position
-          JOIN accounts account ON account.id = position.account_id
+          SELECT 1 FROM snapshot_positions position
+          JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
+          JOIN snapshots snapshot ON snapshot.id = account.snapshot_id
           WHERE position.security_id = item.security_id
-          AND position.status = 'active' AND account.owner_key = ?
+          AND snapshot.owner_key = ? AND snapshot.id = (
+            SELECT id FROM snapshots WHERE owner_key = ?
+            ORDER BY captured_at DESC, created_at DESC LIMIT 1
+          )
         ) THEN 1 ELSE 0 END AS is_held,
         COALESCE(quote.price, historic.market_price) AS price,
         COALESCE(quote.currency, historic.quote_currency) AS currency,
@@ -158,10 +174,32 @@ export async function listWatchlist(
               security.provider_symbol))
         ORDER BY cached.quote_as_of DESC, cached.fetched_at DESC LIMIT 1
       )
-      WHERE item.owner_key = ? AND (? = 1 OR item.removed_at IS NULL)
+      WHERE item.owner_key = ? AND (
+        ? = 1 OR (
+          item.removed_at IS NULL AND (
+            item.origin != 'holding' OR EXISTS (
+              SELECT 1 FROM snapshot_positions held
+              JOIN snapshot_accounts held_account
+                ON held_account.id = held.snapshot_account_id
+              WHERE held.security_id = item.security_id
+                AND held_account.snapshot_id = (
+                  SELECT id FROM snapshots WHERE owner_key = ?
+                  ORDER BY captured_at DESC, created_at DESC LIMIT 1
+                )
+            )
+          )
+        )
+      )
       ORDER BY item.is_enabled DESC, is_held DESC, security.market, security.symbol`,
     )
-    .all(ownerKey, ownerKey, ownerKey, includeRemoved ? 1 : 0)) as Row[];
+    .all(
+      ownerKey,
+      ownerKey,
+      ownerKey,
+      ownerKey,
+      includeRemoved ? 1 : 0,
+      ownerKey,
+    )) as Row[];
   return rows.map(watchlistFromRow);
 }
 

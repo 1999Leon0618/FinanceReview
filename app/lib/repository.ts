@@ -653,14 +653,31 @@ async function findOrCreatePosition(
 ): Promise<string> {
   const ownerKey = getDataOwner().key;
   if (input.positionId) {
-    const found = await db
+    const found = (await db
       .prepare(
-        `SELECT position.id FROM account_positions position
+        `SELECT position.id, position.account_id, position.security_id FROM account_positions position
         JOIN accounts account ON account.id = position.account_id
         WHERE position.id = ? AND position.status = 'active' AND account.owner_key = ?`,
       )
-      .get(input.positionId, ownerKey);
+      .get(input.positionId, ownerKey)) as Row | undefined;
     if (!found) throw new Error(`持倉已售出或不存在：${input.symbol}`);
+    if (text(found.account_id) !== accountId)
+      throw new Error(`持倉不屬於指定帳戶：${input.symbol}`);
+    if (text(found.security_id) !== securityId) {
+      const duplicate = await db
+        .prepare(
+          `SELECT id FROM account_positions
+          WHERE account_id = ? AND security_id = ? AND status = 'active'`,
+        )
+        .get(accountId, securityId);
+      if (duplicate) throw new Error(`指定帳戶已持有此標的：${input.symbol}`);
+      await db
+        .prepare(
+          `UPDATE account_positions SET security_id = ?, updated_at = ?
+          WHERE id = ? AND account_id = ? AND status = 'active'`,
+        )
+        .run(securityId, now, input.positionId, accountId);
+    }
     return input.positionId;
   }
   const active = (await db

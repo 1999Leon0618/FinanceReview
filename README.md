@@ -11,7 +11,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 - 使用者以 Email OTP 自行登入後須填寫申請理由，送出後才進入待審核名單；管理員可記錄內部備註、核准、拒絕或停用，未核准者只能查看使用固定假資料的唯讀正式介面。
 - 以時間快照追蹤現金、股票、ETF、基金、期貨、貸款、總資產與淨值。
 - 以銀行共用額度群組追蹤信用卡總應繳金額、繳款狀態、額度使用比例、剩餘分期與溢繳，並呈現每月總應繳及實際繳款走勢。
-- 使用內建規則將常見的自然語言輸入整理成可編輯的確認表，並提供完整手動輸入。
+- 從既有帳戶選擇本次更新項目，直接編輯餘額、持倉、貸款與信用卡資料；未選取項目沿用上一份快照。
 - 更新臺灣上市櫃、美股、基金、期貨行情及外幣匯率，失敗時可人工補價。
 - 顯示整體、帳戶及個別標的的歷史走勢與未實現損益。
 - 將每次快照的外部投入、提領、收益與費稅拆分成淨值變動歸因。
@@ -35,7 +35,7 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 .\Start-FinanceReview.ps1
 ```
 
-第一次啟動會安裝套件，接著開啟 `http://127.0.0.1:3000`；SQLite 會在首次讀取時自動初始化。文字整理完全由應用程式內建規則處理，不需額外模型或 Gateway。
+第一次啟動會安裝套件，接著開啟 `http://127.0.0.1:3000`；SQLite 會在首次讀取時自動初始化。
 
 可指定連接埠或停用自動開啟瀏覽器：
 
@@ -46,23 +46,22 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 
 ## 使用方式
 
-1. 按「新增快照」，每次只輸入一筆帳戶餘額或持倉資料；例如先輸入「永豐銀行 30652」，再輸入「永豐銀行日幣 60000」。
-2. 按「整理成確認表」後只會顯示本次相關帳戶；未顯示的既有帳戶會在保存完整快照時原樣保留。整理成功後輸入框會自動清空，失敗則保留內容並顯示原因。
-3. 更新行情與匯率，確認所有人工價格後保存。
-4. 若本次餘額變動包含投入、提領、收益或費稅，可在確認表加入本期資金流，讓系統拆分淨值變動來源。
-5. 要結束持倉時按「全部賣出」，確認成交價、結算帳戶、手續費與交易稅；一般證券會更新現金，期貨會依最後行情到結算價的差額更新權益，並保存完整已實現損益。
-6. 在「信用卡帳單」建立發卡銀行的共用額度群組、每月繳款期限與實體卡片；之後可只選擇本次要更新的銀行，填寫繳款日期、總應繳金額及實際繳款金額，其他銀行會沿用上一份快照。剩餘分期本金與銀行顯示的溢繳餘額為選填。
-7. 貸款卡片可按「登記本期已繳」，確認實際付款日與本期償還本金；系統會建立新快照、扣減未償本金，並將下次繳款日推進一個月。預填本金會依月付金與利率估算，請以銀行帳單為準；此操作不會自動扣除現金帳戶餘額。
+1. 首次使用先到「管理一般帳戶」建立帳戶與追蹤幣別。可按「保存並填寫餘額」直接回到快照編輯器。
+2. 按「新增快照」，選取本次要更新的帳戶或信用卡額度群組，再按「下一步：確認所選項目」。未選取的既有資料會沿用上一份快照。
+3. 修改餘額、持倉與貸款；多帳戶可用「現金餘額快填」。一般證券的總成本、平均成本與數量可任填兩項換算第三項；臺股也可另填張數再換算為股。畫面會即時預覽修改後總資產、負債、淨值與差額；資料不完整時會提示待補齊。
+4. 視需要更新行情與匯率，或改用人工價格，確認後保存。數字欄可接受千分位與全形數字並轉成標準數字；中文及其他不合法格式會被拒絕。
+5. 若本次餘額變動包含投入、提領、收益或費稅，可加入本期資金流，讓系統拆分淨值變動來源。
+6. 要結束持倉時按「全部賣出」，確認成交價、結算帳戶、手續費與交易稅；一般證券會更新現金，期貨會依最後行情到結算價的差額更新權益，並保存完整已實現損益。
+7. 在「信用卡帳單」建立發卡銀行的共用額度群組、每月繳款期限與實體卡片；之後可只選擇本次要更新的銀行，填寫繳款日期、總應繳金額及實際繳款金額，其他銀行會沿用上一份快照。剩餘分期本金與銀行顯示的溢繳餘額為選填。
+8. 貸款卡片可按「登記本期已繳」，確認實際付款日與本期償還本金；系統會建立新快照、扣減未償本金，並將下次繳款日推進一個月。預填本金會依月付金與利率估算，請以銀行帳單為準；此操作不會自動扣除現金帳戶餘額。
+
+快照編輯器可將表格中的多列現金或既有持倉資料以 Tab 分隔貼上，先預覽異動與逐列錯誤，再套用至本次編輯。資料時間可選擇晚於目前最新快照的過去時間；目前尚未支援插入兩筆既有快照之間，信用卡更新也不使用自訂資料時間。
 
 信用卡採快照模式，不追蹤即時消費或未出帳金額，也不需要連結發卡銀行的存款帳戶。繳款期限日期由帳戶設定的「每月繳款期限（日）」自動推算，不需每月重複輸入；系統會在下一期期限前 7 天提醒尚未更新的信用卡帳戶。總應繳金額為零的帳單在當期顯示為「已繳」，進入下一個繳款月份後才改為「待更新」。額度使用比例以「總應繳金額 ÷ 共用信用額度」計算；全額繳清且沒有分期時不列負債，部分未繳與尚未列入帳單的剩餘分期本金列入負債，超額溢繳則列為信用卡溢繳資產。更新信用卡資料不會自動修改任何銀行現金餘額。
 
 銀行與現金帳戶只記錄現金餘額；券商帳戶可同時記錄現金、股票、ETF、基金與期貨。境內基金使用投信投顧公會淨值，境外基金可使用 ISIN 解析對應的 Yahoo Finance 淨值；上市 ETF 依所屬市場取得行情，小型臺指期則可依契約月份取得臺灣期貨交易所每日行情。
 
-期貨輸入範例：
-
-```text
-元大期貨帳戶權益30萬，小型臺指期 2026/09 多單2口，均價22150
-```
+期貨持倉可在快照編輯器選擇「期貨」，填入契約代碼、到期月份、多空方向、口數與進場均價。帳戶權益請填入對應的券商現金餘額。
 
 期貨帳戶權益會計入總資產；系統另外計算未實現損益並顯示參考名目價值，但不會把契約名目價值重複加入總資產。
 小型臺指期會使用 `MTX` 與每點 50 元；微型臺指期會使用 `TMF` 與每點 10 元。每點價值可在確認表中調整，行情尚未更新時也可先用均價估值並保存。
@@ -78,13 +77,13 @@ FinanceReview 是具備帳號審核與資料隔離的資產歷史工具。本機
 
 ## 系統架構
 
-FinanceReview 是單一 Next.js 應用程式，瀏覽器透過 Route Handlers 使用業務邏輯、文字解析、行情與資料存取功能。本機由 Node.js runtime 寫入 SQLite；Cloudflare 版本由 vinext 建置成 Worker，並透過 binding 寫入 D1。
+FinanceReview 是單一 Next.js 應用程式，瀏覽器透過 Route Handlers 使用行情與資料存取功能。本機由 Node.js runtime 寫入 SQLite；Cloudflare 版本由 vinext 建置成 Worker，並透過 binding 寫入 D1。
 
 ```mermaid
 flowchart LR
     UI[瀏覽器 UI<br/>React 19 / Recharts]
     API[Next.js Route Handlers<br/>輸入驗證與錯誤轉換]
-    DOMAIN[領域服務<br/>parser / quotes / finance]
+    DOMAIN[領域服務<br/>quotes / finance]
     REPO[Repository<br/>快照與查詢]
     DB[(SQLite／D1<br/>依執行環境選擇)]
     MARKET[公開行情來源<br/>TWSE / TPEx / SITCA / TAIFEX / Yahoo]
@@ -99,49 +98,17 @@ flowchart LR
 
 ### 應用程式分層
 
-| 層級     | 主要位置                                                           | 職責                                                     |
-| -------- | ------------------------------------------------------------------ | -------------------------------------------------------- |
-| 表現層   | `app/components/`、`app/app/page.tsx`                              | 財務總覽、圖表、快照確認表、手動輸入、行情補價與備份操作 |
-| HTTP API | `app/app/api/`                                                     | 接收 JSON、以 Zod 驗證輸入、呼叫領域服務並統一回傳錯誤   |
-| 領域邏輯 | `app/lib/parser.ts`、`finance.ts`、`quotes.ts`、`quote-refresh.ts` | 文字解析、快照提案合併、Decimal 計算、行情與匯率解析     |
-| 資料存取 | `app/lib/repository.ts`、`db.ts`                                   | SQLite／D1、原子寫入、快照與趨勢查詢、備份匯入匯出       |
-| 共用契約 | `app/lib/types.ts`、`validation.ts`                                | TypeScript 型別與 API 結構驗證                           |
+| 層級     | 主要位置                                              | 職責                                                     |
+| -------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| 表現層   | `app/components/`、`app/app/page.tsx`                 | 財務總覽、圖表、快照確認表、手動輸入、行情補價與備份操作 |
+| HTTP API | `app/app/api/`                                        | 接收 JSON、以 Zod 驗證輸入、呼叫領域服務並統一回傳錯誤   |
+| 領域邏輯 | `app/lib/finance.ts`、`quotes.ts`、`quote-refresh.ts` | Decimal 計算、行情與匯率解析                             |
+| 資料存取 | `app/lib/repository.ts`、`db.ts`                      | SQLite／D1、原子寫入、快照與趨勢查詢、備份匯入匯出       |
+| 共用契約 | `app/lib/types.ts`、`validation.ts`                   | TypeScript 型別與 API 結構驗證                           |
 
-### 規則式自然語言解析
+### 快照輸入
 
-自然語言處理僅使用確定性規則，不會呼叫 AI 模型或將輸入送到外部服務：
-
-```mermaid
-sequenceDiagram
-    participant U as 使用者
-    participant UI as 快照介面
-    participant API as POST /api/snapshot-proposals
-    participant P as parser.ts
-    participant B as Proposal Builder
-
-    U->>UI: 輸入一筆自然語言資料
-    UI->>API: rawInput
-    API->>P: parseNaturalLanguage()
-    P->>P: 拒絕買入／加碼／部分賣出推算
-    P->>P: 正規表示式解析常見現金、股票、期貨與貸款
-    alt 內建規則已辨識
-        P-->>B: ParserPatch
-    else 無法辨識
-        P-->>UI: 提示改用手動新增
-    end
-    B->>B: 與最新快照合併，拆分本次與保留項目
-    B-->>UI: 可編輯 SnapshotProposal
-```
-
-解析設計重點：
-
-- `parser.ts` 辨識常見的帳戶餘額、臺／美股、基金代碼、臺指期貨與貸款語句。
-- 規則解析結果不會直接寫入資料庫；使用者仍需在確認表檢查並主動保存。
-- `buildProposal()` 會以帳戶名稱、機構與帳戶識別碼比對最新快照，將本次項目與未變動的 `preservedAccounts`／`preservedLoans` 分開，避免局部更新刪除其他資產。
-- 買入、加碼及部分賣出不由系統推算數量或成本；系統會要求改填「目前數量與平均成本」。只有明確的全部賣出才進入賣出流程。
-- 無法以內建規則辨識時，原始輸入會保留，使用者可改用手動表單。
-
-文字整理完全由應用程式內的規則執行；行情更新會連線至下述公開資料來源。
+快照編輯器先選取本次要更新的既有帳戶或信用卡群組，再載入可編輯的數值。未選取項目會沿用上一份快照，保存前須檢查修改後金額預覽與缺漏提示。原有自然語言解析程式與 `/api/snapshot-proposals` 僅保留相容用途，使用者介面已移除自然語言輸入入口。
 
 ### 快照與行情資料流
 
@@ -154,14 +121,14 @@ sequenceDiagram
 
 行情來源如下：
 
-| 市場／資料         | 來源                                               | 備援方式           |
-| ------------------ | -------------------------------------------------- | ------------------ |
-| 臺灣上市股票與 ETF | 臺灣證券交易所 OpenAPI                             | 最近快照／人工價格 |
-| 臺灣上櫃股票與 ETF | 證券櫃檯買賣中心 OpenAPI                           | 最近快照／人工價格 |
-| 美股               | `yahoo-finance2`                                   | 最近快照／人工價格 |
-| 一般基金           | 投信投顧公會；ISIN／Yahoo Finance                  | 平均成本／人工淨值 |
-| 小型、微型臺指期   | 臺灣期貨交易所每日行情                             | 平均成本／人工價格 |
-| 外幣匯率           | Yahoo Finance                                      | 最近快照／人工匯率 |
+| 市場／資料         | 來源                              | 備援方式           |
+| ------------------ | --------------------------------- | ------------------ |
+| 臺灣上市股票與 ETF | 臺灣證券交易所 OpenAPI            | 最近快照／人工價格 |
+| 臺灣上櫃股票與 ETF | 證券櫃檯買賣中心 OpenAPI          | 最近快照／人工價格 |
+| 美股               | `yahoo-finance2`                  | 最近快照／人工價格 |
+| 一般基金           | 投信投顧公會；ISIN／Yahoo Finance | 平均成本／人工淨值 |
+| 小型、微型臺指期   | 臺灣期貨交易所每日行情            | 平均成本／人工價格 |
+| 外幣匯率           | Yahoo Finance                     | 最近快照／人工匯率 |
 
 `quote_cache` 保存可重新取得的行情以減少重複請求；它不包含在 JSON 備份中。
 
@@ -223,65 +190,65 @@ erDiagram
     credit_card_accounts ||--o{ snapshot_credit_card_accounts : 歷史狀態
 ```
 
-| 資料表                          | 用途                                                                   |
-| ------------------------------- | ---------------------------------------------------------------------- |
-| `accounts`                      | 帳戶主檔；保存名稱、機構、類型與選用識別碼                             |
-| `securities`                    | 標的主檔；以市場與代碼識別股票、ETF、基金或期貨                        |
-| `account_positions`             | 帳戶與標的之間的持倉生命週期，區分 `active`／`sold`                    |
-| `loans`                         | 貸款主檔；不隨快照變動的識別資訊                                       |
-| `snapshots`                     | 每次記錄的時間、來源文字、前一快照及彙總金額                           |
-| `snapshot_accounts`             | 快照當下的帳戶名稱、類型與排序                                         |
-| `cash_balances`                 | 各快照帳戶、各幣別的現金及 TWD 換算值                                  |
-| `snapshot_positions`            | 持倉數量、成本、行情、匯率、現值與未實現損益的時間切片                 |
-| `snapshot_loans`                | 未償本金、利率、月付金、還款日與 TWD 負債值的時間切片                  |
-| `credit_card_accounts`          | 發卡銀行、共用額度、結帳日及每月繳款期限等信用卡帳戶主檔               |
-| `credit_cards`                  | 所屬額度群組、卡片名稱、末四碼、卡別與主附卡狀態                       |
-| `snapshot_credit_card_accounts` | 上期帳單、實際繳款、分期、溢繳、使用比例及淨負債的時間切片             |
-| `snapshot_cash_flows`           | 快照期間的外部投入、提領、收益、費稅及其他調整，供變動歸因使用         |
-| `snapshot_fx_rates`             | 該快照實際使用的匯率、日期、來源與人工覆寫狀態                         |
-| `position_sales`                | 全部賣出或結算日期、數量、成交價、帳戶、費稅、成本、淨額與已實現損益   |
-| `quote_cache`                   | 可重新取得的行情快取，不列入備份                                       |
-| `app_settings`                  | 基準幣別、預設圖表區間與行情提供者等設定                               |
-| `watchlist_items`               | 台美股自選標的、持有狀態、加入來源與追蹤開關                           |
-| `research_notes`                | 舊版人工研究資料，僅為既有備份與資料相容性保留                         |
-| `research_note_revisions`       | 舊版人工研究修訂，僅為既有備份與資料相容性保留                         |
-| `research_note_sources`         | 舊版人工研究來源，僅為既有備份與資料相容性保留                         |
-| `research_quote_snapshots`      | 舊版人工研究行情快照，僅為既有備份與資料相容性保留                     |
-| `research_todos`                | 舊版研究待辦，僅為既有備份與資料相容性保留                             |
-| `research_preferences`          | 每位使用者的報告排程、模型、分析範圍與投資背景                         |
-| `research_credentials`          | 每位使用者的加密 OpenAI API Key；不列入 JSON 備份                      |
-| `weekly_research_reports`       | 已生成週報、語言、期間與當次使用的非金額證據                           |
+| 資料表                          | 用途                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `accounts`                      | 帳戶主檔；保存名稱、機構、類型與選用識別碼                           |
+| `securities`                    | 標的主檔；以市場與代碼識別股票、ETF、基金或期貨                      |
+| `account_positions`             | 帳戶與標的之間的持倉生命週期，區分 `active`／`sold`                  |
+| `loans`                         | 貸款主檔；不隨快照變動的識別資訊                                     |
+| `snapshots`                     | 每次記錄的時間、來源文字、前一快照及彙總金額                         |
+| `snapshot_accounts`             | 快照當下的帳戶名稱、類型與排序                                       |
+| `cash_balances`                 | 各快照帳戶、各幣別的現金及 TWD 換算值                                |
+| `snapshot_positions`            | 持倉數量、成本、行情、匯率、現值與未實現損益的時間切片               |
+| `snapshot_loans`                | 未償本金、利率、月付金、還款日與 TWD 負債值的時間切片                |
+| `credit_card_accounts`          | 發卡銀行、共用額度、結帳日及每月繳款期限等信用卡帳戶主檔             |
+| `credit_cards`                  | 所屬額度群組、卡片名稱、末四碼、卡別與主附卡狀態                     |
+| `snapshot_credit_card_accounts` | 上期帳單、實際繳款、分期、溢繳、使用比例及淨負債的時間切片           |
+| `snapshot_cash_flows`           | 快照期間的外部投入、提領、收益、費稅及其他調整，供變動歸因使用       |
+| `snapshot_fx_rates`             | 該快照實際使用的匯率、日期、來源與人工覆寫狀態                       |
+| `position_sales`                | 全部賣出或結算日期、數量、成交價、帳戶、費稅、成本、淨額與已實現損益 |
+| `quote_cache`                   | 可重新取得的行情快取，不列入備份                                     |
+| `app_settings`                  | 基準幣別、預設圖表區間與行情提供者等設定                             |
+| `watchlist_items`               | 台美股自選標的、持有狀態、加入來源與追蹤開關                         |
+| `research_notes`                | 舊版人工研究資料，僅為既有備份與資料相容性保留                       |
+| `research_note_revisions`       | 舊版人工研究修訂，僅為既有備份與資料相容性保留                       |
+| `research_note_sources`         | 舊版人工研究來源，僅為既有備份與資料相容性保留                       |
+| `research_quote_snapshots`      | 舊版人工研究行情快照，僅為既有備份與資料相容性保留                   |
+| `research_todos`                | 舊版研究待辦，僅為既有備份與資料相容性保留                           |
+| `research_preferences`          | 每位使用者的報告排程、模型、分析範圍與投資背景                       |
+| `research_credentials`          | 每位使用者的加密 OpenAI API Key；不列入 JSON 備份                    |
+| `weekly_research_reports`       | 已生成週報、語言、期間與當次使用的非金額證據                         |
 
 刪除快照會受外鍵關係保護；快照內容使用 `ON DELETE CASCADE` 清理，主檔與持倉生命週期則多採 `RESTRICT`，避免歷史參照失效。建立快照、全部賣出與匯入備份等重要寫入在兩種資料庫都會原子提交，失敗時整批 rollback。
 
 ### API 一覽
 
-| Method                | Route                               | 用途                                 |
-| --------------------- | ----------------------------------- | ------------------------------------ |
-| `GET`                 | `/api/dashboard`                    | 最新快照、歷史、淨值趨勢與已售出部位 |
-| `GET`／`POST`         | `/api/snapshots`                    | 列出或建立快照                       |
-| `GET`／`DELETE`       | `/api/snapshots/:id`                | 讀取或刪除單一快照                   |
-| `POST`                | `/api/snapshot-proposals`           | 將自然語言轉成待確認提案             |
-| `POST`                | `/api/quotes/resolve`               | 解析確認表中的行情與匯率             |
-| `POST`／`PUT`         | `/api/quotes/refresh`               | 預覽全部行情更新／確認建立新快照     |
-| `POST`                | `/api/positions/:id/sell`           | 全部賣出並建立結果快照               |
-| `GET`                 | `/api/trends/accounts/:id`          | 帳戶歷史走勢                         |
-| `GET`                 | `/api/trends/securities/:id`        | 標的數量、成本與市值走勢             |
-| `GET`                 | `/api/performance`                  | 投資績效、最大回撤與基準比較         |
-| `GET`／`POST`         | `/api/backup`                       | 匯出或合併匯入 JSON 備份             |
-| `GET`／`POST`         | `/api/watchlist`                    | 查詢或新增自選標的                   |
-| `PATCH`／`DELETE`     | `/api/watchlist/:id`                | 啟用、停用或隱藏自選標的             |
-| `GET`                 | `/api/watchlist/:id/candles`        | 取得自選標的 K 線                    |
-| `POST`                | `/api/watchlist/refresh`            | 更新自選行情快取                     |
-| `GET`／`POST`         | `/api/research-notes`               | 舊版研究報告相容 API                 |
-| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`           | 舊版研究報告相容 API                 |
-| `GET`                 | `/api/research-notes/:id/revisions` | 舊版研究修訂相容 API                 |
-| `GET`／`POST`         | `/api/research-todos`               | 舊版研究待辦相容 API                 |
-| `PATCH`               | `/api/research-todos/:id`           | 舊版研究待辦相容 API                 |
-| `GET`／`PUT`          | `/api/research-preferences`         | 讀取或更新語言與投資背景             |
-| `PUT`／`DELETE`       | `/api/research-preferences/key`     | 設定、更換或刪除個人 API Key         |
-| `GET`／`POST`         | `/api/weekly-reports`               | 列出或手動產生每週研究報告           |
-| `GET`                 | `/api/weekly-reports/:id`           | 讀取單份每週研究報告                 |
+| Method                | Route                               | 用途                                     |
+| --------------------- | ----------------------------------- | ---------------------------------------- |
+| `GET`                 | `/api/dashboard`                    | 最新快照、歷史、淨值趨勢與已售出部位     |
+| `GET`／`POST`         | `/api/snapshots`                    | 列出或建立快照                           |
+| `GET`／`DELETE`       | `/api/snapshots/:id`                | 讀取或刪除單一快照                       |
+| `POST`                | `/api/snapshot-proposals`           | 舊版自然語言提案相容 API；目前介面不使用 |
+| `POST`                | `/api/quotes/resolve`               | 解析確認表中的行情與匯率                 |
+| `POST`／`PUT`         | `/api/quotes/refresh`               | 預覽全部行情更新／確認建立新快照         |
+| `POST`                | `/api/positions/:id/sell`           | 全部賣出並建立結果快照                   |
+| `GET`                 | `/api/trends/accounts/:id`          | 帳戶歷史走勢                             |
+| `GET`                 | `/api/trends/securities/:id`        | 標的數量、成本與市值走勢                 |
+| `GET`                 | `/api/performance`                  | 投資績效、最大回撤與基準比較             |
+| `GET`／`POST`         | `/api/backup`                       | 匯出或合併匯入 JSON 備份                 |
+| `GET`／`POST`         | `/api/watchlist`                    | 查詢或新增自選標的                       |
+| `PATCH`／`DELETE`     | `/api/watchlist/:id`                | 啟用、停用或隱藏自選標的                 |
+| `GET`                 | `/api/watchlist/:id/candles`        | 取得自選標的 K 線                        |
+| `POST`                | `/api/watchlist/refresh`            | 更新自選行情快取                         |
+| `GET`／`POST`         | `/api/research-notes`               | 舊版研究報告相容 API                     |
+| `GET`／`PUT`／`PATCH` | `/api/research-notes/:id`           | 舊版研究報告相容 API                     |
+| `GET`                 | `/api/research-notes/:id/revisions` | 舊版研究修訂相容 API                     |
+| `GET`／`POST`         | `/api/research-todos`               | 舊版研究待辦相容 API                     |
+| `PATCH`               | `/api/research-todos/:id`           | 舊版研究待辦相容 API                     |
+| `GET`／`PUT`          | `/api/research-preferences`         | 讀取或更新語言與投資背景                 |
+| `PUT`／`DELETE`       | `/api/research-preferences/key`     | 設定、更換或刪除個人 API Key             |
+| `GET`／`POST`         | `/api/weekly-reports`               | 列出或手動產生每週研究報告               |
+| `GET`                 | `/api/weekly-reports/:id`           | 讀取單份每週研究報告                     |
 
 ## 資料位置與環境變數
 

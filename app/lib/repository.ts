@@ -1104,9 +1104,22 @@ async function createSnapshotInDb(
   assertNoDuplicateIdentities(input);
   const id = randomUUID();
   const now = new Date().toISOString();
-  const capturedAt = input.capturedAt
-    ? new Date(input.capturedAt).toISOString()
-    : now;
+  const latestTime = input.capturedAt
+    ? null
+    : await db
+        .prepare(
+          "SELECT captured_at FROM snapshots WHERE owner_key = ? ORDER BY captured_at DESC, created_at DESC LIMIT 1",
+        )
+        .get(ownerKey);
+  const capturedTime = input.capturedAt
+    ? Date.parse(input.capturedAt)
+    : Math.max(
+        Date.now(),
+        latestTime ? Date.parse(String(latestTime.captured_at)) + 1 : 0,
+      );
+  if (!Number.isFinite(capturedTime))
+    throw new Error("最新快照日期已超出可記錄範圍，請先修正日期");
+  const capturedAt = new Date(capturedTime).toISOString();
   await db
     .prepare(
       `INSERT INTO snapshots(

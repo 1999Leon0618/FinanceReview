@@ -54,6 +54,37 @@ beforeAll(() => {
 });
 
 describe("依登入郵箱隔離資料", () => {
+  it("未指定時間的新快照會排在已存在的未來日期快照之後", async () => {
+    const owner = dataOwnerFromEmail("future-snapshot@example.com");
+    await runWithDataOwner(owner, async () => {
+      const future = await createSnapshot({
+        rawInput: "誤設未來日期",
+        capturedAt: "2099-01-01T00:00:00.000Z",
+        accounts: [
+          {
+            name: "測試帳戶",
+            accountType: "bank",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "100" }],
+            positions: [],
+          },
+        ],
+      });
+      const next = await createSnapshot({
+        rawInput: "正常時間保存",
+        baseSnapshotId: future.id,
+        accounts: [
+          {
+            ...future.accounts[0],
+            cashBalances: [{ currency: "TWD", amount: "200" }],
+          },
+        ],
+      });
+      expect(next.capturedAt).toBe("2099-01-01T00:00:00.001Z");
+      expect((await getLatestSnapshot())?.id).toBe(next.id);
+    });
+  });
+
   it("不同郵箱無法讀取彼此的快照、儀表板與備份", async () => {
     const ownerA = dataOwnerFromEmail("User.A@Example.com");
     const ownerB = dataOwnerFromEmail("user.b@example.com");

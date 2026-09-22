@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/http";
+import { ApiError } from "@/lib/api-error";
 import {
   applyFuturesQuoteEquityChanges,
   prepareQuoteRefresh,
@@ -36,7 +37,11 @@ export async function PUT(request: NextRequest) {
     const payload = snapshotCreateSchema.parse(await request.json());
     const latest = await getLatestSnapshot();
     if (!latest || payload.baseSnapshotId !== latest.id) {
-      throw new Error("最新快照已變更，請重新取得行情");
+      throw new ApiError(
+        "最新快照已變更，請重新取得行情",
+        409,
+        "snapshot_conflict",
+      );
     }
     return NextResponse.json(
       await createSnapshot({

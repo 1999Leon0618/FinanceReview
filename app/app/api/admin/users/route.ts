@@ -8,6 +8,6 @@ export async function GET() {
   try {
     return NextResponse.json(await listAppUsers());
   } catch (error) {
-    return apiError(error, 403);
+    return apiError(error);
   }
 }

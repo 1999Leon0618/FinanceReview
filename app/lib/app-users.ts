@@ -1,4 +1,5 @@
 import { getDataOwner } from "./data-owner";
+import { ApiError } from "./api-error";
 import { getDatabase, withTransaction, type FinanceDatabase } from "./db";
 
 export type AppUserStatus = "pending" | "approved" | "rejected";
@@ -183,7 +184,7 @@ function isApprovedAppUser(user: AppUser) {
 async function requireAdmin(database?: FinanceDatabase) {
   const user = await ensureCurrentAppUser(database);
   if (user.status !== "approved" || user.role !== "admin")
-    throw new Error("僅管理員可以管理使用者");
+    throw new ApiError("僅管理員可以管理使用者", 403, "forbidden");
   return user;
 }
 

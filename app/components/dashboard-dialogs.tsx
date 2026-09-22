@@ -48,6 +48,15 @@ import {
   withFuturesCode,
   withKnownFuturesContract,
 } from "@/lib/futures-form";
+import {
+  mergePositionQuoteWarnings,
+  replacePositionQuoteWarnings,
+  type PositionQuoteWarnings,
+} from "@/lib/position-quote-warnings";
+import {
+  mergeResolvedPositionQuote,
+  wasPositionQuoteEdited,
+} from "@/lib/position-quote-merge";
 
 const twd = new Intl.NumberFormat("zh-TW", {
   maximumFractionDigits: 0,
@@ -299,6 +308,8 @@ export function SnapshotEditor({
   const [includeCreditCards, setIncludeCreditCards] = useState(false);
   const [hasPrepared, setHasPrepared] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [positionQuoteWarnings, setPositionQuoteWarnings] =
+    useState<PositionQuoteWarnings>({});
   const [validationResult, setValidationResult] = useState({
     key: "",
     warnings: [] as string[],
@@ -318,6 +329,11 @@ export function SnapshotEditor({
     selectableItemCount > 0 && selectedItemCount === selectableItemCount;
   const quoteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
+  );
+  const quoteRequestVersionsRef = useRef<Record<string, number>>({});
+  const visibleWarnings = useMemo(
+    () => mergePositionQuoteWarnings(warnings, positionQuoteWarnings),
+    [warnings, positionQuoteWarnings],
   );
   const needsManualPrice = accounts.some((account) =>
     account.positions.some(canEditManualPrice),
@@ -415,9 +431,28 @@ export function SnapshotEditor({
   useEffect(
     () => () => {
       Object.values(quoteTimersRef.current).forEach(clearTimeout);
+      quoteRequestVersionsRef.current = {};
     },
     [],
   );
+  const invalidatePositionQuotes = (accountIndex?: number) => {
+    const matchesAccount = (key: string) =>
+      accountIndex === undefined || key.startsWith(`${accountIndex}-`);
+    for (const key of Object.keys(quoteRequestVersionsRef.current)) {
+      if (!matchesAccount(key)) continue;
+      quoteRequestVersionsRef.current[key] += 1;
+      clearTimeout(quoteTimersRef.current[key]);
+      delete quoteTimersRef.current[key];
+    }
+    setPositionQuoteWarnings((items) =>
+      Object.fromEntries(
+        Object.entries(items).filter(([key]) => !matchesAccount(key)),
+      ),
+    );
+    setResolvingPosition((current) =>
+      current && matchesAccount(current) ? null : current,
+    );
+  };
 
   const updateAccount = (index: number, patch: Partial<AccountStateInput>) =>
     setAccounts((items) =>
@@ -466,6 +501,7 @@ export function SnapshotEditor({
     positionIndex: number,
     account: AccountStateInput,
     position: AccountStateInput["positions"][number],
+    requestVersion: number,
   ) => {
     const requestKey = `${accountIndex}-${positionIndex}`;
     const requestedCode = (position.providerSymbol || position.symbol)
@@ -497,6 +533,8 @@ export function SnapshotEditor({
         ],
         [],
       );
+      if (quoteRequestVersionsRef.current[requestKey] !== requestVersion)
+        return;
       const resolved = result.accounts[0]?.positions[0];
       if (!resolved) return;
       setAccounts((items) =>
@@ -514,20 +552,23 @@ export function SnapshotEditor({
                       .toUpperCase();
                     return currentPositionIndex === positionIndex &&
                       currentCode === requestedCode
-                      ? {
-                          ...resolved,
-                          name: currentPosition.name.trim()
-                            ? currentPosition.name
-                            : resolved.name,
-                        }
+                      ? mergeResolvedPositionQuote(
+                          currentPosition,
+                          position,
+                          resolved,
+                        )
                       : currentPosition;
                   },
                 ),
               },
         ),
       );
-      setWarnings((items) => [...new Set([...items, ...result.warnings])]);
+      setPositionQuoteWarnings((items) =>
+        replacePositionQuoteWarnings(items, requestKey, result.warnings),
+      );
     } catch (cause) {
+      if (quoteRequestVersionsRef.current[requestKey] !== requestVersion)
+        return;
       const reason =
         cause instanceof Error ? cause.message : "網路行情取得失敗";
       setAccounts((items) =>
@@ -537,23 +578,32 @@ export function SnapshotEditor({
             : {
                 ...currentAccount,
                 positions: currentAccount.positions.map(
-                  (currentPosition, currentPositionIndex) =>
-                    currentPositionIndex === positionIndex
+                  (currentPosition, currentPositionIndex) => {
+                    const currentCode = (
+                      currentPosition.providerSymbol || currentPosition.symbol
+                    )
+                      .trim()
+                      .toUpperCase();
+                    return currentPositionIndex === positionIndex &&
+                      currentCode === requestedCode &&
+                      !wasPositionQuoteEdited(currentPosition, position)
                       ? {
                           ...currentPosition,
                           quoteStatus: "manual" as const,
                           quoteSource: "MANUAL" as const,
                           quoteNote: `行情自動取得失敗：${reason}`,
                         }
-                      : currentPosition,
+                      : currentPosition;
+                  },
                 ),
               },
         ),
       );
     } finally {
-      setResolvingPosition((current) =>
-        current === requestKey ? null : current,
-      );
+      if (quoteRequestVersionsRef.current[requestKey] === requestVersion)
+        setResolvingPosition((current) =>
+          current === requestKey ? null : current,
+        );
     }
   };
   const schedulePositionQuote = (
@@ -563,11 +613,26 @@ export function SnapshotEditor({
     position: AccountStateInput["positions"][number],
   ) => {
     const requestKey = `${accountIndex}-${positionIndex}`;
+    const requestVersion =
+      (quoteRequestVersionsRef.current[requestKey] ?? 0) + 1;
+    quoteRequestVersionsRef.current[requestKey] = requestVersion;
     clearTimeout(quoteTimersRef.current[requestKey]);
+    setPositionQuoteWarnings((items) =>
+      replacePositionQuoteWarnings(items, requestKey, []),
+    );
+    setResolvingPosition((current) =>
+      current === requestKey ? null : current,
+    );
     if (!hasCompleteQuoteCode(position)) return;
     quoteTimersRef.current[requestKey] = setTimeout(() => {
       delete quoteTimersRef.current[requestKey];
-      void resolvePositionQuote(accountIndex, positionIndex, account, position);
+      void resolvePositionQuote(
+        accountIndex,
+        positionIndex,
+        account,
+        position,
+        requestVersion,
+      );
     }, 900);
   };
   const setKnownFuturesContract = (
@@ -594,6 +659,7 @@ export function SnapshotEditor({
     );
   const startSelectedItems = () => {
     if (!latest || selectedItemCount === 0) return;
+    invalidatePositionQuotes();
     const selected = latest.accounts.filter((account) =>
       selectedAccountIds.includes(account.accountId),
     );
@@ -625,6 +691,7 @@ export function SnapshotEditor({
     );
     setIncludeCreditCards(selectedCreditCards.length > 0);
     setWarnings([]);
+    setPositionQuoteWarnings({});
     setError("");
     setHasPrepared(true);
   };
@@ -671,6 +738,7 @@ export function SnapshotEditor({
     if (validateSnapshot().length > 0) return;
     setBusy("quotes");
     setError("");
+    setPositionQuoteWarnings({});
     try {
       const result = await resolveOnlineData(accounts, loans);
       setAccounts(result.accounts);
@@ -981,9 +1049,9 @@ export function SnapshotEditor({
           </aside>
         </section>
         {error && <p className="notice error">{error}</p>}
-        {warnings.length > 0 && (
+        {visibleWarnings.length > 0 && (
           <div className="notice">
-            {warnings.map((item, index) => (
+            {visibleWarnings.map((item, index) => (
               <p key={`${item}-${index}`}>• {item}</p>
             ))}
           </div>
@@ -1991,13 +2059,14 @@ export function SnapshotEditor({
                               <button
                                 className="col-span-full justify-self-end"
                                 aria-label="移除持倉"
-                                onClick={() =>
+                                onClick={() => {
+                                  invalidatePositionQuotes(accountIndex);
                                   updateAccount(accountIndex, {
                                     positions: account.positions.filter(
                                       (_, i) => i !== index,
                                     ),
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 <X size={17} />
                               </button>

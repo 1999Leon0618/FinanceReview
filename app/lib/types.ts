@@ -489,6 +489,23 @@ export interface WeeklyResearchReport {
   evidence: Record<string, unknown>;
 }
 
+export type WeeklyResearchReportSummary = Omit<
+  WeeklyResearchReport,
+  "content" | "evidence"
+>;
+
+export interface WeeklyResearchReportPage {
+  reports: WeeklyResearchReportSummary[];
+  nextCursor: string | null;
+  schedule: {
+    nextAt: string | null;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    nextRetryAt: string | null;
+    attempts: number;
+  };
+}
+
 export interface CandlePoint {
   date: string;
   open: number;

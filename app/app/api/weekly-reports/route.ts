@@ -1,11 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/http";
-import { generateWeeklyReport, listWeeklyReports } from "@/lib/research-weekly";
+import {
+  generateWeeklyReport,
+  listWeeklyReportPage,
+  listWeeklyReports,
+} from "@/lib/research-weekly";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    if (request.nextUrl.searchParams.get("summary") === "1") {
+      const cursor = request.nextUrl.searchParams.get("cursor");
+      return NextResponse.json(await listWeeklyReportPage(20, cursor));
+    }
     return NextResponse.json(await listWeeklyReports());
   } catch (error) {
     return apiError(error);

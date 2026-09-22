@@ -36,6 +36,8 @@ import type {
   ResearchReportModel,
   WeeklyResearchContent,
   WeeklyResearchReport,
+  WeeklyResearchReportPage,
+  WeeklyResearchReportSummary,
 } from "./types";
 
 type Row = Record<string, unknown>;
@@ -434,7 +436,12 @@ export function isWeeklyReportDue(
 ) {
   if (!preferences.automaticReportEnabled) return false;
   const localDate = localDateInTimeZone(date, preferences.reportTimezone);
-  const weekday = new Date(`${localDate}T00:00:00.000Z`).getUTCDay();
+  const scheduledDate = new Date(
+    `${weeklyWindow(date, preferences.reportTimezone).weekStart}T00:00:00.000Z`,
+  );
+  scheduledDate.setUTCDate(
+    scheduledDate.getUTCDate() + ((preferences.reportWeekday + 6) % 7),
+  );
   const time = new Intl.DateTimeFormat("en-GB", {
     timeZone: preferences.reportTimezone,
     hour: "2-digit",
@@ -442,7 +449,8 @@ export function isWeeklyReportDue(
     hourCycle: "h23",
   }).format(date);
   return (
-    weekday === preferences.reportWeekday && time === preferences.reportTime
+    `${localDate}T${time}` >=
+    `${scheduledDate.toISOString().slice(0, 10)}T${preferences.reportTime}`
   );
 }
 
@@ -503,7 +511,9 @@ async function loadWeeklyMarketData(
         );
         url.searchParams.set("interval", "1d");
         url.searchParams.set("events", "history");
-        const response = await fetch(url);
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(15_000),
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = (await response.json()) as {
           chart?: {
@@ -569,14 +579,51 @@ async function loadWeeklyMarketData(
   };
 }
 
+function localDayStartUtc(
+  day: string,
+  timeZone: ResearchPreferences["reportTimezone"],
+) {
+  const target = Date.parse(`${day}T00:00:00.000Z`);
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  let instant = target;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(instant).map((part) => [part.type, part.value]),
+    );
+    const localAsUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+    );
+    instant += target - localAsUtc;
+  }
+  return new Date(instant);
+}
+
 async function loadWeeklySnapshotAnalytics(
   weekStart: string,
   periodEnd: string,
+  timeZone: ResearchPreferences["reportTimezone"],
 ) {
   const summaries = await listSnapshotSummaries(100);
-  const startBoundary = new Date(`${weekStart}T00:00:00.000+08:00`).valueOf();
+  const startBoundary = localDayStartUtc(weekStart, timeZone).valueOf();
   const earliestStart = startBoundary - 10 * 86_400_000;
-  const endMinimum = startBoundary + 3 * 86_400_000;
+  const thursday = new Date(`${weekStart}T00:00:00.000Z`);
+  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  const endMinimum = localDayStartUtc(
+    thursday.toISOString().slice(0, 10),
+    timeZone,
+  ).valueOf();
   const endBoundary = new Date(periodEnd).valueOf();
   const beginningSummary = summaries.find((summary) => {
     const captured = new Date(summary.capturedAt).valueOf();
@@ -769,7 +816,11 @@ export async function buildWeeklyEvidence(
       getLatestSnapshot(),
       listWatchlist(),
       (options.marketDataLoader ?? loadWeeklyMarketData)(weekStart, periodEnd),
-      loadWeeklySnapshotAnalytics(weekStart, periodEnd),
+      loadWeeklySnapshotAnalytics(
+        weekStart,
+        periodEnd,
+        options.timeZone ?? defaultResearchPreferences.reportTimezone,
+      ),
     ]);
   const positions =
     snapshot?.accounts
@@ -997,6 +1048,109 @@ export async function listWeeklyReports() {
   return rows.map(reportFromRow);
 }
 
+export async function listWeeklyReportPage(
+  limit = 20,
+  cursor: string | null = null,
+): Promise<WeeklyResearchReportPage> {
+  const db = await getDatabase();
+  const ownerKey = getDataOwner().key;
+  const [beforeDate, beforeId] = cursor?.split("|") ?? [];
+  if (
+    cursor &&
+    (!beforeDate ||
+      Number.isNaN(Date.parse(beforeDate)) ||
+      !/^[0-9a-f-]{36}$/i.test(beforeId ?? ""))
+  )
+    throw new Error("週報分頁游標無效");
+  const rows = await db
+    .prepare(
+      `SELECT id, week_start, period_end, generated_at, trigger_type, language, model
+      FROM weekly_research_reports WHERE owner_key = ?
+      AND (? IS NULL OR generated_at < ? OR (generated_at = ? AND id < ?))
+      ORDER BY generated_at DESC, id DESC LIMIT ?`,
+    )
+    .all(
+      ownerKey,
+      beforeDate ?? null,
+      beforeDate ?? null,
+      beforeDate ?? null,
+      beforeId ?? null,
+      limit + 1,
+    );
+  const visible = rows.slice(0, limit);
+  const reports: WeeklyResearchReportSummary[] = visible.map((row) => ({
+    id: toText(row.id),
+    weekStart: toText(row.week_start),
+    periodEnd: toText(row.period_end),
+    generatedAt: toText(row.generated_at),
+    triggerType: toText(
+      row.trigger_type,
+    ) as WeeklyResearchReport["triggerType"],
+    language: toText(row.language) as ResearchReportLanguage,
+    model: toText(row.model),
+  }));
+  const last = visible.at(-1);
+  const preferences = await getResearchPreferences();
+  const latestJob = await db
+    .prepare(
+      `SELECT state, attempts, updated_at, next_retry_at FROM scheduled_report_jobs
+      WHERE owner_key = ? ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .get(ownerKey);
+  const lastSuccess = await db
+    .prepare(
+      `SELECT generated_at FROM weekly_research_reports
+      WHERE owner_key = ? AND trigger_type = 'scheduled'
+      ORDER BY generated_at DESC LIMIT 1`,
+    )
+    .get(ownerKey);
+  let nextAt: string | null = null;
+  if (preferences.automaticReportEnabled) {
+    const now = new Date();
+    const firstSlot = Math.ceil(now.getTime() / (30 * 60_000)) * 30 * 60_000;
+    const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+      timeZone: preferences.reportTimezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    for (let step = 0; step <= 8 * 48; step += 1) {
+      const candidate = new Date(firstSlot + step * 30 * 60_000);
+      const localDate = localDateInTimeZone(
+        candidate,
+        preferences.reportTimezone,
+      );
+      const weekday = new Date(`${localDate}T00:00:00.000Z`).getUTCDay();
+      const time = timeFormatter.format(candidate);
+      if (
+        weekday === preferences.reportWeekday &&
+        time === preferences.reportTime
+      ) {
+        nextAt = candidate.toISOString();
+        break;
+      }
+    }
+  }
+  return {
+    reports,
+    nextCursor:
+      rows.length > limit && last
+        ? `${toText(last.generated_at)}|${toText(last.id)}`
+        : null,
+    schedule: {
+      nextAt,
+      lastSuccessAt: lastSuccess ? toText(lastSuccess.generated_at) : null,
+      lastFailureAt:
+        latestJob?.state === "failed" ? toText(latestJob.updated_at) : null,
+      nextRetryAt:
+        latestJob?.state === "failed" && latestJob.next_retry_at
+          ? toText(latestJob.next_retry_at)
+          : null,
+      attempts: Number(latestJob?.attempts ?? 0),
+    },
+  };
+}
+
 export async function getWeeklyReport(id: string) {
   const db = await getDatabase();
   const row = await db
@@ -1025,6 +1179,7 @@ async function deleteAgentSession(apiKey: string, sessionId: string) {
   try {
     await fetch(`https://api.openai.com/v1/agents/sessions/${sessionId}`, {
       method: "DELETE",
+      signal: AbortSignal.timeout(5_000),
       headers: {
         ...openAIHeaders(apiKey),
         "OpenAI-Beta": "agents=v1",
@@ -1120,6 +1275,7 @@ async function runResearchAgents(
   try {
     const response = await fetch("https://api.openai.com/v1/agents/sessions", {
       method: "POST",
+      signal: AbortSignal.timeout(120_000),
       headers: {
         ...openAIHeaders(apiKey),
         "OpenAI-Beta": "agents=v1",
@@ -1310,6 +1466,7 @@ async function callOpenAI(
   );
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
+    signal: AbortSignal.timeout(120_000),
     headers: openAIHeaders(apiKey),
     body: JSON.stringify({
       model: reportModel,
@@ -1690,6 +1847,59 @@ export async function generateWeeklyReport(
   return (await getWeeklyReport(id))!;
 }
 
+async function claimScheduledReport(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  ownerKey: string,
+  weekStart: string,
+  now: Date,
+) {
+  const startedAt = now.toISOString();
+  const leaseUntil = new Date(now.getTime() + 6 * 60_000).toISOString();
+  const result = await db
+    .prepare(
+      `INSERT INTO scheduled_report_jobs
+      (owner_key, week_start, attempts, state, lease_until, next_retry_at, updated_at)
+      VALUES (?, ?, 1, 'running', ?, NULL, ?)
+      ON CONFLICT(owner_key, week_start) DO UPDATE SET
+        attempts = scheduled_report_jobs.attempts + 1,
+        state = 'running', lease_until = excluded.lease_until,
+        next_retry_at = NULL, updated_at = excluded.updated_at
+      WHERE scheduled_report_jobs.attempts < 3 AND (
+        (scheduled_report_jobs.state = 'failed'
+          AND scheduled_report_jobs.next_retry_at <= excluded.updated_at)
+        OR (scheduled_report_jobs.state = 'running'
+          AND scheduled_report_jobs.lease_until <= excluded.updated_at)
+      )`,
+    )
+    .run(ownerKey, weekStart, leaseUntil, startedAt);
+  return result.changes > 0 ? leaseUntil : null;
+}
+
+async function finishScheduledReport(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  ownerKey: string,
+  weekStart: string,
+  leaseUntil: string,
+  now: Date,
+  succeeded: boolean,
+) {
+  await db
+    .prepare(
+      `UPDATE scheduled_report_jobs SET state = ?, lease_until = NULL,
+      next_retry_at = ?, updated_at = ?
+      WHERE owner_key = ? AND week_start = ? AND state = 'running'
+        AND lease_until = ?`,
+    )
+    .run(
+      succeeded ? "completed" : "failed",
+      succeeded ? null : new Date(now.getTime() + 25 * 60_000).toISOString(),
+      now.toISOString(),
+      ownerKey,
+      weekStart,
+      leaseUntil,
+    );
+}
+
 export async function generateScheduledReports(now = new Date()) {
   const db = await getDatabase();
   const users = await db
@@ -1701,23 +1911,65 @@ export async function generateScheduledReports(now = new Date()) {
     .all();
   const failures: string[] = [];
   let total = 0;
-  for (const row of users) {
-    const owner: DataOwner = {
-      key: toText(row.owner_key),
-      email: toText(row.email),
-    };
-    try {
-      const due = await runWithDataOwner(owner, async () => {
-        const preferences = await getResearchPreferences();
-        if (!isWeeklyReportDue(now, preferences)) return false;
-        await generateWeeklyReport("scheduled", now);
-        return true;
-      });
-      if (due) total += 1;
-    } catch {
-      total += 1;
-      failures.push(owner.key);
-    }
+  for (let offset = 0; offset < users.length; offset += 3) {
+    await Promise.all(
+      users.slice(offset, offset + 3).map(async (row) => {
+        const owner: DataOwner = {
+          key: toText(row.owner_key),
+          email: toText(row.email),
+        };
+        let due = false;
+        try {
+          due = await runWithDataOwner(owner, async () => {
+            const preferences = await getResearchPreferences();
+            if (!isWeeklyReportDue(now, preferences)) return false;
+            const weekStart = weeklyWindow(
+              now,
+              preferences.reportTimezone,
+            ).weekStart;
+            const existing = await db
+              .prepare(
+                "SELECT id FROM weekly_research_reports WHERE owner_key = ? AND week_start = ? AND trigger_type = 'scheduled'",
+              )
+              .get(owner.key, weekStart);
+            if (existing) return true;
+            const leaseUntil = await claimScheduledReport(
+              db,
+              owner.key,
+              weekStart,
+              now,
+            );
+            if (!leaseUntil) return true;
+            try {
+              await generateWeeklyReport("scheduled", now);
+              await finishScheduledReport(
+                db,
+                owner.key,
+                weekStart,
+                leaseUntil,
+                now,
+                true,
+              );
+            } catch (error) {
+              await finishScheduledReport(
+                db,
+                owner.key,
+                weekStart,
+                leaseUntil,
+                now,
+                false,
+              );
+              throw error;
+            }
+            return true;
+          });
+        } catch {
+          due = true;
+          failures.push(owner.key);
+        }
+        if (due) total += 1;
+      }),
+    );
   }
   return { total, failed: failures.length };
 }

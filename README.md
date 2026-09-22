@@ -200,7 +200,7 @@ flowchart LR
 
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 16。
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 18。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 

@@ -17,7 +17,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ResearchPreferences, WeeklyResearchReport } from "@/lib/types";
+import type {
+  ResearchPreferences,
+  WeeklyResearchReport,
+  WeeklyResearchReportPage,
+  WeeklyResearchReportSummary,
+} from "@/lib/types";
 import { requestJson } from "@/lib/client-request";
 import {
   defaultResearchPreferences,
@@ -702,14 +707,20 @@ export default function WeeklyResearchPanel({
 }) {
   const [preferences, setPreferences] =
     useState<ResearchPreferences>(emptyPreferences);
-  const [reports, setReports] = useState<WeeklyResearchReport[]>([]);
+  const [reports, setReports] = useState<WeeklyResearchReportSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<
+    WeeklyResearchReportPage["schedule"] | null
+  >(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedReport, setSelectedReport] =
+    useState<WeeklyResearchReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const selected =
-    reports.find((report) => report.id === selectedId) ?? reports[0];
+  const selected = selectedReport?.id === selectedId ? selectedReport : null;
   const selectedSources = selected ? evidenceSources(selected.evidence) : [];
   const selectedSecurityEvents = selected
     ? heldStockEventsByWeight(
@@ -725,26 +736,25 @@ export default function WeeklyResearchPanel({
     selectedRiskCharts.overlaps.length > 0 ||
     selectedRiskCharts.indexExposure.length > 0;
   const reload = useCallback(async () => {
-    const [nextPreferences, nextReports] = await Promise.all([
+    const [nextPreferences, page] = await Promise.all([
       requestJson<ResearchPreferences>("/api/research-preferences"),
-      requestJson<WeeklyResearchReport[]>("/api/weekly-reports"),
+      requestJson<WeeklyResearchReportPage>("/api/weekly-reports?summary=1"),
     ]);
     setPreferences(nextPreferences);
-    setReports(nextReports);
+    setReports(page.reports);
+    setNextCursor(page.nextCursor);
+    setSchedule(page.schedule);
+    setSelectedId((current) =>
+      page.reports.some((report) => report.id === current)
+        ? current
+        : (page.reports[0]?.id ?? null),
+    );
     onKeyStatusChange?.(nextPreferences.hasApiKey);
   }, [onKeyStatusChange]);
   useEffect(() => {
     let active = true;
-    Promise.all([
-      requestJson<ResearchPreferences>("/api/research-preferences"),
-      requestJson<WeeklyResearchReport[]>("/api/weekly-reports"),
-    ])
-      .then(([nextPreferences, nextReports]) => {
-        if (!active) return;
-        setPreferences(nextPreferences);
-        setReports(nextReports);
-        onKeyStatusChange?.(nextPreferences.hasApiKey);
-      })
+    Promise.resolve()
+      .then(reload)
       .catch((cause: unknown) => {
         if (active)
           setError(cause instanceof Error ? cause.message : "週報載入失敗");
@@ -755,7 +765,37 @@ export default function WeeklyResearchPanel({
     return () => {
       active = false;
     };
-  }, [onKeyStatusChange]);
+  }, [reload]);
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    requestJson<WeeklyResearchReport>(`/api/weekly-reports/${selectedId}`)
+      .then((report) => {
+        if (active) setSelectedReport(report);
+      })
+      .catch((cause: unknown) => {
+        if (active)
+          setError(cause instanceof Error ? cause.message : "週報載入失敗");
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedId]);
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await requestJson<WeeklyResearchReportPage>(
+        `/api/weekly-reports?summary=1&cursor=${encodeURIComponent(nextCursor)}`,
+      );
+      setReports((current) => [...current, ...page.reports]);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "更多週報載入失敗");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const run = async (action: () => Promise<void>, success: string) => {
     setBusy(true);
     setError("");
@@ -779,6 +819,7 @@ export default function WeeklyResearchPanel({
       );
       await reload();
       setSelectedId(report.id);
+      setSelectedReport(report);
     }, "研究週報已產生");
   if (loading)
     return (
@@ -803,6 +844,20 @@ export default function WeeklyResearchPanel({
           不傳帳戶餘額、持倉數量、期貨口數或金額。API
           費用由你的金鑰所屬帳戶承擔。
         </p>
+        {schedule && (
+          <p className="mt-2 text-sm text-[#59675f]" role="status">
+            {schedule.nextAt
+              ? `下次排程：${new Date(schedule.nextAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}。`
+              : "自動週報未排程。"}
+            {schedule.lastSuccessAt &&
+              ` 最近成功：${new Date(schedule.lastSuccessAt).toLocaleString("zh-TW")}。`}
+            {schedule.lastFailureAt &&
+              ` 最近失敗：${new Date(schedule.lastFailureAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}（已嘗試 ${schedule.attempts} 次）。`}
+            {schedule.nextRetryAt &&
+              schedule.attempts < 3 &&
+              ` 預計重試：${new Date(schedule.nextRetryAt).toLocaleString("zh-TW", { timeZone: preferences.reportTimezone })}。`}
+          </p>
+        )}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button className="primary" disabled={busy} onClick={generate}>
             {busy ? "處理中…" : "立即產生報告"}
@@ -835,7 +890,7 @@ export default function WeeklyResearchPanel({
           {reports.map((report) => (
             <button
               key={report.id}
-              className={`w-full rounded-xl border p-4 text-left ${selected?.id === report.id ? "border-[#75904f] bg-[#eef5dc]" : "border-[#dce4dd] bg-white dark:bg-white/5"}`}
+              className={`w-full rounded-xl border p-4 text-left ${selectedId === report.id ? "border-[#75904f] bg-[#eef5dc]" : "border-[#dce4dd] bg-white dark:bg-white/5"}`}
               onClick={() => setSelectedId(report.id)}
             >
               <strong className="block">{report.weekStart} 當週</strong>
@@ -846,7 +901,17 @@ export default function WeeklyResearchPanel({
               </span>
             </button>
           ))}
+          {nextCursor && (
+            <button
+              className="secondary w-full"
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+            >
+              {loadingMore ? "載入中…" : "載入更多週報"}
+            </button>
+          )}
         </div>
+        {selectedId && !selected && <p role="status">正在載入週報內容…</p>}
         {selected && (
           <article className="rounded-2xl border border-[#dce4dd] bg-white p-6 dark:border-white/10 dark:bg-white/5">
             <p className="text-sm text-[#718078]">

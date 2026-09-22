@@ -23,6 +23,7 @@ import {
   getWeeklyReport,
   getResearchPreferences,
   isWeeklyReportDue,
+  listWeeklyReportPage,
   listWeeklyReports,
   prioritizeByPortfolioWeight,
   saveResearchApiKey,
@@ -99,6 +100,9 @@ describe("每週研究報告", () => {
     ).toBe(true);
     expect(
       isWeeklyReportDue(new Date("2026-09-19T23:30:00.000Z"), schedule),
+    ).toBe(true);
+    expect(
+      isWeeklyReportDue(new Date("2026-09-19T22:59:00.000Z"), schedule),
     ).toBe(false);
     expect(
       isWeeklyReportDue(new Date("2026-09-19T23:00:00.000Z"), {
@@ -114,6 +118,150 @@ describe("每週研究報告", () => {
         reportTimezone: "America/New_York",
       }),
     ).toBe(true);
+  });
+
+  it("紐約週日晚間快照可作為下一週的歸因期初", async () => {
+    const owner = dataOwnerFromEmail("weekly-timezone@example.com");
+    await runWithDataOwner(owner, async () => {
+      const first = await createSnapshot({
+        rawInput: "紐約週日晚上",
+        capturedAt: "2026-09-21T02:00:00.000Z",
+        accounts: [
+          {
+            name: "帳戶",
+            accountType: "bank",
+            defaultCurrency: "TWD",
+            cashBalances: [{ currency: "TWD", amount: "100" }],
+            positions: [],
+          },
+        ],
+      });
+      await createSnapshot({
+        rawInput: "紐約週五晚上",
+        capturedAt: "2026-09-25T22:00:00.000Z",
+        baseSnapshotId: first.id,
+        accounts: [
+          {
+            ...first.accounts[0],
+            cashBalances: [{ currency: "TWD", amount: "110" }],
+          },
+        ],
+      });
+      const evidence = await buildWeeklyEvidence(
+        new Date("2026-09-27T11:00:00.000Z"),
+        {
+          timeZone: "America/New_York",
+          marketDataLoader: emptyWeeklyMarketData,
+        },
+      );
+      expect(evidence.weekStart).toBe("2026-09-21");
+      expect(evidence.weeklyAttribution).not.toBeNull();
+    });
+  });
+
+  it("錯過排程分鐘後可補跑，失敗最多重試三次", async () => {
+    const owner = dataOwnerFromEmail("weekly-retry@example.com");
+    await runWithDataOwner(ownerA, () => ensureCurrentAppUser());
+    await runWithDataOwner(owner, async () => {
+      await ensureCurrentAppUser();
+      await saveResearchPreferences({
+        ...(await getResearchPreferences()),
+        automaticReportEnabled: true,
+        reportWeekday: 0,
+        reportTime: "07:00",
+        reportTimezone: "Asia/Taipei",
+      });
+      await saveResearchApiKey({ apiKey: "sk-test-weekly-retry-key" });
+      const db = await getDatabase();
+      await db
+        .prepare("UPDATE app_users SET status = 'approved' WHERE owner_key = ?")
+        .run(owner.key);
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("unavailable", { status: 503 }),
+    );
+    const scheduledAt = new Date("2026-09-20T00:00:00.000Z");
+    expect(await generateScheduledReports(scheduledAt)).toEqual({
+      total: 1,
+      failed: 1,
+    });
+    expect(
+      await generateScheduledReports(new Date(scheduledAt.getTime() + 60_000)),
+    ).toEqual({ total: 1, failed: 0 });
+    expect(
+      await generateScheduledReports(
+        new Date(scheduledAt.getTime() + 30 * 60_000),
+      ),
+    ).toEqual({ total: 1, failed: 1 });
+    expect(
+      await generateScheduledReports(
+        new Date(scheduledAt.getTime() + 60 * 60_000),
+      ),
+    ).toEqual({ total: 1, failed: 1 });
+    expect(
+      await generateScheduledReports(
+        new Date(scheduledAt.getTime() + 90 * 60_000),
+      ),
+    ).toEqual({ total: 1, failed: 0 });
+    const job = await (
+      await getDatabase()
+    )
+      .prepare(
+        "SELECT attempts, state FROM scheduled_report_jobs WHERE owner_key = ?",
+      )
+      .get(owner.key);
+    expect(job).toMatchObject({ attempts: 3, state: "failed" });
+    await runWithDataOwner(owner, async () =>
+      saveResearchPreferences({
+        ...(await getResearchPreferences()),
+        automaticReportEnabled: false,
+      }),
+    );
+  });
+
+  it("歷次週報以游標分頁，清單不載入大型內容並維持使用者隔離", async () => {
+    const owner = dataOwnerFromEmail("weekly-pagination@example.com");
+    const db = await getDatabase();
+    for (let index = 0; index < 23; index += 1) {
+      await db
+        .prepare(
+          `INSERT INTO weekly_research_reports
+        (id, owner_key, week_start, period_end, generated_at, trigger_type,
+          language, model, content_json, evidence_json)
+        VALUES (?, ?, ?, ?, ?, 'manual', 'zh-TW', 'test', ?, ?)`,
+        )
+        .run(
+          `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          owner.key,
+          "2026-09-14",
+          "2026-09-20T00:00:00.000Z",
+          new Date(Date.UTC(2026, 8, 20, 0, index)).toISOString(),
+          JSON.stringify({ large: "x".repeat(1000) }),
+          JSON.stringify({ large: "y".repeat(1000) }),
+        );
+    }
+    await runWithDataOwner(owner, async () => {
+      const first = await listWeeklyReportPage();
+      expect(first.reports).toHaveLength(20);
+      expect(first.reports[0].id).toContain("000000000022");
+      expect(first.reports[0]).not.toHaveProperty("content");
+      expect(first.reports[0]).not.toHaveProperty("evidence");
+      const second = await listWeeklyReportPage(20, first.nextCursor);
+      expect(second.reports).toHaveLength(3);
+      expect(second.nextCursor).toBeNull();
+      expect(
+        new Set([...first.reports, ...second.reports].map((item) => item.id))
+          .size,
+      ).toBe(23);
+      await expect(listWeeklyReportPage(20, "invalid")).rejects.toThrow(
+        "週報分頁游標無效",
+      );
+    });
+    await runWithDataOwner(ownerB, async () => {
+      expect((await listWeeklyReportPage()).reports).not.toContainEqual(
+        expect.objectContaining({ id: "00000000-0000-4000-8000-000000000022" }),
+      );
+    });
   });
 
   it("加密每人金鑰、僅傳比例、保存多次手動週報並隔離使用者", async () => {

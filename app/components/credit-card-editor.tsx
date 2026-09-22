@@ -8,6 +8,7 @@ import {
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
 import { requestJson as request } from "@/lib/client-request";
+import { NumericField } from "@/components/numeric-field";
 import type {
   CreditCardAccountInput,
   CreditCardAccountView,
@@ -235,47 +236,38 @@ export function CreditCardEditor({
                     </label>
                     <label>
                       共用信用額度
-                      <input
+                      <NumericField
                         className="field"
-                        inputMode="decimal"
                         value={account.sharedCreditLimit}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            sharedCreditLimit: event.target.value,
+                            sharedCreditLimit: value,
                           })
                         }
                       />
                     </label>
                     <label>
                       每月結帳日
-                      <input
+                      <NumericField
                         className="field"
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={account.statementDayOfMonth ?? ""}
-                        onChange={(event) =>
+                        kind="integer"
+                        value={String(account.statementDayOfMonth ?? "")}
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            statementDayOfMonth: event.target.value
-                              ? Number(event.target.value)
-                              : null,
+                            statementDayOfMonth: value ? Number(value) : null,
                           })
                         }
                       />
                     </label>
                     <label>
                       每月繳款期限（日）
-                      <input
+                      <NumericField
                         className="field"
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={account.paymentDayOfMonth ?? ""}
-                        onChange={(event) =>
+                        kind="integer"
+                        value={String(account.paymentDayOfMonth ?? "")}
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            paymentDayOfMonth: event.target.value
-                              ? Number(event.target.value)
-                              : null,
+                            paymentDayOfMonth: value ? Number(value) : null,
                           })
                         }
                       />
@@ -363,22 +355,18 @@ export function CreditCardEditor({
                           </label>
                           <label>
                             末四碼
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="numeric"
+                              kind="integer"
                               maxLength={4}
                               value={card.lastFour ?? ""}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateAccount(accountIndex, {
                                   cards: account.cards.map((item, index) =>
                                     index === cardIndex
                                       ? {
                                           ...item,
-                                          lastFour:
-                                            event.target.value.replace(
-                                              /\D/g,
-                                              "",
-                                            ) || null,
+                                          lastFour: value || null,
                                         }
                                       : item,
                                   ),
@@ -537,16 +525,15 @@ export function CreditCardEditor({
                         ].map(([label, key]) => (
                           <label key={key}>
                             {label}
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="decimal"
                               value={String(
                                 account[key as keyof CreditCardAccountInput] ??
                                   "",
                               )}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateAccount(accountIndex, {
-                                  [key]: event.target.value,
+                                  [key]: value,
                                 })
                               }
                             />

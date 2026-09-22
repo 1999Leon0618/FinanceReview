@@ -41,7 +41,7 @@ export function AccountSettingsEditor({
 }: {
   latest: DashboardData["latest"];
   onClose: () => void;
-  onSaved: () => void | Promise<void>;
+  onSaved: (resumeName?: string) => void | Promise<void>;
 }) {
   const [accounts, setAccounts] = useState<AccountStateInput[]>(() =>
     latest?.accounts.length
@@ -56,7 +56,7 @@ export function AccountSettingsEditor({
         itemIndex === index ? { ...item, ...patch } : item,
       ),
     );
-  const save = async () => {
+  const save = async (resumeName?: string) => {
     setBusy(true);
     setError("");
     try {
@@ -85,7 +85,7 @@ export function AccountSettingsEditor({
           cashFlows: [],
         }),
       });
-      await onSaved();
+      await onSaved(resumeName);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "帳戶設定儲存失敗");
       setBusy(false);
@@ -322,12 +322,29 @@ export function AccountSettingsEditor({
             <button className="secondary" disabled={busy} onClick={onClose}>
               取消
             </button>
-            <button className="primary" disabled={busy} onClick={save}>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void save()}
+            >
               {busy ? (
                 <LoaderCircle className="animate-spin" size={14} />
               ) : null}
               {busy ? "保存中…" : "保存帳戶設定"}
             </button>
+            {accounts.some((account) => !account.accountId) && (
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  void save(
+                    accounts.find((account) => !account.accountId)?.name.trim(),
+                  )
+                }
+              >
+                保存並填寫餘額
+              </button>
+            )}
           </div>
         </footer>
       </section>

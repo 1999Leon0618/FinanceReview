@@ -67,6 +67,7 @@ import {
   type DisplayTimeZone,
 } from "@/lib/display-preferences";
 import { requestJson as request } from "@/lib/client-request";
+import { NumericField } from "@/components/numeric-field";
 import {
   buildInfo,
   formatBuildTitle,
@@ -284,6 +285,7 @@ export default function FinanceDashboard({
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [staleWarningOpen, setStaleWarningOpen] = useState(false);
   const [editor, setEditor] = useState(false);
+  const [accountToResume, setAccountToResume] = useState<string | null>(null);
   const [accountEditor, setAccountEditor] = useState(false);
   const [creditCardEditor, setCreditCardEditor] = useState(false);
   const [loanPayment, setLoanPayment] = useState<LoanView | null>(null);
@@ -1807,8 +1809,13 @@ export default function FinanceDashboard({
           {editor && (
             <SnapshotEditor
               latest={latest ?? null}
-              onClose={() => setEditor(false)}
+              initialAccountName={accountToResume}
+              onClose={() => {
+                setEditor(false);
+                setAccountToResume(null);
+              }}
               onManageAccounts={() => {
+                setAccountToResume(null);
                 setEditor(false);
                 setAccountEditor(true);
               }}
@@ -1816,16 +1823,23 @@ export default function FinanceDashboard({
                 setEditor(false);
                 setCreditCardEditor(true);
               }}
-              onSaved={saved}
+              onSaved={() => {
+                setAccountToResume(null);
+                saved();
+              }}
             />
           )}
           {accountEditor && (
             <AccountSettingsEditor
               latest={latest ?? null}
               onClose={() => setAccountEditor(false)}
-              onSaved={async () => {
+              onSaved={async (resumeName) => {
                 await load();
                 setAccountEditor(false);
+                if (resumeName) {
+                  setAccountToResume(resumeName);
+                  setEditor(true);
+                }
                 notify({
                   title: "帳戶設定已更新",
                   message: "已建立新的財務快照；現金、持倉與貸款數值保持不變。",
@@ -2062,17 +2076,11 @@ function QuoteFailureDialog({
               </div>
               <label>
                 手動現值（{failure.currency}）
-                <input
-                  type="number"
-                  min="0.0001"
-                  step="any"
-                  inputMode="decimal"
+                <NumericField
                   className="field"
                   value={values[failure.positionId] ?? ""}
                   placeholder={`留白即沿用 ${number.format(Number(failure.oldPrice))}`}
-                  onChange={(event) =>
-                    onChange(failure.positionId, event.target.value)
-                  }
+                  onValueChange={(value) => onChange(failure.positionId, value)}
                 />
               </label>
             </div>
@@ -2786,17 +2794,12 @@ function LoanPaymentDialog({
           </label>
           <label className="block text-sm font-medium text-[#445149]">
             本期償還本金（{loan.currency}）
-            <input
+            <NumericField
               required
-              type="number"
-              min="0.01"
-              max={loan.outstandingPrincipal}
-              step="any"
-              inputMode="decimal"
               className="field mt-2"
               value={principalPaid}
               disabled={busy}
-              onChange={(event) => setPrincipalPaid(event.target.value)}
+              onValueChange={setPrincipalPaid}
             />
           </label>
           <p className="rounded-2xl bg-[#f4f1ed] px-4 py-3 text-xs leading-5 text-[#68776e]">

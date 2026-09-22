@@ -41,6 +41,16 @@ import {
   normalizeCreditCardAccountStatus,
 } from "@/lib/credit-card";
 import { snapshotCreateSchema } from "@/lib/validation";
+import { calculateSnapshotPreview } from "@/lib/snapshot-preview";
+import { decimal } from "@/lib/finance";
+import { previewBatchInput } from "@/lib/batch-input";
+import {
+  capturedAfterLatest,
+  parseTaipeiDateTimeInput,
+  taipeiDateTimeInput,
+} from "@/lib/snapshot-datetime";
+import { NumericField } from "@/components/numeric-field";
+import { PositionCostFields } from "@/components/position-cost-fields";
 import { requestJson as request } from "@/lib/client-request";
 import {
   futuresContractMultiplier,
@@ -114,9 +124,9 @@ const emptyPosition = (
   name: "",
   securityType,
   quoteCurrency: "TWD",
-  quantity: "1",
-  averageCost: "0",
-  marketPrice: "1",
+  quantity: "",
+  averageCost: "",
+  marketPrice: "",
   quoteAsOf: new Date().toISOString(),
   quoteSource: "MANUAL",
   quoteStatus: "manual",
@@ -323,19 +333,27 @@ function Modal({
 
 export function SnapshotEditor({
   latest,
+  initialAccountName,
   onClose,
   onSaved,
   onManageAccounts,
   onManageCreditCards,
 }: {
   latest: DashboardData["latest"];
+  initialAccountName?: string | null;
   onClose: () => void;
   onSaved: () => void;
   onManageAccounts: () => void;
   onManageCreditCards: () => void;
 }) {
   const [processedInput, setProcessedInput] = useState("");
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(
+    () =>
+      latest?.accounts
+        .filter((account) => account.name === initialAccountName)
+        .map((account) => account.accountId) ?? [],
+  );
+  const [accountSearch, setAccountSearch] = useState("");
   const [accounts, setAccounts] = useState<AccountStateInput[]>([]);
   const [preservedAccounts, setPreservedAccounts] = useState<
     AccountStateInput[]
@@ -343,6 +361,12 @@ export function SnapshotEditor({
   const [loans, setLoans] = useState<LoanInput[]>([]);
   const [preservedLoans, setPreservedLoans] = useState<LoanInput[]>([]);
   const [cashFlows, setCashFlows] = useState<SnapshotCashFlowInput[]>([]);
+  const [batchRaw, setBatchRaw] = useState("");
+  const [costEditorVersion, setCostEditorVersion] = useState(0);
+  const [capturedAtInput, setCapturedAtInput] = useState(() =>
+    taipeiDateTimeInput(),
+  );
+  const [customCapturedAt, setCustomCapturedAt] = useState(false);
   const [creditCardAccounts, setCreditCardAccounts] = useState<
     CreditCardAccountInput[]
   >(() => cloneCreditCardAccounts(latest?.creditCardAccounts ?? []));
@@ -353,10 +377,9 @@ export function SnapshotEditor({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [positionQuoteWarnings, setPositionQuoteWarnings] =
     useState<PositionQuoteWarnings>({});
-  const [validationResult, setValidationResult] = useState({
-    key: "",
-    warnings: [] as string[],
-  });
+  const [showValidation, setShowValidation] = useState(false);
+  const draftAccountsRef = useRef(new Map<string, AccountStateInput>());
+  const draftLoansRef = useRef(new Map<string, LoanInput>());
   const [busy, setBusy] = useState("");
   const [resolvingPosition, setResolvingPosition] = useState<string | null>(
     null,
@@ -401,7 +424,9 @@ export function SnapshotEditor({
     [warnings, positionQuoteWarnings],
   );
   const needsManualPrice = accounts.some((account) =>
-    account.positions.some(canEditManualPrice),
+    account.positions.some((position) =>
+      position.quoteNote?.includes("尚未更新行情"),
+    ),
   );
   const mergedAccounts = useMemo(
     () => mergeSnapshotAccounts(preservedAccounts, accounts),
@@ -460,17 +485,100 @@ export function SnapshotEditor({
       cashFlows,
     ],
   );
-  const validationKey = JSON.stringify(validationPayload);
-  const validationWarnings =
-    validationResult.key === validationKey ? validationResult.warnings : [];
+  const validationWarnings = useMemo(() => {
+    if (!showValidation) return [];
+    const result = snapshotCreateSchema.safeParse(validationPayload);
+    return result.success
+      ? []
+      : result.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        }));
+  }, [showValidation, validationPayload]);
+  const issueLabel = (path: string) => {
+    const parts = path.split(".");
+    const field = parts.at(-1) ?? "資料";
+    const labels: Record<string, string> = {
+      amount: "餘額",
+      quantity: "數量",
+      averageCost: "平均成本",
+      marketPrice: "市價",
+      outstandingPrincipal: "未償本金",
+      statementAmount: "總應繳金額",
+      paymentAmount: "實際繳款金額",
+      paymentDate: "繳款日期",
+      symbol: "代碼",
+      name: "名稱",
+    };
+    if (parts[0] === "accounts") {
+      const account = accounts[Number(parts[1])];
+      const position =
+        parts[2] === "positions" ? account?.positions[Number(parts[3])] : null;
+      return `${account?.name || "帳戶"}${position ? `・${position.name || position.symbol || "持倉"}` : ""}・${labels[field] ?? field}`;
+    }
+    if (parts[0] === "loans")
+      return `${loans[Number(parts[1])]?.name || "貸款"}・${labels[field] ?? field}`;
+    if (parts[0] === "creditCardAccounts")
+      return `${normalizedCreditCardAccounts[Number(parts[1])]?.name || "信用卡"}・${labels[field] ?? field}`;
+    return labels[field] ?? field;
+  };
   const validateSnapshot = () => {
     const result = snapshotCreateSchema.safeParse(validationPayload);
     const issues = result.success
       ? []
-      : [...new Set(result.error.issues.map((issue) => issue.message))];
-    setValidationResult({ key: validationKey, warnings: issues });
+      : result.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        }));
+    setShowValidation(true);
+    if (issues.length > 0) {
+      requestAnimationFrame(() => {
+        const first = document.querySelector<HTMLElement>(
+          `[data-field-path="${issues[0].path}"]`,
+        );
+        let details = first?.closest("details");
+        while (details) {
+          details.open = true;
+          details = details.parentElement?.closest("details") ?? null;
+        }
+        (
+          first ?? document.getElementById("snapshot-validation-errors")
+        )?.focus();
+      });
+    }
     return issues;
   };
+  useEffect(() => {
+    if (!hasUnsavedInput) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedInput]);
+  const previewCards = useMemo(() => {
+    const changed = new Map(
+      normalizedCreditCardAccounts.map((account) => [
+        account.creditCardAccountId,
+        account,
+      ]),
+    );
+    return (latest?.creditCardAccounts ?? []).map(
+      (account) => changed.get(account.creditCardAccountId) ?? account,
+    );
+  }, [latest?.creditCardAccounts, normalizedCreditCardAccounts]);
+  const preview = useMemo(
+    () =>
+      hasPrepared
+        ? calculateSnapshotPreview(mergedAccounts, mergedLoans, previewCards)
+        : null,
+    [hasPrepared, mergedAccounts, mergedLoans, previewCards],
+  );
+  const batchPreview = useMemo(
+    () => (batchRaw.trim() ? previewBatchInput(batchRaw, accounts) : null),
+    [batchRaw, accounts],
+  );
   const fxRates = useMemo(() => {
     const rates = new Map<
       string,
@@ -725,6 +833,11 @@ export function SnapshotEditor({
   const startSelectedItems = () => {
     if (!latest || selectedItemCount === 0) return;
     invalidatePositionQuotes();
+    for (const account of accounts)
+      if (account.accountId)
+        draftAccountsRef.current.set(account.accountId, account);
+    for (const loan of loans)
+      if (loan.loanId) draftLoansRef.current.set(loan.loanId, loan);
     const selected = latest.accounts.filter((account) =>
       selectedAccountIds.includes(account.accountId),
     );
@@ -738,9 +851,19 @@ export function SnapshotEditor({
       (loan) =>
         !selected.some((account) => loanBelongsToAccount(loan, account)),
     );
-    setAccounts(cloneAccounts(selected));
+    setAccounts(
+      cloneAccounts(selected).map(
+        (account) =>
+          draftAccountsRef.current.get(account.accountId!) ?? account,
+      ),
+    );
     setPreservedAccounts(cloneAccounts(preserved));
-    setLoans(cloneLoans(selectedLoans));
+    setLoans(
+      cloneLoans(selectedLoans).map(
+        (loan) =>
+          (loan.loanId && draftLoansRef.current.get(loan.loanId)) || loan,
+      ),
+    );
     setPreservedLoans(cloneLoans(otherLoans));
     const selectedCreditCards = latest.creditCardAccounts.filter(
       (account) =>
@@ -806,7 +929,15 @@ export function SnapshotEditor({
     setPositionQuoteWarnings({});
     try {
       const result = await resolveOnlineData(accounts, loans);
-      setAccounts(result.accounts);
+      setAccounts((current) =>
+        result.accounts.map((account, accountIndex) => ({
+          ...account,
+          positions: account.positions.map((position, positionIndex) => {
+            const existing = current[accountIndex]?.positions[positionIndex];
+            return existing?.quoteNote === "使用人工價格" ? existing : position;
+          }),
+        })),
+      );
       setLoans(result.loans);
       setWarnings(result.warnings);
     } catch (cause) {
@@ -829,6 +960,23 @@ export function SnapshotEditor({
   };
   const save = async () => {
     if (validateSnapshot().length > 0) return;
+    const selectedCapturedAt = customCapturedAt
+      ? parseTaipeiDateTimeInput(capturedAtInput)
+      : null;
+    if (
+      customCapturedAt &&
+      (!selectedCapturedAt ||
+        !capturedAfterLatest(selectedCapturedAt, latest?.capturedAt) ||
+        Date.parse(selectedCapturedAt) > Date.now() + 60_000 ||
+        includeCreditCards)
+    ) {
+      setError(
+        includeCreditCards
+          ? "信用卡更新會依當期帳單推算日期，請取消自訂資料時間或分開建立一般帳戶快照。"
+          : "資料時間必須有效、不能晚於現在，且必須晚於目前最新快照。",
+      );
+      return;
+    }
     setBusy("save");
     setError("");
     try {
@@ -838,12 +986,14 @@ export function SnapshotEditor({
         body: JSON.stringify({
           rawInput: processedInput || "手動更新財務快照",
           baseSnapshotId: latest?.id ?? null,
-          capturedAt: new Date(
-            Math.max(
-              Date.now(),
-              latest ? Date.parse(latest.capturedAt) + 1 : 0,
-            ),
-          ).toISOString(),
+          capturedAt:
+            selectedCapturedAt ??
+            new Date(
+              Math.max(
+                Date.now(),
+                latest ? Date.parse(latest.capturedAt) + 1 : 0,
+              ),
+            ).toISOString(),
           accounts: mergedAccounts,
           loans: mergedLoans,
           creditCardAccounts: includeCreditCards
@@ -945,50 +1095,69 @@ export function SnapshotEditor({
                     {allItemsSelected ? "取消全選" : "全部選取"}
                   </button>
                 </div>
+                <label className="mb-3 block text-xs font-semibold text-[#53645a]">
+                  搜尋帳戶或機構
+                  <input
+                    className="field mt-1"
+                    type="search"
+                    value={accountSearch}
+                    onChange={(event) => setAccountSearch(event.target.value)}
+                  />
+                </label>
                 <div className="snapshot-account-options">
                   {(latest?.accounts.length ?? 0) > 0 && (
                     <p className="col-span-full px-1 pt-1 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
                       一般帳戶
                     </p>
                   )}
-                  {latest?.accounts.map((account) => {
-                    const selected = selectedAccountIds.includes(
-                      account.accountId,
-                    );
-                    const linkedLoans = latest.loans.filter((loan) =>
-                      loanBelongsToAccount(loan, account),
-                    ).length;
-                    return (
-                      <button
-                        key={account.accountId}
-                        type="button"
-                        role="checkbox"
-                        aria-checked={selected}
-                        className={`snapshot-account-option ${selected ? "selected" : ""}`}
-                        onClick={() => toggleSelectedAccount(account.accountId)}
-                      >
-                        <span className="snapshot-account-option-icon">
-                          {account.accountType === "bank" ? (
-                            <Landmark size={17} />
-                          ) : (
-                            <Building2 size={17} />
-                          )}
-                        </span>
-                        <span className="snapshot-account-option-copy">
-                          <strong>{account.name}</strong>
-                          <small>
-                            {account.institution || "未設定機構"}・
-                            {account.cashBalances.length} 種幣別・
-                            {account.positions.length} 筆持倉
-                            {linkedLoans > 0 ? `・${linkedLoans} 筆貸款` : ""}
-                          </small>
-                        </span>
-                        <span className="snapshot-account-option-check">
-                          {selected ? "✓" : ""}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {latest?.accounts
+                    .filter((account) =>
+                      `${account.name} ${account.institution ?? ""}`
+                        .toLocaleLowerCase("zh-TW")
+                        .includes(
+                          accountSearch.trim().toLocaleLowerCase("zh-TW"),
+                        ),
+                    )
+                    .map((account) => {
+                      const selected = selectedAccountIds.includes(
+                        account.accountId,
+                      );
+                      const linkedLoans = latest.loans.filter((loan) =>
+                        loanBelongsToAccount(loan, account),
+                      ).length;
+                      return (
+                        <button
+                          key={account.accountId}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={selected}
+                          className={`snapshot-account-option ${selected ? "selected" : ""}`}
+                          onClick={() =>
+                            toggleSelectedAccount(account.accountId)
+                          }
+                        >
+                          <span className="snapshot-account-option-icon">
+                            {account.accountType === "bank" ? (
+                              <Landmark size={17} />
+                            ) : (
+                              <Building2 size={17} />
+                            )}
+                          </span>
+                          <span className="snapshot-account-option-copy">
+                            <strong>{account.name}</strong>
+                            <small>
+                              {account.institution || "未設定機構"}・
+                              {account.cashBalances.length} 種幣別・
+                              {account.positions.length} 筆持倉
+                              {linkedLoans > 0 ? `・${linkedLoans} 筆貸款` : ""}
+                            </small>
+                          </span>
+                          <span className="snapshot-account-option-check">
+                            {selected ? "✓" : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
                   {(latest?.creditCardAccounts.length ?? 0) > 0 && (
                     <p className="col-span-full px-1 pt-2 text-[10px] font-bold uppercase tracking-[.14em] text-[#829087]">
                       信用卡額度群組
@@ -1086,8 +1255,8 @@ export function SnapshotEditor({
             <div className="snapshot-rule-note">
               <ShieldCheck size={16} />
               <p>
-                <strong>資料留在本機</strong>
-                <span>直接選擇並編輯，不需要文字辨識或 AI 服務。</span>
+                <strong>保存在目前帳本</strong>
+                <span>資料會保存至目前連線的本機 SQLite 或雲端 D1 帳本。</span>
               </p>
             </div>
             <div className="snapshot-manual-entry">
@@ -1122,10 +1291,18 @@ export function SnapshotEditor({
           </div>
         )}
         {validationWarnings.length > 0 && (
-          <div className="notice error" role="alert">
+          <div
+            id="snapshot-validation-errors"
+            className="notice error"
+            role="alert"
+            tabIndex={-1}
+          >
             <p className="font-semibold">資料不合理，請修正後再試：</p>
             {validationWarnings.map((item, index) => (
-              <p key={`${item}-${index}`}>• {item}</p>
+              <p key={`${item.path}-${index}`}>
+                • {item.path ? `${issueLabel(item.path)}：` : ""}
+                {item.message}
+              </p>
             ))}
           </div>
         )}
@@ -1262,6 +1439,10 @@ export function SnapshotEditor({
                       accountId &&
                       selectedCreditCardAccountIds.includes(accountId),
                     );
+                    const cardValidationIndex =
+                      normalizedCreditCardAccounts.findIndex(
+                        (item) => item.creditCardAccountId === accountId,
+                      );
                     const cycle = creditCardCycleDates(
                       account.paymentDate || account.dueDate,
                       account.statementDayOfMonth,
@@ -1355,13 +1536,13 @@ export function SnapshotEditor({
                                 {account.currency}
                               </span>
                             </span>
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="decimal"
+                              data-field-path={`creditCardAccounts.${cardValidationIndex}.statementAmount`}
                               value={account.statementAmount}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateCreditCard({
-                                  statementAmount: event.target.value,
+                                  statementAmount: value,
                                 })
                               }
                             />
@@ -1373,13 +1554,13 @@ export function SnapshotEditor({
                                 {account.currency}
                               </span>
                             </span>
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="decimal"
+                              data-field-path={`creditCardAccounts.${cardValidationIndex}.paymentAmount`}
                               value={account.paymentAmount}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateCreditCard({
-                                  paymentAmount: event.target.value,
+                                  paymentAmount: value,
                                 })
                               }
                             />
@@ -1391,6 +1572,7 @@ export function SnapshotEditor({
                             <input
                               className="field"
                               type="date"
+                              data-field-path={`creditCardAccounts.${cardValidationIndex}.paymentDate`}
                               value={inputDate(account.paymentDate)}
                               onChange={(event) =>
                                 updateCreditCard({
@@ -1399,6 +1581,54 @@ export function SnapshotEditor({
                               }
                             />
                           </label>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 border-t border-[#edf1ee] px-5 py-3">
+                          <span className="mr-auto text-xs text-[#718078]">
+                            上期應繳 {account.currency}{" "}
+                            {latest?.creditCardAccounts.find(
+                              (previous) =>
+                                previous.creditCardAccountId === accountId,
+                            )?.statementAmount ?? "0"}
+                            ；分期留白保存時視為 0。
+                          </span>
+                          <button
+                            type="button"
+                            className="secondary text-xs"
+                            onClick={() => {
+                              if (accountId) selectCreditCardAccount(accountId);
+                              updateCreditCard({
+                                paymentAmount: "0",
+                                paymentDate: null,
+                              });
+                            }}
+                          >
+                            尚未繳款
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary text-xs"
+                            disabled={
+                              !/^(?:\d+)(?:\.\d+)?$/.test(
+                                account.statementAmount,
+                              )
+                            }
+                            onClick={() => {
+                              if (accountId) selectCreditCardAccount(accountId);
+                              setCreditCardAccounts((items) =>
+                                items.map((item, index) =>
+                                  index === accountIndex && item.statementAmount
+                                    ? {
+                                        ...item,
+                                        paymentAmount: item.statementAmount,
+                                        paymentDate: today(),
+                                      }
+                                    : item,
+                                ),
+                              );
+                            }}
+                          >
+                            本期全額繳清
+                          </button>
                         </div>
                         <details
                           className="border-t border-[#edf1ee] bg-[#fbfcfb] px-5 py-3"
@@ -1415,14 +1645,12 @@ export function SnapshotEditor({
                               <span className="ml-1 font-normal text-[#89958e]">
                                 {account.currency}
                               </span>
-                              <input
+                              <NumericField
                                 className="field mt-2"
-                                inputMode="decimal"
                                 value={account.remainingInstallmentPrincipal}
-                                onChange={(event) =>
+                                onValueChange={(value) =>
                                   updateCreditCard({
-                                    remainingInstallmentPrincipal:
-                                      event.target.value,
+                                    remainingInstallmentPrincipal: value,
                                   })
                                 }
                               />
@@ -1432,13 +1660,12 @@ export function SnapshotEditor({
                               <span className="ml-1 font-normal text-[#89958e]">
                                 {account.currency}
                               </span>
-                              <input
+                              <NumericField
                                 className="field mt-2"
-                                inputMode="decimal"
                                 value={account.overpaymentBalance}
-                                onChange={(event) =>
+                                onValueChange={(value) =>
                                   updateCreditCard({
-                                    overpaymentBalance: event.target.value,
+                                    overpaymentBalance: value,
                                   })
                                 }
                               />
@@ -1465,14 +1692,11 @@ export function SnapshotEditor({
                   {fxRates.map(([currency, fxRate]) => (
                     <label key={currency}>
                       {currency}/TWD
-                      <input
+                      <NumericField
                         className="field"
-                        inputMode="decimal"
                         placeholder="自動取得中"
                         value={fxRate?.rate ?? ""}
-                        onChange={(event) =>
-                          applyFxRate(currency, event.target.value)
-                        }
+                        onValueChange={(value) => applyFxRate(currency, value)}
                       />
                       <span className="mt-1 block text-[10px] text-[#839087]">
                         {fxRate
@@ -1484,10 +1708,61 @@ export function SnapshotEditor({
                 </div>
               </section>
             )}
+            {accounts.length > 1 && (
+              <section className="rounded-[22px] border border-[#dce4dd] bg-white p-5">
+                <h4 className="text-sm font-semibold">現金餘額快填</h4>
+                <p className="mt-1 text-xs text-[#718078]">
+                  只列本次選取帳戶；完整持倉與貸款可在下方展開。
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                  {accounts.flatMap((account, accountIndex) =>
+                    account.cashBalances.map((balance, balanceIndex) => {
+                      const oldAmount = latest?.accounts
+                        .find((item) => item.accountId === account.accountId)
+                        ?.cashBalances.find(
+                          (item) => item.currency === balance.currency,
+                        )?.amount;
+                      return (
+                        <label
+                          key={`${account.accountId ?? accountIndex}-${balance.currency}`}
+                          className="text-xs"
+                        >
+                          {account.name}・{balance.currency}（原{" "}
+                          {oldAmount ?? "0"}）
+                          <NumericField
+                            className="field mt-1"
+                            value={balance.amount}
+                            onValueChange={(value) =>
+                              updateAccount(accountIndex, {
+                                cashBalances: account.cashBalances.map(
+                                  (item, index) =>
+                                    index === balanceIndex
+                                      ? { ...item, amount: value }
+                                      : item,
+                                ),
+                              })
+                            }
+                          />
+                          {oldAmount &&
+                            /^\d+(?:\.\d+)?$/.test(balance.amount) && (
+                              <small className="mt-1 block text-[#718078]">
+                                差額{" "}
+                                {decimal(balance.amount)
+                                  .minus(oldAmount)
+                                  .toString()}
+                              </small>
+                            )}
+                        </label>
+                      );
+                    }),
+                  )}
+                </div>
+              </section>
+            )}
             <div className="space-y-4">
               {accounts.map((account, accountIndex) => (
                 <details
-                  open={!account.accountId}
+                  open={accounts.length === 1 || !account.accountId}
                   key={account.accountId ?? accountIndex}
                   className="overflow-hidden rounded-[22px] border border-[#dce4dd] bg-white shadow-[0_8px_28px_rgba(31,60,45,.05)]"
                 >
@@ -1652,16 +1927,21 @@ export function SnapshotEditor({
                         </div>
                         <label>
                           餘額
-                          <input
+                          <NumericField
                             className="field"
-                            inputMode="decimal"
+                            data-field-path={`accounts.${accountIndex}.cashBalances.${index}.amount`}
+                            aria-invalid={validationWarnings.some(
+                              (issue) =>
+                                issue.path ===
+                                `accounts.${accountIndex}.cashBalances.${index}.amount`,
+                            )}
                             value={balance.amount}
-                            onChange={(e) =>
+                            onValueChange={(value) =>
                               updateAccount(accountIndex, {
                                 cashBalances: account.cashBalances.map(
                                   (item, i) =>
                                     i === index
-                                      ? { ...item, amount: e.target.value }
+                                      ? { ...item, amount: value }
                                       : item,
                                 ),
                               })
@@ -1948,24 +2228,13 @@ export function SnapshotEditor({
                                       ["名稱", "name"],
                                     ]
                                   : []),
-                                [
-                                  position.securityType === "future"
-                                    ? "口數"
-                                    : "數量",
-                                  "quantity",
-                                ],
-                                [
-                                  position.securityType === "future"
-                                    ? `均價（${position.quoteCurrency}）`
-                                    : `平均成本（${position.quoteCurrency}）`,
-                                  "averageCost",
-                                ],
                               ].map(([placeholder, key]) => (
                                 <label key={key}>
                                   {placeholder}
                                   <input
                                     aria-label={placeholder}
                                     placeholder={placeholder}
+                                    data-field-path={`accounts.${accountIndex}.positions.${index}.${key}`}
                                     className="field"
                                     value={String(
                                       position[key as keyof typeof position] ??
@@ -2001,17 +2270,6 @@ export function SnapshotEditor({
                                                 quoteNote: "尚未更新行情",
                                               }
                                             : {}),
-                                          ...(key === "averageCost" &&
-                                          position.quoteStatus === "manual" &&
-                                          position.quoteNote?.includes(
-                                            "尚未更新行情",
-                                          )
-                                            ? {
-                                                marketPrice: value || "1",
-                                                quoteAsOf:
-                                                  new Date().toISOString(),
-                                              }
-                                            : {}),
                                         };
                                       updateAccount(accountIndex, {
                                         positions: account.positions.map(
@@ -2030,6 +2288,39 @@ export function SnapshotEditor({
                                   />
                                 </label>
                               ))}
+                              <PositionCostFields
+                                key={`${position.positionId ?? index}-${costEditorVersion}`}
+                                position={position}
+                                fieldPath={`accounts.${accountIndex}.positions.${index}`}
+                                invalidPaths={validationWarnings.map(
+                                  (issue) => issue.path,
+                                )}
+                                onChange={(patch) =>
+                                  updateAccount(accountIndex, {
+                                    positions: account.positions.map(
+                                      (item, i) =>
+                                        i === index
+                                          ? {
+                                              ...item,
+                                              ...patch,
+                                              ...(patch.averageCost &&
+                                              item.quoteStatus === "manual" &&
+                                              item.quoteNote?.includes(
+                                                "尚未更新行情",
+                                              )
+                                                ? {
+                                                    marketPrice:
+                                                      patch.averageCost,
+                                                    quoteAsOf:
+                                                      new Date().toISOString(),
+                                                  }
+                                                : {}),
+                                            }
+                                          : item,
+                                    ),
+                                  })
+                                }
+                              />
                               {position.securityType === "future" && (
                                 <div className="col-span-full grid grid-cols-2 gap-2 max-md:grid-cols-1">
                                   <label>
@@ -2054,9 +2345,8 @@ export function SnapshotEditor({
                                   </label>
                                   <label>
                                     每點價值
-                                    <input
+                                    <NumericField
                                       className="field"
-                                      inputMode="decimal"
                                       disabled={!position.symbol}
                                       placeholder={
                                         futuresProduct(position.symbol) ===
@@ -2065,15 +2355,14 @@ export function SnapshotEditor({
                                           : "輸入代碼後自動帶入"
                                       }
                                       value={position.contractMultiplier ?? ""}
-                                      onChange={(event) =>
+                                      onValueChange={(value) =>
                                         updateAccount(accountIndex, {
                                           positions: account.positions.map(
                                             (item, i) =>
                                               i === index
                                                 ? {
                                                     ...item,
-                                                    contractMultiplier:
-                                                      event.target.value,
+                                                    contractMultiplier: value,
                                                   }
                                                 : item,
                                           ),
@@ -2085,21 +2374,21 @@ export function SnapshotEditor({
                               )}
                               <label>
                                 {canEditManualPrice(position)
-                                  ? `手動市價（${position.quoteCurrency}，網路查詢失敗）`
+                                  ? `手動市價（${position.quoteCurrency}）`
                                   : position.securityType === "fund"
                                     ? `網路淨值（${position.quoteCurrency}）`
                                     : `網路市價（${position.quoteCurrency}）`}
-                                <input
+                                <NumericField
                                   aria-label={
                                     canEditManualPrice(position)
                                       ? "手動市價"
                                       : "網路市價"
                                   }
                                   className="field"
-                                  inputMode="decimal"
+                                  data-field-path={`accounts.${accountIndex}.positions.${index}.marketPrice`}
                                   readOnly={!canEditManualPrice(position)}
                                   value={position.marketPrice}
-                                  onChange={(event) => {
+                                  onValueChange={(value) => {
                                     if (!canEditManualPrice(position)) return;
                                     updateAccount(accountIndex, {
                                       positions: account.positions.map(
@@ -2107,11 +2396,10 @@ export function SnapshotEditor({
                                           i === index
                                             ? {
                                                 ...item,
-                                                marketPrice: event.target.value,
+                                                marketPrice: value,
                                                 quoteStatus: "manual" as const,
                                                 quoteSource: "MANUAL" as const,
-                                                quoteNote:
-                                                  "行情取得失敗，已手動輸入市價",
+                                                quoteNote: "使用人工價格",
                                                 quoteAsOf:
                                                   new Date().toISOString(),
                                               }
@@ -2121,6 +2409,75 @@ export function SnapshotEditor({
                                   }}
                                 />
                               </label>
+                              <button
+                                type="button"
+                                className="link text-xs"
+                                onClick={() => {
+                                  if (canEditManualPrice(position)) {
+                                    const nextPosition = {
+                                      ...position,
+                                      quoteNote: "尚未更新行情",
+                                    };
+                                    updateAccount(accountIndex, {
+                                      positions: account.positions.map(
+                                        (item, i) =>
+                                          i === index ? nextPosition : item,
+                                      ),
+                                    });
+                                    schedulePositionQuote(
+                                      accountIndex,
+                                      index,
+                                      account,
+                                      nextPosition,
+                                    );
+                                  } else {
+                                    updateAccount(accountIndex, {
+                                      positions: account.positions.map(
+                                        (item, i) =>
+                                          i === index
+                                            ? {
+                                                ...item,
+                                                quoteStatus: "manual" as const,
+                                                quoteSource: "MANUAL" as const,
+                                                quoteNote: "使用人工價格",
+                                                quoteAsOf:
+                                                  new Date().toISOString(),
+                                              }
+                                            : item,
+                                      ),
+                                    });
+                                  }
+                                }}
+                              >
+                                {canEditManualPrice(position)
+                                  ? "重新取得行情"
+                                  : "使用人工價格"}
+                              </button>
+                              {canEditManualPrice(position) && (
+                                <label className="text-xs">
+                                  人工價格日期
+                                  <input
+                                    className="field"
+                                    type="date"
+                                    value={inputDate(position.quoteAsOf)}
+                                    onChange={(event) =>
+                                      updateAccount(accountIndex, {
+                                        positions: account.positions.map(
+                                          (item, i) =>
+                                            i === index
+                                              ? {
+                                                  ...item,
+                                                  quoteAsOf: event.target.value
+                                                    ? toUtc(event.target.value)
+                                                    : "",
+                                                }
+                                              : item,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                </label>
+                              )}
                               <button
                                 className="col-span-full justify-self-end"
                                 aria-label="移除持倉"
@@ -2321,71 +2678,66 @@ export function SnapshotEditor({
                               </label>
                               <label>
                                 目前未償本金（{loan.currency}）
-                                <input
+                                <NumericField
                                   className="field"
-                                  inputMode="decimal"
+                                  data-field-path={`loans.${loanIndex}.outstandingPrincipal`}
                                   value={loan.outstandingPrincipal}
-                                  onChange={(event) =>
+                                  onValueChange={(value) =>
                                     updateLoan(loanIndex, {
-                                      outstandingPrincipal: event.target.value,
+                                      outstandingPrincipal: value,
                                     })
                                   }
                                 />
                               </label>
                               <label>
                                 原始貸款金額（{loan.currency}）
-                                <input
+                                <NumericField
                                   className="field"
-                                  inputMode="decimal"
+                                  data-field-path={`loans.${loanIndex}.originalPrincipal`}
                                   value={loan.originalPrincipal ?? ""}
-                                  onChange={(event) =>
+                                  onValueChange={(value) =>
                                     updateLoan(loanIndex, {
-                                      originalPrincipal:
-                                        event.target.value || null,
+                                      originalPrincipal: value || null,
                                     })
                                   }
                                 />
                               </label>
                               <label>
                                 年利率（%）
-                                <input
+                                <NumericField
                                   className="field"
-                                  inputMode="decimal"
+                                  data-field-path={`loans.${loanIndex}.annualInterestRate`}
                                   value={loan.annualInterestRate ?? ""}
-                                  onChange={(event) =>
+                                  onValueChange={(value) =>
                                     updateLoan(loanIndex, {
-                                      annualInterestRate:
-                                        event.target.value || null,
+                                      annualInterestRate: value || null,
                                     })
                                   }
                                 />
                               </label>
                               <label>
                                 每月還款金額（{loan.currency}）
-                                <input
+                                <NumericField
                                   className="field"
-                                  inputMode="decimal"
+                                  data-field-path={`loans.${loanIndex}.monthlyPayment`}
                                   value={loan.monthlyPayment ?? ""}
-                                  onChange={(event) =>
+                                  onValueChange={(value) =>
                                     updateLoan(loanIndex, {
-                                      monthlyPayment:
-                                        event.target.value || null,
+                                      monthlyPayment: value || null,
                                     })
                                   }
                                 />
                               </label>
                               <label>
                                 每月還款日
-                                <input
+                                <NumericField
                                   className="field"
-                                  type="number"
-                                  min={1}
-                                  max={31}
-                                  value={loan.paymentDayOfMonth ?? ""}
-                                  onChange={(event) =>
+                                  kind="integer"
+                                  value={String(loan.paymentDayOfMonth ?? "")}
+                                  onValueChange={(value) =>
                                     updateLoan(loanIndex, {
-                                      paymentDayOfMonth: event.target.value
-                                        ? Number(event.target.value)
+                                      paymentDayOfMonth: value
+                                        ? Number(value)
                                         : null,
                                     })
                                   }
@@ -2661,12 +3013,12 @@ export function SnapshotEditor({
                             {key === "annualInterestRate"
                               ? ""
                               : `（${loan.currency}）`}
-                            <input
+                            <NumericField
                               aria-label={label}
                               className="field"
-                              inputMode="decimal"
+                              data-field-path={`loans.${loanIndex}.${key}`}
                               value={String(loan[key as keyof LoanInput] ?? "")}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 setLoans((items) =>
                                   items.map((item, index) =>
                                     index === loanIndex
@@ -2674,8 +3026,8 @@ export function SnapshotEditor({
                                           ...item,
                                           [key]:
                                             key === "outstandingPrincipal"
-                                              ? event.target.value
-                                              : event.target.value || null,
+                                              ? value
+                                              : value || null,
                                         }
                                       : item,
                                   ),
@@ -2686,22 +3038,20 @@ export function SnapshotEditor({
                         ))}
                         <label>
                           每月還款日
-                          <input
+                          <NumericField
                             aria-label="每月還款日"
                             className="field"
-                            type="number"
-                            min={1}
-                            max={31}
+                            kind="integer"
                             placeholder="例如 21"
-                            value={loan.paymentDayOfMonth ?? ""}
-                            onChange={(event) =>
+                            value={String(loan.paymentDayOfMonth ?? "")}
+                            onValueChange={(value) =>
                               setLoans((items) =>
                                 items.map((item, index) =>
                                   index === loanIndex
                                     ? {
                                         ...item,
-                                        paymentDayOfMonth: event.target.value
-                                          ? Number(event.target.value)
+                                        paymentDayOfMonth: value
+                                          ? Number(value)
                                           : null,
                                       }
                                     : item,
@@ -2811,6 +3161,83 @@ export function SnapshotEditor({
         )}
         {hasPrepared && (
           <section className="rounded-[22px] border border-[#dce4dd] bg-white p-5">
+            <h3 className="text-sm font-semibold">資料基準時間</h3>
+            <p className="mt-1 text-xs text-[#718078]">
+              不修改時使用保存當下時間。補登只能晚於目前最新快照；較早的歷史快照需另行整理相鄰快照與資金流。
+            </p>
+            <label className="mt-3 block max-w-xs text-xs">
+              台灣時間
+              <input
+                className="field mt-1"
+                type="datetime-local"
+                value={capturedAtInput}
+                onChange={(event) => {
+                  setCapturedAtInput(event.target.value);
+                  setCustomCapturedAt(true);
+                }}
+              />
+            </label>
+            {customCapturedAt && (
+              <button
+                type="button"
+                className="link mt-2 text-xs"
+                onClick={() => setCustomCapturedAt(false)}
+              >
+                改用保存當下時間
+              </button>
+            )}
+          </section>
+        )}
+        {hasPrepared && (
+          <details className="rounded-[22px] border border-[#dce4dd] bg-white p-5">
+            <summary className="cursor-pointer text-sm font-semibold">
+              表格批次貼上
+            </summary>
+            <p className="mt-3 text-xs text-[#718078]">
+              從試算表複製列：現金、帳戶名稱、幣別、餘額；或持倉、帳戶名稱、代碼、數量、均價。欄位以
+              Tab 分隔，僅更新已選帳戶的既有項目。
+            </p>
+            <textarea
+              className="field mt-3 min-h-28 font-mono text-xs"
+              aria-label="批次貼上資料"
+              value={batchRaw}
+              onChange={(event) => setBatchRaw(event.target.value)}
+              placeholder="現金&#9;券商帳戶&#9;TWD&#9;1200"
+            />
+            {batchPreview && (
+              <div className="mt-3 text-xs" aria-live="polite">
+                <p>
+                  可更新 {batchPreview.changes.length} 列；錯誤{" "}
+                  {batchPreview.errors.length} 列。
+                </p>
+                {batchPreview.changes.map((change, index) => (
+                  <p key={index} className="mt-1 text-[#476452]">
+                    • {change}
+                  </p>
+                ))}
+                {batchPreview.errors.map((error, index) => (
+                  <p key={index} className="mt-1 text-red-700">
+                    • {error}
+                  </p>
+                ))}
+                <button
+                  type="button"
+                  className="secondary mt-3"
+                  disabled={batchPreview.errors.length > 0 || !!busy}
+                  onClick={() => {
+                    setAccounts(batchPreview.updated);
+                    setCostEditorVersion((version) => version + 1);
+                    setBatchRaw("");
+                  }}
+                >
+                  套用 {batchPreview.changes.length} 列至本次編輯
+                </button>
+              </div>
+            )}
+          </details>
+        )}
+        {hasPrepared && (
+          <section className="rounded-[22px] border border-[#dce4dd] bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold">本期資金流與調整</h3>
@@ -2867,16 +3294,15 @@ export function SnapshotEditor({
                     </label>
                     <label>
                       TWD 金額
-                      <input
+                      <NumericField
                         className="field"
-                        inputMode="decimal"
                         placeholder="0"
                         value={flow.amountTwd}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           setCashFlows((items) =>
                             items.map((item, itemIndex) =>
                               itemIndex === index
-                                ? { ...item, amountTwd: event.target.value }
+                                ? { ...item, amountTwd: value }
                                 : item,
                             ),
                           )
@@ -2913,6 +3339,79 @@ export function SnapshotEditor({
                   </div>
                 ))}
               </div>
+            )}
+          </section>
+        )}
+        {preview && (
+          <section
+            className="rounded-[22px] border border-[#dce4dd] bg-white p-5"
+            aria-label="未儲存快照金額預覽"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">修改後金額預覽</h3>
+                <p className="mt-1 text-xs text-[#718078]">
+                  包含未選取但沿用的帳戶；尚未儲存。
+                </p>
+              </div>
+              {preview.missing.length > 0 && (
+                <span className="text-xs font-semibold text-amber-700">
+                  有 {preview.missing.length} 項待補齊，合計尚未完整
+                </span>
+              )}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+              {(
+                [
+                  ["總資產", preview.assetsTwd, latest?.totalAssetValueTwd],
+                  [
+                    "總負債",
+                    preview.liabilitiesTwd,
+                    latest?.totalLiabilitiesTwd,
+                  ],
+                  ["淨值", preview.netWorthTwd, latest?.netWorthTwd],
+                ] as const
+              ).map(([label, current, previous]) => (
+                <div key={label} className="rounded-xl bg-[#f6f9f6] p-3">
+                  <p className="text-xs text-[#718078]">{label}</p>
+                  <strong className="mt-1 block text-lg tabular-nums">
+                    {preview.missing.length > 0 ? "待補齊" : money(current)}
+                  </strong>
+                  {previous && preview.missing.length === 0 && (
+                    <small className="text-[#718078]">
+                      原 {money(previous)}・差額{" "}
+                      {money(decimal(current).minus(previous).toString())}
+                    </small>
+                  )}
+                </div>
+              ))}
+            </div>
+            {preview.missing.length === 0 && (
+              <div className="mt-4 border-t border-[#e7ece8] pt-3">
+                <p className="mb-2 text-xs font-semibold">帳戶小計（TWD）</p>
+                <div className="grid grid-cols-2 gap-2 max-sm:grid-cols-1">
+                  {mergedAccounts.map((account) => (
+                    <p
+                      key={account.accountId ?? account.name}
+                      className="flex justify-between gap-2 text-xs"
+                    >
+                      <span>{account.name}</span>
+                      <span className="tabular-nums">
+                        {money(
+                          preview.accountTotals[
+                            account.accountId ?? account.name
+                          ],
+                        )}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {preview.missing.length > 0 && (
+              <p className="mt-3 text-xs text-amber-700">
+                待補：{preview.missing.slice(0, 3).join("、")}
+              </p>
             )}
           </section>
         )}
@@ -3060,11 +3559,10 @@ export function SaleDialog({
           <label>
             {position.securityType === "future" ? "結算單價" : "成交單價"}（
             {position.quoteCurrency}）
-            <input
+            <NumericField
               className="field"
-              inputMode="decimal"
               value={salePrice}
-              onChange={(e) => setSalePrice(e.target.value)}
+              onValueChange={setSalePrice}
             />
           </label>
           <label>
@@ -3099,20 +3597,18 @@ export function SaleDialog({
           <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <label>
               手續費（{position.quoteCurrency}）
-              <input
+              <NumericField
                 className="field"
-                inputMode="decimal"
                 value={fee}
-                onChange={(event) => setFee(event.target.value)}
+                onValueChange={setFee}
               />
             </label>
             <label>
               交易稅（{position.quoteCurrency}）
-              <input
+              <NumericField
                 className="field"
-                inputMode="decimal"
                 value={tax}
-                onChange={(event) => setTax(event.target.value)}
+                onValueChange={setTax}
               />
             </label>
           </div>

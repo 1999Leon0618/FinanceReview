@@ -263,12 +263,9 @@ test("帳戶卡片與期貨到期月份在窄版面保持緊湊且不溢出", as
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox", { name: /期貨測試帳戶/ }).click();
   await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
-  await dialog
-    .locator("details")
-    .filter({ hasText: "期貨測試帳戶" })
-    .locator("summary")
-    .first()
-    .click();
+  await expect(
+    dialog.locator("details").filter({ hasText: "期貨測試帳戶" }).first(),
+  ).toHaveAttribute("open", "");
   const position = dialog
     .locator(".snapshot-position-card")
     .filter({ hasText: "到期月份" });

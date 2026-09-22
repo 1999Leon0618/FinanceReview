@@ -23,6 +23,6 @@ export async function PATCH(
     const update = reviewSchema.parse(await request.json());
     return NextResponse.json(await reviewAppUser(ownerKey, update));
   } catch (error) {
-    return apiError(error, 403);
+    return apiError(error);
   }
 }

@@ -530,11 +530,12 @@ test("一般帳戶設定由帳戶頁管理，快照只更新財務數值", async
   await snapshotDialog
     .getByRole("button", { name: "下一步：確認所選項目" })
     .click();
-  await snapshotDialog
-    .locator("details")
-    .filter({ hasText: "設定測試帳戶" })
-    .locator("summary")
-    .click();
+  await expect(
+    snapshotDialog
+      .locator("details")
+      .filter({ hasText: "設定測試帳戶" })
+      .first(),
+  ).toHaveAttribute("open", "");
   await expect(snapshotDialog.getByLabel("帳戶名稱")).toHaveCount(0);
   await expect(snapshotDialog.getByLabel("金融機構")).toHaveCount(0);
   await expect(
@@ -565,11 +566,9 @@ test("輸入券商契約代碼建立期貨並查詢行情", async ({ page, reque
   const dialog = page.getByRole("dialog", { name: "建立財務快照" });
   await dialog.getByRole("checkbox", { name: /期貨行情測試帳戶/ }).click();
   await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
-  await dialog
-    .locator("details")
-    .filter({ hasText: "期貨行情測試帳戶" })
-    .locator("summary")
-    .click();
+  await expect(
+    dialog.locator("details").filter({ hasText: "期貨行情測試帳戶" }).first(),
+  ).toHaveAttribute("open", "");
   await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
 
   const quoteRequest = page.waitForRequest("**/api/quotes/resolve");
@@ -644,11 +643,9 @@ test("貸款資料不合理時按保存才顯示警告", async ({ page, request 
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("checkbox", { name: /貸款驗證帳戶/ }).click();
   await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
-  await dialog
-    .locator("details")
-    .filter({ hasText: "貸款驗證帳戶" })
-    .locator("summary")
-    .click();
+  await expect(
+    dialog.locator("details").filter({ hasText: "貸款驗證帳戶" }).first(),
+  ).toHaveAttribute("open", "");
   await dialog.getByRole("button", { name: "＋ 新增貸款" }).click();
   await dialog.getByLabel("原始貸款金額").fill("100000");
   await dialog.getByLabel("目前未償本金").fill("120000");

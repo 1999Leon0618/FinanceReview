@@ -49,11 +49,9 @@ test("慢速行情回應不會覆蓋剛輸入的期貨口數與均價", async ({
     const dialog = page.getByRole("dialog", { name: "建立財務快照" });
     await dialog.getByRole("checkbox", { name: /測試期貨帳戶/ }).click();
     await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
-    await dialog
-      .locator("details")
-      .filter({ hasText: "測試期貨帳戶" })
-      .locator("summary")
-      .click();
+    await expect(
+      dialog.locator("details").filter({ hasText: "測試期貨帳戶" }).first(),
+    ).toHaveAttribute("open", "");
     await dialog.getByRole("button", { name: "＋ 新增期貨" }).click();
     await dialog.getByLabel("契約代碼").fill("TMF202612");
     const route = await requested;

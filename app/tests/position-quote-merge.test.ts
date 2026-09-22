@@ -61,4 +61,16 @@ describe("單筆行情回應合併", () => {
       current,
     );
   });
+
+  it("同一時刻切換成人工價格時，晚到的行情不得覆寫", () => {
+    const current = { ...requested, quoteNote: "使用人工價格" };
+    const resolved = {
+      ...requested,
+      marketPrice: "25000",
+      quoteStatus: "fresh" as const,
+    };
+    expect(mergeResolvedPositionQuote(current, requested, resolved)).toEqual(
+      current,
+    );
+  });
 });

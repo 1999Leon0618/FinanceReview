@@ -77,6 +77,7 @@ import {
   type DisplayTimeZone,
 } from "@/lib/display-preferences";
 import { requestJson as request } from "@/lib/client-request";
+import { NumericField } from "@/components/numeric-field";
 import {
   buildInfo,
   formatBuildTitle,
@@ -270,6 +271,7 @@ export default function FinanceDashboard({
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [staleWarningOpen, setStaleWarningOpen] = useState(false);
   const [editor, setEditor] = useState(false);
+  const [accountToResume, setAccountToResume] = useState<string | null>(null);
   const [accountEditor, setAccountEditor] = useState(false);
   const [creditCardEditor, setCreditCardEditor] = useState(false);
   const [loanPayment, setLoanPayment] = useState<LoanView | null>(null);
@@ -1787,8 +1789,13 @@ export default function FinanceDashboard({
           {editor && (
             <SnapshotEditor
               latest={latest ?? null}
-              onClose={() => setEditor(false)}
+              initialAccountName={accountToResume}
+              onClose={() => {
+                setEditor(false);
+                setAccountToResume(null);
+              }}
               onManageAccounts={() => {
+                setAccountToResume(null);
                 setEditor(false);
                 setAccountEditor(true);
               }}
@@ -1796,16 +1803,23 @@ export default function FinanceDashboard({
                 setEditor(false);
                 setCreditCardEditor(true);
               }}
-              onSaved={saved}
+              onSaved={() => {
+                setAccountToResume(null);
+                saved();
+              }}
             />
           )}
           {accountEditor && (
             <AccountSettingsEditor
               latest={latest ?? null}
               onClose={() => setAccountEditor(false)}
-              onSaved={async () => {
+              onSaved={async (resumeName) => {
                 await load();
                 setAccountEditor(false);
+                if (resumeName) {
+                  setAccountToResume(resumeName);
+                  setEditor(true);
+                }
                 notify({
                   title: "帳戶設定已更新",
                   message: "已建立新的財務快照；現金、持倉與貸款數值保持不變。",
@@ -2042,17 +2056,11 @@ function QuoteFailureDialog({
               </div>
               <label>
                 手動現值（{failure.currency}）
-                <input
-                  type="number"
-                  min="0.0001"
-                  step="any"
-                  inputMode="decimal"
+                <NumericField
                   className="field"
                   value={values[failure.positionId] ?? ""}
                   placeholder={`留白即沿用 ${number.format(Number(failure.oldPrice))}`}
-                  onChange={(event) =>
-                    onChange(failure.positionId, event.target.value)
-                  }
+                  onValueChange={(value) => onChange(failure.positionId, value)}
                 />
               </label>
             </div>
@@ -3043,17 +3051,12 @@ function LoanPaymentDialog({
           </label>
           <label className="block text-sm font-medium text-[#445149]">
             本期償還本金（{loan.currency}）
-            <input
+            <NumericField
               required
-              type="number"
-              min="0.01"
-              max={loan.outstandingPrincipal}
-              step="any"
-              inputMode="decimal"
               className="field mt-2"
               value={principalPaid}
               disabled={busy}
-              onChange={(event) => setPrincipalPaid(event.target.value)}
+              onValueChange={setPrincipalPaid}
             />
           </label>
           <p className="rounded-2xl bg-[#f4f1ed] px-4 py-3 text-xs leading-5 text-[#68776e]">
@@ -4165,7 +4168,7 @@ function AccountSettingsEditor({
 }: {
   latest: DashboardData["latest"];
   onClose: () => void;
-  onSaved: () => void | Promise<void>;
+  onSaved: (resumeName?: string) => void | Promise<void>;
 }) {
   const [accounts, setAccounts] = useState<AccountStateInput[]>(() =>
     latest?.accounts.length
@@ -4180,7 +4183,7 @@ function AccountSettingsEditor({
         itemIndex === index ? { ...item, ...patch } : item,
       ),
     );
-  const save = async () => {
+  const save = async (resumeName?: string) => {
     setBusy(true);
     setError("");
     try {
@@ -4209,7 +4212,7 @@ function AccountSettingsEditor({
           cashFlows: [],
         }),
       });
-      await onSaved();
+      await onSaved(resumeName);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "帳戶設定儲存失敗");
       setBusy(false);
@@ -4446,12 +4449,29 @@ function AccountSettingsEditor({
             <button className="secondary" disabled={busy} onClick={onClose}>
               取消
             </button>
-            <button className="primary" disabled={busy} onClick={save}>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void save()}
+            >
               {busy ? (
                 <LoaderCircle className="animate-spin" size={14} />
               ) : null}
               {busy ? "保存中…" : "保存帳戶設定"}
             </button>
+            {accounts.some((account) => !account.accountId) && (
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  void save(
+                    accounts.find((account) => !account.accountId)?.name.trim(),
+                  )
+                }
+              >
+                保存並填寫餘額
+              </button>
+            )}
           </div>
         </footer>
       </section>
@@ -4678,47 +4698,38 @@ function CreditCardEditor({
                     </label>
                     <label>
                       共用信用額度
-                      <input
+                      <NumericField
                         className="field"
-                        inputMode="decimal"
                         value={account.sharedCreditLimit}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            sharedCreditLimit: event.target.value,
+                            sharedCreditLimit: value,
                           })
                         }
                       />
                     </label>
                     <label>
                       每月結帳日
-                      <input
+                      <NumericField
                         className="field"
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={account.statementDayOfMonth ?? ""}
-                        onChange={(event) =>
+                        kind="integer"
+                        value={String(account.statementDayOfMonth ?? "")}
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            statementDayOfMonth: event.target.value
-                              ? Number(event.target.value)
-                              : null,
+                            statementDayOfMonth: value ? Number(value) : null,
                           })
                         }
                       />
                     </label>
                     <label>
                       每月繳款期限（日）
-                      <input
+                      <NumericField
                         className="field"
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={account.paymentDayOfMonth ?? ""}
-                        onChange={(event) =>
+                        kind="integer"
+                        value={String(account.paymentDayOfMonth ?? "")}
+                        onValueChange={(value) =>
                           updateAccount(accountIndex, {
-                            paymentDayOfMonth: event.target.value
-                              ? Number(event.target.value)
-                              : null,
+                            paymentDayOfMonth: value ? Number(value) : null,
                           })
                         }
                       />
@@ -4806,22 +4817,18 @@ function CreditCardEditor({
                           </label>
                           <label>
                             末四碼
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="numeric"
+                              kind="integer"
                               maxLength={4}
                               value={card.lastFour ?? ""}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateAccount(accountIndex, {
                                   cards: account.cards.map((item, index) =>
                                     index === cardIndex
                                       ? {
                                           ...item,
-                                          lastFour:
-                                            event.target.value.replace(
-                                              /\D/g,
-                                              "",
-                                            ) || null,
+                                          lastFour: value || null,
                                         }
                                       : item,
                                   ),
@@ -4980,16 +4987,15 @@ function CreditCardEditor({
                         ].map(([label, key]) => (
                           <label key={key}>
                             {label}
-                            <input
+                            <NumericField
                               className="field"
-                              inputMode="decimal"
                               value={String(
                                 account[key as keyof CreditCardAccountInput] ??
                                   "",
                               )}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateAccount(accountIndex, {
-                                  [key]: event.target.value,
+                                  [key]: value,
                                 })
                               }
                             />

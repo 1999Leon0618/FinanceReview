@@ -6,7 +6,9 @@ export function wasPositionQuoteEdited(
 ) {
   return (
     current.marketPrice !== requested.marketPrice ||
-    current.quoteAsOf !== requested.quoteAsOf
+    current.quoteAsOf !== requested.quoteAsOf ||
+    (current.quoteNote === "使用人工價格" &&
+      requested.quoteNote !== "使用人工價格")
   );
 }
 

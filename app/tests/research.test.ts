@@ -164,7 +164,7 @@ describe("投資研究工作區", () => {
 
   it("隔離使用者並完整備份研究資料", async () => {
     const backup = await runWithDataOwner(ownerA, () => exportBackup());
-    expect(backup.schemaVersion).toBe(4);
+    expect(backup.schemaVersion).toBe(5);
     expect(backup.data.watchlist_items).toHaveLength(1);
     expect(backup.data.research_notes).toHaveLength(1);
     expect(backup.data.research_note_revisions).toHaveLength(2);

@@ -487,7 +487,18 @@ export function yahooCandleSymbol(
   return `${base}.${market === "TWSE" ? "TW" : "TWO"}`;
 }
 
-async function saveQuote(market: Market, symbol: string, quote: Quote) {
+export function quoteCacheSymbol(symbol: string, providerSymbol?: string) {
+  const normalized = symbol.trim().toUpperCase();
+  const provider = providerSymbol?.trim().toUpperCase();
+  return provider ? `${normalized}\u001f${provider}` : normalized;
+}
+
+async function saveQuote(
+  market: Market,
+  symbol: string,
+  quote: Quote,
+  providerSymbol?: string,
+) {
   const db = await getDatabase();
   await db
     .prepare(
@@ -499,7 +510,7 @@ async function saveQuote(market: Market, symbol: string, quote: Quote) {
     .run(
       randomUUID(),
       market,
-      symbol,
+      quoteCacheSymbol(symbol, providerSymbol),
       quote.price,
       quote.currency,
       quote.quoteAsOf,
@@ -516,6 +527,7 @@ async function saveQuote(market: Market, symbol: string, quote: Quote) {
 async function lastQuote(
   market: Market,
   symbol: string,
+  providerSymbol?: string,
 ): Promise<Quote | null> {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
@@ -525,7 +537,7 @@ async function lastQuote(
       change_value, change_percent, volume, market_session FROM quote_cache
     WHERE market = ? AND symbol = ? ORDER BY quote_as_of DESC, fetched_at DESC LIMIT 1`,
     )
-    .get(market, symbol)) as JsonRow | undefined;
+    .get(market, quoteCacheSymbol(symbol, providerSymbol))) as JsonRow | undefined;
   if (row) {
     const quote = {
       price: String(row.price),
@@ -550,9 +562,16 @@ async function lastQuote(
     JOIN snapshot_accounts sa ON sa.id = sp.snapshot_account_id
     JOIN snapshots s ON s.id = sa.snapshot_id
     WHERE sp.market = ? AND sp.symbol = ? AND s.owner_key = ?
+      AND (? IS NULL OR sp.provider_symbol = ? OR sp.provider_symbol IS NULL)
     ORDER BY s.captured_at DESC LIMIT 1`,
     )
-    .get(market, symbol, ownerKey)) as JsonRow | undefined;
+    .get(
+      market,
+      symbol,
+      ownerKey,
+      providerSymbol?.trim() || null,
+      providerSymbol?.trim() || null,
+    )) as JsonRow | undefined;
   if (!snapshot) return null;
   const quote = {
     price: String(snapshot.price),
@@ -611,11 +630,11 @@ export async function resolveQuote(
   const normalized = symbol.toUpperCase();
   try {
     const quote = await fetchMarketQuote(market, symbol, options);
-    await saveQuote(market, normalized, quote);
+    await saveQuote(market, normalized, quote, options?.providerSymbol);
     return { ...quote, status: "fresh", note: quote.note ?? null };
   } catch (error) {
     if (error instanceof AmbiguousFundQuoteError) throw error;
-    const cached = await lastQuote(market, normalized);
+    const cached = await lastQuote(market, normalized, options?.providerSymbol);
     if (!cached) throw error;
     return {
       ...cached,

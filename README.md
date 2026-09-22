@@ -198,7 +198,9 @@ flowchart LR
 
 ### SQLite 與 D1 資料庫
 
-本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 16。
+相同市場與代碼的證券主檔可供多位使用者共用，但個人設定的行情代碼與顯示資料保存在自己的快照或自選清單，不會改寫其他人的資料。行情快取會區分實際查價代碼，避免同代碼但不同查價來源互相代用。新版 JSON 備份為 `schemaVersion: 5`，仍可匯入舊版備份；舊快照未保存的行情代碼只能沿用既有證券主檔資料。
+
+本機預設資料庫為 `data/finance-review.db`，使用 Node.js 內建的 `node:sqlite` `DatabaseSync`。連線啟用 foreign keys、WAL journal mode 與 5 秒 busy timeout，並依 `PRAGMA user_version` 自動執行 `app/db/migrations/`。Workers 透過 `DB` binding 使用 D1，初始 schema 位於 `app/d1/migrations/`。目前 schema version 為 18。
 
 資料模型同時保留「主檔／生命週期」與「不可變的時間切片」：
 

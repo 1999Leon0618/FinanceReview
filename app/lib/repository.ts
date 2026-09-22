@@ -136,7 +136,8 @@ export async function getSnapshotDetail(
       .all(id),
     db
       .prepare(
-        `SELECT position.*, security.provider_symbol FROM snapshot_positions position
+        `SELECT position.*, COALESCE(position.provider_symbol,
+          security.provider_symbol) AS provider_symbol FROM snapshot_positions position
       JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
       JOIN securities security ON security.id = position.security_id
       WHERE account.snapshot_id = ?
@@ -611,42 +612,12 @@ async function findOrCreateSecurity(
   const symbol = input.symbol.toUpperCase();
   const cacheKey = `${input.market}:${symbol}`;
   const cached = cache.get(cacheKey);
-  if (cached) {
-    await db
-      .prepare(
-        `UPDATE securities SET exchange = ?, provider_symbol = ?, name = ?, security_type = ?,
-      quote_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
-      )
-      .run(
-        input.exchange ?? null,
-        input.providerSymbol ?? symbol,
-        input.name,
-        input.securityType,
-        input.quoteCurrency,
-        now,
-        cached,
-      );
-    return cached;
-  }
+  if (cached) return cached;
   const found = (await db
     .prepare("SELECT id FROM securities WHERE market = ? AND symbol = ?")
     .get(input.market, symbol)) as Row | undefined;
   if (found) {
     const id = text(found.id);
-    await db
-      .prepare(
-        `UPDATE securities SET exchange = ?, provider_symbol = ?, name = ?, security_type = ?,
-      quote_currency = ?, archived_at = NULL, updated_at = ? WHERE id = ?`,
-      )
-      .run(
-        input.exchange ?? null,
-        input.providerSymbol ?? symbol,
-        input.name,
-        input.securityType,
-        input.quoteCurrency,
-        now,
-        id,
-      );
     cache.set(cacheKey, id);
     return id;
   }
@@ -1252,10 +1223,11 @@ async function createSnapshotInDb(
         id, snapshot_account_id, position_id, security_id, market, symbol, security_name,
         security_type, position_side, contract_multiplier, contract_expiry,
         quote_currency, quantity, average_cost, market_price, quote_as_of,
+        provider_symbol,
         quote_source, quote_status, quote_note, fx_rate_id, cost_value_quote, market_value_quote,
         cost_value_twd, market_value_twd, unrealized_pnl_twd, unrealized_return_pct,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           randomUUID(),
@@ -1274,6 +1246,7 @@ async function createSnapshotInDb(
           position.averageCost,
           position.marketPrice,
           new Date(position.quoteAsOf).toISOString(),
+          position.providerSymbol ?? position.symbol.toUpperCase(),
           position.quoteSource,
           position.quoteStatus,
           position.quoteNote ?? null,
@@ -2170,6 +2143,7 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
       "average_cost",
       "market_price",
       "quote_as_of",
+      "provider_symbol",
       "quote_source",
       "quote_status",
       "quote_note",
@@ -2270,6 +2244,10 @@ const backupColumns: Record<(typeof backupTables)[number], readonly string[]> =
     watchlist_items: [
       "id",
       "security_id",
+      "provider_symbol",
+      "display_name",
+      "display_security_type",
+      "display_quote_currency",
       "origin",
       "is_enabled",
       "first_seen_at",
@@ -2606,7 +2584,7 @@ function parseBackup(payload: unknown): BackupPayload {
     schemaVersion?: number;
     data?: Record<string, Row[]>;
   };
-  if (![1, 2, 3, 4].includes(backup.schemaVersion ?? 0) || !backup.data)
+  if (![1, 2, 3, 4, 5].includes(backup.schemaVersion ?? 0) || !backup.data)
     throw new Error("不支援此備份版本");
 
   for (const table of backupTables) {
@@ -2728,7 +2706,7 @@ export async function exportBackup() {
   const db = await getDatabase();
   const ownerKey = getDataOwner().key;
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     exportedAt: new Date().toISOString(),
     data: Object.fromEntries(
       await Promise.all(

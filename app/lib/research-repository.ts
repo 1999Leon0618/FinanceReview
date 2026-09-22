@@ -65,10 +65,10 @@ function watchlistFromRow(row: Row): WatchlistItem {
     securityId: text(row.security_id),
     market: text(row.market) as WatchlistItem["market"],
     symbol: text(row.symbol),
-    providerSymbol: text(row.provider_symbol),
-    name: text(row.name),
-    securityType: text(row.security_type) as WatchlistItem["securityType"],
-    quoteCurrency: text(row.quote_currency),
+    providerSymbol: text(row.effective_provider_symbol),
+    name: text(row.effective_name),
+    securityType: text(row.effective_security_type) as WatchlistItem["securityType"],
+    quoteCurrency: text(row.effective_quote_currency),
     origin: text(row.origin) as WatchlistItem["origin"],
     enabled: Boolean(row.is_enabled),
     held: Boolean(row.is_held),
@@ -131,8 +131,15 @@ export async function listWatchlist(
   const ownerKey = getDataOwner().key;
   const rows = (await db
     .prepare(
-      `SELECT item.*, security.market, security.symbol, security.provider_symbol,
-        security.name, security.security_type, security.quote_currency,
+      `SELECT item.*, security.market, security.symbol,
+        COALESCE(item.provider_symbol, historic.provider_symbol,
+          security.provider_symbol) AS effective_provider_symbol,
+        COALESCE(item.display_name, historic.security_name,
+          security.name) AS effective_name,
+        COALESCE(item.display_security_type, historic.security_type,
+          security.security_type) AS effective_security_type,
+        COALESCE(item.display_quote_currency, historic.quote_currency,
+          security.quote_currency) AS effective_quote_currency,
         CASE WHEN EXISTS (
           SELECT 1 FROM snapshot_positions position
           JOIN snapshot_accounts account ON account.id = position.snapshot_account_id
@@ -151,11 +158,6 @@ export async function listWatchlist(
         quote.volume, quote.market_session
       FROM watchlist_items item
       JOIN securities security ON security.id = item.security_id
-      LEFT JOIN quote_cache quote ON quote.id = (
-        SELECT cached.id FROM quote_cache cached
-        WHERE cached.market = security.market AND cached.symbol = security.symbol
-        ORDER BY cached.quote_as_of DESC, cached.fetched_at DESC LIMIT 1
-      )
       LEFT JOIN snapshot_positions historic ON historic.id = (
         SELECT position.id FROM snapshot_positions position
         JOIN snapshot_accounts snapshot_account
@@ -163,6 +165,14 @@ export async function listWatchlist(
         JOIN snapshots snapshot ON snapshot.id = snapshot_account.snapshot_id
         WHERE position.security_id = item.security_id AND snapshot.owner_key = ?
         ORDER BY snapshot.captured_at DESC LIMIT 1
+      )
+      LEFT JOIN quote_cache quote ON quote.id = (
+        SELECT cached.id FROM quote_cache cached
+        WHERE cached.market = security.market
+          AND cached.symbol = security.symbol || char(31) || UPPER(
+            COALESCE(item.provider_symbol, historic.provider_symbol,
+              security.provider_symbol))
+        ORDER BY cached.quote_as_of DESC, cached.fetched_at DESC LIMIT 1
       )
       WHERE item.owner_key = ? AND (
         ? = 1 OR (
@@ -244,21 +254,38 @@ export async function addWatchlistItem(input: {
     if (existing)
       await db
         .prepare(
-          "UPDATE watchlist_items SET removed_at = NULL, is_enabled = 1, updated_at = ? WHERE id = ? AND owner_key = ?",
+          `UPDATE watchlist_items SET removed_at = NULL, is_enabled = 1,
+            provider_symbol = ?, display_name = ?, display_security_type = ?,
+            display_quote_currency = ?, updated_at = ?
+            WHERE id = ? AND owner_key = ?`,
         )
-        .run(now, text(existing.id), ownerKey);
+        .run(
+          identity.providerSymbol,
+          identity.name,
+          identity.securityType,
+          identity.quoteCurrency,
+          now,
+          text(existing.id),
+          ownerKey,
+        );
     else
       await db
         .prepare(
           `INSERT INTO watchlist_items(
-            id, owner_key, security_id, origin, is_enabled, first_seen_at,
+            id, owner_key, security_id, provider_symbol, display_name,
+            display_security_type, display_quote_currency,
+            origin, is_enabled, first_seen_at,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           randomUUID(),
           ownerKey,
           securityId,
+          identity.providerSymbol,
+          identity.name,
+          identity.securityType,
+          identity.quoteCurrency,
           input.origin,
           (input.enabled ?? input.origin === "manual") ? 1 : 0,
           now,

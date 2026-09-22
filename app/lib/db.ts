@@ -202,6 +202,7 @@ const migrationNames = [
   "add_investment_research",
   "add_weekly_research_reports",
   "configure_weekly_reports",
+  "isolate_security_metadata",
 ] as const;
 
 function migrate(db: DatabaseSync) {

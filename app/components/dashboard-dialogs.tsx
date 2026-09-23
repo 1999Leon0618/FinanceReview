@@ -228,6 +228,7 @@ const cloneCreditCardAccounts = (
 function mergeSnapshotAccounts(
   preserved: AccountStateInput[],
   changed: AccountStateInput[],
+  originalAccountIds: readonly string[],
 ) {
   const merged = [...preserved];
   for (const account of changed) {
@@ -237,7 +238,12 @@ function mergeSnapshotAccounts(
     if (index >= 0) merged[index] = account;
     else merged.push(account);
   }
-  return merged;
+  const ranks = new Map(originalAccountIds.map((id, index) => [id, index]));
+  return merged.sort(
+    (a, b) =>
+      (ranks.get(a.accountId ?? "") ?? Infinity) -
+      (ranks.get(b.accountId ?? "") ?? Infinity),
+  );
 }
 
 function mergeSnapshotLoans(preserved: LoanInput[], changed: LoanInput[]) {
@@ -429,8 +435,13 @@ export function SnapshotEditor({
     ),
   );
   const mergedAccounts = useMemo(
-    () => mergeSnapshotAccounts(preservedAccounts, accounts),
-    [preservedAccounts, accounts],
+    () =>
+      mergeSnapshotAccounts(
+        preservedAccounts,
+        accounts,
+        latest?.accounts.map((account) => account.accountId) ?? [],
+      ),
+    [preservedAccounts, accounts, latest],
   );
   const mergedLoans = useMemo(
     () => mergeSnapshotLoans(preservedLoans, loans),

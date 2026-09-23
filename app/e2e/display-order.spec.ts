@@ -1,5 +1,41 @@
 import { expect, test } from "@playwright/test";
 
+test("更新單一帳戶快照後保留帳戶頁排序", async ({ page, request }) => {
+  const names = ["排序更新甲", "排序更新乙", "排序更新丙"];
+  const created = await request.post("/api/snapshots", {
+    data: {
+      rawInput: "帳戶排序回歸測試",
+      capturedAt: new Date(Date.now() + 432_000_000).toISOString(),
+      accounts: names.map((name, index) => ({
+        name,
+        institution: "測試銀行",
+        accountReference: `order-update-${index}`,
+        accountType: "bank",
+        defaultCurrency: "TWD",
+        cashBalances: [{ currency: "TWD", amount: "100" }],
+        positions: [],
+      })),
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+
+  await page.goto("/accounts");
+  const cards = page.locator("#accounts .account-card h3");
+  await expect(cards).toHaveText(names);
+  await page.getByRole("button", { name: "新增快照" }).click();
+  const dialog = page.getByRole("dialog", { name: "建立財務快照" });
+  await dialog.getByRole("checkbox", { name: /排序更新乙/ }).click();
+  await dialog.getByRole("button", { name: "下一步：確認所選項目" }).click();
+  await dialog
+    .locator('[data-field-path="accounts.0.cashBalances.0.amount"]')
+    .fill("200");
+  await dialog.getByRole("button", { name: "保存這筆紀錄" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(cards).toHaveText(names);
+  await page.reload();
+  await expect(cards).toHaveText(names);
+});
+
 test("自訂排序套用獨立頁面、重新整理保留且可還原", async ({
   page,
   request,
